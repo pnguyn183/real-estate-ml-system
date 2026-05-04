@@ -359,11 +359,3 @@ Predict from a feature JSON:
 ```powershell
 python modeling\predict_price.py --input-json path\to\feature_record.json
 ```
-
-## Notes
-
-- The repository has been cleaned to remove the old car and PostgreSQL flow.
-- The scraper is designed for larger crawls by paging through many result pages and persisting resume state.
-- MongoDB stores a model-oriented schema, not the old general-purpose payload.
-- The model expects a materially larger dataset now and rejects tiny training sets.
-- The output of the model is a predicted property price in VND and in billion VND, which can be used for valuation, recommendation, anomaly detection, and listing comparison.
