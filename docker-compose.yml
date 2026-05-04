@@ -1,0 +1,225 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: always
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    platform: linux/amd64
+    container_name: real_estate_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    platform: linux/amd64
+    container_name: real_estate_mongo_express
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    platform: linux/amd64
+    container_name: real_estate_prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    ports:
+      - "9090:9090"
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    platform: linux/amd64
+    container_name: real_estate_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  processor:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    container_name: real_estate_processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=real_estate_db
+      - PROMETHEUS_METRICS_PORT=8003
+    ports:
+      - "8003:8003"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  trainer:
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile.trainer
+    container_name: real_estate_trainer
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=real_estate_db
+      - PROMETHEUS_METRICS_PORT=8001
+      - MODEL_PATH=artifacts/models/price_model.joblib
+      - METRICS_PATH=artifacts/price_model_metrics.json
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile.api
+    container_name: real_estate_api
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      - MODEL_PATH=artifacts/models/price_model.joblib
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    container_name: real_estate_scraper
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: real_estate_frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  predictor:
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile.predictor
+    container_name: real_estate_predictor
+    environment:
+      - MODEL_PATH=artifacts/models/price_model.joblib
+      - PREDICTOR_PORT=8002
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=3).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mongo_data:

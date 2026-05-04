@@ -1,0 +1,57 @@
+groups:
+  - name: real_estate_pipeline
+    interval: 30s
+    rules:
+      - alert: HighProcessingErrorRate
+        expr: rate(kafka_messages_failed_total[5m]) / clamp_min(rate(kafka_messages_consumed_total[5m]), 1) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate in processor"
+          description: "Error rate is {{ $value | humanizePercentage }} over last 5 minutes"
+
+      - alert: HighKafkaConsumerLag
+        expr: kafka_consumer_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer lag: {{ $value }} messages"
+
+      - alert: ProcessingDurationAnomaly
+        expr: rate(processing_duration_seconds_sum[5m]) / rate(processing_duration_seconds_count[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Processing taking longer than expected"
+          description: "Average processing time: {{ $value }}s"
+
+      - alert: ModelTrainingFailed
+        expr: increase(trainer_runs_failed_total[1h]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model training failed"
+          description: "Trainer reported {{ $value }} failed run(s) in the last hour"
+
+      - alert: ModelTrainingStale
+        expr: time() - trainer_last_success_timestamp_seconds > 43200
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model training metrics are stale"
+          description: "No successful training run for more than 12 hours"
+
+      - alert: DatabaseWriteFailures
+        expr: rate(db_writes_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database write failures detected"
+          description: "Rate: {{ $value }} failures/sec"
