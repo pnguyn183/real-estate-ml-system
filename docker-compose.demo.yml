@@ -1,0 +1,223 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_zookeeper_demo
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: always
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_kafka_demo
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    platform: linux/amd64
+    container_name: real_estate_mongodb_demo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data_demo:/data/db
+    restart: always
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    platform: linux/amd64
+    container_name: real_estate_mongo_express_demo
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    platform: linux/amd64
+    container_name: real_estate_prometheus_demo
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    ports:
+      - "9090:9090"
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    platform: linux/amd64
+    container_name: real_estate_grafana_demo
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Demo-optimized scraper - runs once with reduced volume
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile.demo
+    container_name: real_estate_scraper_demo
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - DEMO_MODE=true
+      - DEMO_MAX_PAGES=8
+      - DEMO_LIMIT=400
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/scrape_done.flag"]
+      interval: 5s
+      timeout: 30s
+      retries: 120
+
+  # Demo-optimized processor
+  processor:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    container_name: real_estate_processor_demo
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      scraper:
+        condition: service_started
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=real_estate_db
+      - PROMETHEUS_METRICS_PORT=8003
+      - KAFKA_GROUP_ID=processor_demo_group
+    ports:
+      - "8003:8003"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Demo-optimized trainer - reduced epochs for quick training
+  trainer:
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile.trainer.demo
+    container_name: real_estate_trainer_demo
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      processor:
+        condition: service_started
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=real_estate_db
+      - PROMETHEUS_METRICS_PORT=8001
+      - MODEL_PATH=artifacts/models/price_model.joblib
+      - METRICS_PATH=artifacts/price_model_metrics.json
+      - DEMO_MODE=true
+      - DEMO_WAIT_SECONDS=30
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/train_done.flag"]
+      interval: 5s
+      timeout: 180s
+      retries: 36
+
+  # API server - starts after trainer is ready
+  api:
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile.api
+    container_name: real_estate_api_demo
+    depends_on:
+      trainer:
+        condition: service_started
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+      - MONGO_DB=real_estate_db
+      - MODEL_PATH=artifacts/models/price_model.joblib
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: real_estate_frontend_demo
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: always
+
+volumes:
+  mongo_data_demo:
