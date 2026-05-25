@@ -138,6 +138,9 @@ services:
       - PROMETHEUS_METRICS_PORT=8001
       - MODEL_PATH=artifacts/models/price_model.joblib
       - METRICS_PATH=artifacts/price_model_metrics.json
+      - MIN_RECORDS_FOR_TRAINING=${MIN_RECORDS_FOR_TRAINING:-30}
+      - TRAIN_INTERVAL=${TRAIN_INTERVAL:-1800}
+      - TRAIN_RETRY_INTERVAL=${TRAIN_RETRY_INTERVAL:-60}
     ports:
       - "8001:8001"
     volumes:
@@ -183,6 +186,15 @@ services:
         condition: service_healthy
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - SCRAPE_LIMIT=${SCRAPE_LIMIT:-300}
+      - SCRAPE_MAX_PAGES=${SCRAPE_MAX_PAGES:-5}
+      - SCRAPE_START_PAGE=${SCRAPE_START_PAGE:-1}
+      - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-1800}
+      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-300}
+      - SCRAPE_REQUEST_DELAY=${SCRAPE_REQUEST_DELAY:-0.25}
+      - SCRAPE_DETAIL_DELAY=${SCRAPE_DETAIL_DELAY:-0.1}
+      - SCRAPE_INCLUDE_UNVERIFIED=${SCRAPE_INCLUDE_UNVERIFIED:-false}
+      - SCRAPE_FRESH_START=${SCRAPE_FRESH_START:-true}
     restart: always
 
   frontend:

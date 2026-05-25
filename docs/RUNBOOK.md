@@ -72,7 +72,7 @@ Kiểm tra số record đủ điều kiện:
 db.training_features.countDocuments({is_model_candidate: true, has_target_price: true})
 ```
 
-Mặc định `MIN_RECORDS_FOR_TRAINING=500`. Có thể giảm biến này trong `docker-compose.yml` cho môi trường demo.
+Mặc định `MIN_RECORDS_FOR_TRAINING=200`. Chỉ hạ ngưỡng này khi cần kiểm tra nhanh trên tập dữ liệu nhỏ.
 
 ## Offset checkpoint và replay
 

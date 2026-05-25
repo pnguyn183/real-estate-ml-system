@@ -26,7 +26,8 @@ from utils.metrics import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-TRAIN_INTERVAL = int(os.environ.get("TRAIN_INTERVAL", 21600))  # 6 hours default
+TRAIN_INTERVAL = int(os.environ.get("TRAIN_INTERVAL", 1800))
+TRAIN_RETRY_INTERVAL = int(os.environ.get("TRAIN_RETRY_INTERVAL", 60))
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.environ.get("MONGO_DB", "real_estate_db")
 MONGO_FEATURE_COLLECTION = os.environ.get("MONGO_FEATURE_COLLECTION", "training_features")
@@ -74,22 +75,31 @@ def run_trainer():
         update_metrics_from_result(result)
         trainer_last_success_timestamp.set(time.time())
         logger.info("Training completed successfully: samples=%s duration=%.2fs", result.sample_count, train_duration)
+        return True
     except Exception as exc:
         trainer_runs_failed.inc()
         logger.error(f"Training error: {exc}")
+        return False
 
 def main():
     prometheus_port = int(os.environ.get("PROMETHEUS_METRICS_PORT", 8001))
     start_prometheus_server(prometheus_port)
-    logger.info(f"Auto-trainer started, interval={TRAIN_INTERVAL}s, min_records={MIN_RECORDS}")
+    logger.info(
+        "Auto-trainer started, interval=%ss, retry_interval=%ss, min_records=%s",
+        TRAIN_INTERVAL,
+        TRAIN_RETRY_INTERVAL,
+        MIN_RECORDS,
+    )
     while True:
         try:
             if check_training_data():
-                run_trainer()
+                training_ok = run_trainer()
+                next_sleep = TRAIN_INTERVAL if training_ok else TRAIN_RETRY_INTERVAL
             else:
                 logger.info(f"Not enough training data (need {MIN_RECORDS}), skipping training")
-            logger.info(f"Next training in {TRAIN_INTERVAL}s (at {datetime.fromtimestamp(time.time() + TRAIN_INTERVAL)})")
-            time.sleep(TRAIN_INTERVAL)
+                next_sleep = TRAIN_RETRY_INTERVAL
+            logger.info(f"Next training check in {next_sleep}s (at {datetime.fromtimestamp(time.time() + next_sleep)})")
+            time.sleep(next_sleep)
         except KeyboardInterrupt:
             logger.info("Auto-trainer stopped")
             break

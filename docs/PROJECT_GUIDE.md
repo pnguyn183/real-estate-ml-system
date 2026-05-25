@@ -97,7 +97,6 @@ real-estate-ml-system/
 ├── 📁 scraper/                            ← Web Scraping
 │   ├── kafka_producer.py                 ← Scraper + Publisher
 │   ├── listing_feature_scraper.py        ← Scraping logic
-│   ├── export_sample_dataset.py          ← Sample export
 │   └── Dockerfile                        ← Scraper container
 │
 ├── 📁 monitoring/                         ← Observability

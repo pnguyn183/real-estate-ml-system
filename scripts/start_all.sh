@@ -9,12 +9,19 @@ echo "========================================="
 export KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-"localhost:9092"}
 export MONGO_URI=${MONGO_URI:-"mongodb://localhost:27017/"}
 export MONGO_DB=${MONGO_DB:-"real_estate_db"}
-export SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-3600}
-export TRAIN_INTERVAL=${TRAIN_INTERVAL:-21600}
+export SCRAPE_LIMIT=${SCRAPE_LIMIT:-300}
+export SCRAPE_MAX_PAGES=${SCRAPE_MAX_PAGES:-5}
+export SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-1800}
+export SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-300}
+export SCRAPE_FRESH_START=${SCRAPE_FRESH_START:-true}
+export TRAIN_INTERVAL=${TRAIN_INTERVAL:-1800}
+export TRAIN_RETRY_INTERVAL=${TRAIN_RETRY_INTERVAL:-60}
+export MIN_RECORDS_FOR_TRAINING=${MIN_RECORDS_FOR_TRAINING:-30}
 
 # Start all services
 echo "Starting docker services..."
 docker compose up -d
+docker compose restart scraper
 
 echo ""
 echo "Waiting for services to be healthy..."

@@ -118,7 +118,7 @@ def parse_price_to_vnd(value: Any, area_m2: float | None = None) -> tuple[float 
     ty_match = PRICE_TY_PATTERN.search(text)
     trieu_match = PRICE_TRIEU_PATTERN.search(text)
 
-    if "/m²" in text or "/m2" in text:
+    if "/m²" in text or "/m2" in text or "/mÂ²" in text:
         if ty_match:
             ty_amount = parse_localized_number_token(ty_match.group(1))
             price_per_m2_vnd = ty_amount * 1_000_000_000 if ty_amount is not None else None

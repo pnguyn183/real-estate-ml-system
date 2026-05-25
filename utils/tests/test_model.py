@@ -36,3 +36,6 @@ def test_train_and_predict(tmp_path):
     pred = loaded.predict(records[0])
     assert "predicted_price_vnd" in pred
     assert pred["predicted_price_vnd"] > 0
+    assert pred["confidence_low_vnd"] < pred["predicted_price_vnd"] < pred["confidence_high_vnd"]
+    assert 0 <= pred["confidence_score"] <= 1
+    assert pred["explanations"]

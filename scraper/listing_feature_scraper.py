@@ -33,6 +33,24 @@ class ScrapeConfig:
     extra_query: Dict[str, str] | None = None
 
 
+DETAIL_LABELS = {
+    "listing_id": "Mã tin",
+    "price": "Khoảng giá",
+    "area": "Diện tích",
+    "bedroom_short": "Phòng ngủ",
+    "bedroom_specs": "Số phòng ngủ",
+    "bathroom": "Số phòng tắm, vệ sinh",
+    "floor": "Số tầng",
+    "front_width": "Mặt tiền",
+    "road_width": "Đường vào",
+    "legal": "Pháp lý",
+    "direction": "Hướng nhà",
+    "listing_type": "Loại tin",
+    "posted_date": "Ngày đăng",
+    "furniture": "Nội thất",
+}
+
+
 def clean_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -166,21 +184,22 @@ def parse_listing_detail(session: requests.Session, url: str, config: ScrapeConf
 
     record: Dict[str, Any] = {
         "url": url,
-        "listing_id": short_info.get("Mã tin"),
+        "listing_id": short_info.get(DETAIL_LABELS["listing_id"]),
         "title": clean_text(selector.css("h1::text").get()),
-        "price_text": short_info.get("Khoảng giá") or specs_info.get("Khoảng giá"),
-        "area_text": short_info.get("Diện tích") or specs_info.get("Diện tích"),
-        "bedroom_text": short_info.get("Phòng ngủ") or specs_info.get("Số phòng ngủ"),
-        "bathroom_text": specs_info.get("Số phòng tắm, vệ sinh"),
-        "floor_text": specs_info.get("Số tầng"),
-        "front_width_text": specs_info.get("Mặt tiền"),
-        "road_width_text": specs_info.get("Đường vào"),
-        "legal_text": specs_info.get("Pháp lý"),
-        "direction_text": specs_info.get("Hướng nhà"),
+        "price_text": short_info.get(DETAIL_LABELS["price"]) or specs_info.get(DETAIL_LABELS["price"]),
+        "area_text": short_info.get(DETAIL_LABELS["area"]) or specs_info.get(DETAIL_LABELS["area"]),
+        "bedroom_text": short_info.get(DETAIL_LABELS["bedroom_short"])
+        or specs_info.get(DETAIL_LABELS["bedroom_specs"]),
+        "bathroom_text": specs_info.get(DETAIL_LABELS["bathroom"]),
+        "floor_text": specs_info.get(DETAIL_LABELS["floor"]),
+        "front_width_text": specs_info.get(DETAIL_LABELS["front_width"]),
+        "road_width_text": specs_info.get(DETAIL_LABELS["road_width"]),
+        "legal_text": specs_info.get(DETAIL_LABELS["legal"]),
+        "direction_text": specs_info.get(DETAIL_LABELS["direction"]),
         "property_type": infer_property_type(url),
-        "listing_type": short_info.get("Loại tin"),
-        "posted_date_text": short_info.get("Ngày đăng"),
-        "furniture_text": specs_info.get("Nội thất"),
+        "listing_type": short_info.get(DETAIL_LABELS["listing_type"]),
+        "posted_date_text": short_info.get(DETAIL_LABELS["posted_date"]),
+        "furniture_text": specs_info.get(DETAIL_LABELS["furniture"]),
         "project_hint": breadcrumb_text[-2] if len(breadcrumb_text) >= 2 else None,
         "verified": 1 if "vrs=1" in build_list_url(1, config) else 0,
         "source": "batdongsan",

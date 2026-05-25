@@ -32,6 +32,12 @@ export interface PropertyFeatures {
 export interface PredictionResult {
   predicted_price_vnd: number;
   predicted_price_billion_vnd: number;
+  price_per_m2_vnd?: number;
+  confidence_low_vnd?: number;
+  confidence_high_vnd?: number;
+  confidence_score?: number;
+  feature_quality_score?: number;
+  explanations?: string[];
   prediction_date: string;
   latency_ms: number;
 }
@@ -41,6 +47,7 @@ export interface ModelMetrics {
   rmse_vnd?: number;
   r2?: number;
   sample_count?: number;
+  median_absolute_percentage_error?: number;
 }
 
 export interface ModelInfoType {

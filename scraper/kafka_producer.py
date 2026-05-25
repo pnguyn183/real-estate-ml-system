@@ -22,16 +22,21 @@ def delivery_report(err, msg) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scrape property listings at scale and publish model features to Kafka.")
-    parser.add_argument("--limit", type=int, default=5000, help="Maximum number of listings to scrape.")
-    parser.add_argument("--max-pages", type=int, default=50, help="Maximum number of list pages to crawl.")
+    parser.add_argument("--limit", type=int, default=100000, help="Maximum number of listings to scrape.")
+    parser.add_argument("--max-pages", type=int, default=1000, help="Maximum number of list pages to crawl.")
     parser.add_argument("--start-page", type=int, default=1, help="First page to crawl.")
     parser.add_argument("--state-file", type=Path, default=Path("runtime") / "scrape_state" / "producer_state.json")
     parser.add_argument("--request-delay", type=float, default=0.25)
     parser.add_argument("--detail-delay", type=float, default=0.1)
     parser.add_argument("--include-unverified", action="store_true")
+    parser.add_argument("--fresh-start", action="store_true", help="Remove saved crawl state before scraping.")
     parser.add_argument("--topic", default=os.environ.get("KAFKA_RAW_TOPIC", "real_estate_raw"))
     parser.add_argument("--bootstrap-servers", default=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
     args = parser.parse_args()
+
+    if args.fresh_start and args.state_file.exists():
+        args.state_file.unlink()
+        logger.info("Removed previous scrape state: %s", args.state_file)
 
     producer = Producer(
         {

@@ -95,6 +95,12 @@ class PredictionResponse(BaseModel):
     """Single prediction response"""
     predicted_price_vnd: float = Field(..., description="Predicted price in VND")
     predicted_price_billion_vnd: float = Field(..., description="Predicted price in billion VND")
+    price_per_m2_vnd: Optional[float] = Field(None, description="Predicted price per square meter")
+    confidence_low_vnd: Optional[float] = Field(None, description="Lower bound of confidence range")
+    confidence_high_vnd: Optional[float] = Field(None, description="Upper bound of confidence range")
+    confidence_score: Optional[float] = Field(None, description="Model confidence score from 0 to 1")
+    feature_quality_score: Optional[float] = Field(None, description="Input completeness score from 0 to 1")
+    explanations: List[str] = Field(default_factory=list, description="Human-readable model signals")
     prediction_date: str = Field(..., description="Prediction timestamp")
     latency_ms: float = Field(..., description="Prediction latency in milliseconds")
 
@@ -155,6 +161,8 @@ def get_model() -> RealEstatePriceModel:
             except Exception as e:
                 logger.warning("Failed to load metadata: %s", e)
                 _model_metadata = None
+        if getattr(_model, "metadata", None):
+            _model_metadata = {**(_model_metadata or {}), **_model.metadata}
     
     return _model
 
@@ -215,7 +223,8 @@ async def model_info():
     try:
         if not MODEL_PATH.exists():
             raise HTTPException(status_code=503, detail="Model not available")
-        
+
+        get_model()
         metadata = _model_metadata or {}
         return ModelInfo(
             version=metadata.get("version"),
@@ -256,6 +265,12 @@ async def predict_single(property: PropertyFeatures):
         return PredictionResponse(
             predicted_price_vnd=prediction["predicted_price_vnd"],
             predicted_price_billion_vnd=prediction["predicted_price_billion_vnd"],
+            price_per_m2_vnd=prediction.get("price_per_m2_vnd"),
+            confidence_low_vnd=prediction.get("confidence_low_vnd"),
+            confidence_high_vnd=prediction.get("confidence_high_vnd"),
+            confidence_score=prediction.get("confidence_score"),
+            feature_quality_score=prediction.get("feature_quality_score"),
+            explanations=prediction.get("explanations", []),
             prediction_date=datetime.now(timezone.utc).isoformat(),
             latency_ms=latency_ms
         )
@@ -293,6 +308,12 @@ async def predict_batch(request: PredictionRequest):
                     PredictionResponse(
                         predicted_price_vnd=prediction_result["predicted_price_vnd"],
                         predicted_price_billion_vnd=prediction_result["predicted_price_billion_vnd"],
+                        price_per_m2_vnd=prediction_result.get("price_per_m2_vnd"),
+                        confidence_low_vnd=prediction_result.get("confidence_low_vnd"),
+                        confidence_high_vnd=prediction_result.get("confidence_high_vnd"),
+                        confidence_score=prediction_result.get("confidence_score"),
+                        feature_quality_score=prediction_result.get("feature_quality_score"),
+                        explanations=prediction_result.get("explanations", []),
                         prediction_date=datetime.now(timezone.utc).isoformat(),
                         latency_ms=latency_ms
                     )
