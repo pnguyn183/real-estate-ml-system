@@ -1,33 +1,89 @@
 import { useEffect, useState } from 'react';
 import { Activity, Building2, Database, Gauge, Loader2 } from 'lucide-react';
+import AuthPanel from './components/AuthPanel';
 import Header from './components/Header';
 import ModelInfo from './components/ModelInfo';
 import PredictionForm from './components/PredictionForm';
 import ResultsDisplay from './components/ResultsDisplay';
 import StatsCard from './components/StatsCard';
-import { checkHealth, getModelInfo, HealthResponse, ModelInfoType, PredictionResult, PropertyFeatures, predictPrice } from './api/client';
+import UserAdminPanel from './components/UserAdminPanel';
+import {
+  AuthResponse,
+  AuthUser,
+  checkHealth,
+  getCurrentUser,
+  getModelInfo,
+  handleApiError,
+  HealthResponse,
+  ModelInfoType,
+  PredictionResult,
+  PropertyFeatures,
+  predictPrice,
+  setAuthToken,
+} from './api/client';
 
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfoType | null>(null);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canViewModel = user?.role === 'manager' || user?.role === 'admin';
+
   useEffect(() => {
-    async function loadStatus() {
+    async function loadSession() {
+      try {
+        setUser(await getCurrentUser());
+      } catch {
+        setAuthToken(null);
+        setUser(null);
+      } finally {
+        setCheckingSession(false);
+      }
+    }
+    void loadSession();
+  }, []);
+
+  useEffect(() => {
+    async function loadHealth() {
       try {
         const healthResult = await checkHealth();
         setHealth(healthResult);
-        if (healthResult.model_exists) {
-          setModelInfo(await getModelInfo());
-        }
       } catch {
         setHealth(null);
       }
     }
-    void loadStatus();
+    void loadHealth();
   }, []);
+
+  useEffect(() => {
+    async function loadModelInfo() {
+      if (!canViewModel || !health?.model_exists) {
+        setModelInfo(null);
+        return;
+      }
+      try {
+        setModelInfo(await getModelInfo());
+      } catch {
+        setModelInfo(null);
+      }
+    }
+    void loadModelInfo();
+  }, [canViewModel, health?.model_exists]);
+
+  function handleAuthenticated(auth: AuthResponse) {
+    setUser(auth.user);
+  }
+
+  function handleLogout() {
+    setAuthToken(null);
+    setUser(null);
+    setPrediction(null);
+    setModelInfo(null);
+  }
 
   async function handlePredict(features: PropertyFeatures) {
     setLoading(true);
@@ -35,15 +91,38 @@ export default function App() {
     try {
       setPrediction(await predictPrice(features));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Prediction failed');
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
   }
 
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-950">
+        <Header />
+        <main className="grid min-h-[calc(100vh-73px)] place-items-center">
+          <div className="panel flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-cyan-700" />
+            <span className="text-sm font-medium">Checking session...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-950">
+        <Header />
+        <AuthPanel onAuthenticated={handleAuthenticated} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <Header />
+      <Header user={user} onLogout={handleLogout} />
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-3">
@@ -74,6 +153,7 @@ export default function App() {
             </div>
           )}
           {modelInfo && <ModelInfo info={modelInfo} />}
+          {user.role === 'admin' && <UserAdminPanel currentUser={user} />}
         </section>
       </main>
     </div>

@@ -1,199 +1,120 @@
-# Project Index & Navigation Guide
+# Project Index and Navigation Guide
 
-Welcome to the Real Estate Price Prediction System! This guide helps you navigate the project and find what you need.
+This guide maps the Real Estate Price Prediction System and points each role to the most useful files.
 
----
+## Start Here by Role
 
-## 📚 Documentation by Role
+### Product Manager or Business Analyst
 
-### 👨‍💼 Product Manager / Business Analyst
-Start here:
-1. **[README.md](../README.md)** - Project overview and features
-2. **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - What was built
-3. **[docs/REQUIREMENTS.md](REQUIREMENTS.md)** - Business requirements
-4. **[docs/METRICS_AND_SLA.md](METRICS_AND_SLA.md)** - KPIs and targets
+1. [README.md](../README.md) - Project overview
+2. [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current implementation status
+3. [REQUIREMENTS.md](REQUIREMENTS.md) - Product requirements
+4. [METRICS_AND_SLA.md](METRICS_AND_SLA.md) - KPIs and targets
 
-### 👨‍💻 Software Developer / Engineer
-Start here:
-1. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick commands and endpoints
-2. **[DEPLOYMENT.md](../DEPLOYMENT.md)** - Setup and deployment
-3. **[README.md](../README.md)** - Architecture overview
-4. **[docs/DATA_SCHEMA.md](DATA_SCHEMA.md)** - Data models
-5. **[modeling/api.py](../modeling/api.py)** - API implementation
-6. **[frontend/README.md](../frontend/README.md)** - Frontend setup
+### Software Developer
 
-### 🏗️ DevOps / Infrastructure
-Start here:
-1. **[DEPLOYMENT.md](../DEPLOYMENT.md)** - Complete deployment guide
-2. **[docker-compose.yml](../docker-compose.yml)** - Service configuration
-3. **[monitoring/](../monitoring/)** - Prometheus & Grafana setup
-4. **[.env.example](../.env.example)** - Environment configuration
+1. [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Commands, auth flow, and endpoint examples
+2. [DEPLOYMENT.md](../DEPLOYMENT.md) - Setup and deployment
+3. [modeling/api.py](../modeling/api.py) - FastAPI endpoints and authorization dependencies
+4. [modeling/auth.py](../modeling/auth.py) - Authentication, token, password hashing, and RBAC helpers
+5. [frontend/README.md](../frontend/README.md) - Frontend setup
+6. [frontend/src/api/client.ts](../frontend/src/api/client.ts) - API client and token handling
 
-### 🔬 Data Scientist / ML Engineer
-Start here:
-1. **[modeling/price_model.py](../modeling/price_model.py)** - Model implementation
-2. **[modeling/train_model.py](../modeling/train_model.py)** - Training script
-3. **[docs/DATA_SCHEMA.md](DATA_SCHEMA.md)** - Feature definitions
-4. **[docs/METRICS_AND_SLA.md](METRICS_AND_SLA.md)** - Model metrics
+### DevOps or Infrastructure
 
-### 🎨 Frontend Developer
-Start here:
-1. **[frontend/README.md](../frontend/README.md)** - Frontend guide
-2. **[frontend/src/App.tsx](../frontend/src/App.tsx)** - Main component
-3. **[frontend/src/api/client.ts](../frontend/src/api/client.ts)** - API integration
-4. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - API endpoints
+1. [DEPLOYMENT.md](../DEPLOYMENT.md) - Complete deployment guide
+2. [docker-compose.yml](../docker-compose.yml) - Service configuration
+3. [monitoring/](../monitoring/) - Prometheus and Grafana setup
+4. [QUICK_REFERENCE.md](QUICK_REFERENCE.md#environment-configuration) - Key environment variables
 
----
+### Data Scientist or ML Engineer
 
-## 🗂️ Project Structure
+1. [modeling/price_model.py](../modeling/price_model.py) - Model implementation
+2. [modeling/train_model.py](../modeling/train_model.py) - Training script
+3. [DATA_SCHEMA.md](DATA_SCHEMA.md) - Feature definitions
+4. [METRICS_AND_SLA.md](METRICS_AND_SLA.md) - Model metrics
 
-```
+### Frontend Developer
+
+1. [frontend/README.md](../frontend/README.md) - Frontend guide
+2. [frontend/src/App.tsx](../frontend/src/App.tsx) - Main app shell and role-aware rendering
+3. [frontend/src/components/AuthPanel.tsx](../frontend/src/components/AuthPanel.tsx) - Login and registration UI
+4. [frontend/src/components/UserAdminPanel.tsx](../frontend/src/components/UserAdminPanel.tsx) - Admin user management UI
+5. [frontend/src/api/client.ts](../frontend/src/api/client.ts) - API integration
+
+## Project Structure
+
+```text
 real-estate-ml-system/
-│
-├── 📄 Documentation Root
-│   ├── README.md                          ← Start here for overview
-│   ├── QUICK_REFERENCE.md                 ← Quick commands & APIs
-│   ├── DEPLOYMENT.md                      ← Complete deployment guide
-│   ├── PROJECT_STATUS.md      ← What was built
-│   ├── PROJECT_GUIDE.md                   ← This file
-│   ├── .env.example                       ← Configuration template
-│   └── docker-compose.yml                 ← Docker services
-│
-├── 📁 frontend/                           ← React Web Interface
+├── README.md
+├── DEPLOYMENT.md
+├── docker-compose.yml
+├── frontend/
 │   ├── src/
-│   │   ├── App.tsx                       ← Main app component
-│   │   ├── main.tsx                      ← Entry point
-│   │   ├── index.css                     ← Tailwind styles
+│   │   ├── api/client.ts
 │   │   ├── components/
-│   │   │   ├── Header.tsx                ← Navigation bar
-│   │   │   ├── PredictionForm.tsx        ← Input form
-│   │   │   ├── ResultsDisplay.tsx        ← Results view
-│   │   │   ├── StatsCard.tsx             ← Stats cards
-│   │   │   └── ModelInfo.tsx             ← Model dashboard
-│   │   └── api/
-│   │       └── client.ts                 ← API communication
-│   ├── Dockerfile                        ← Frontend container
-│   ├── package.json                      ← Dependencies
-│   ├── vite.config.ts                    ← Build config
-│   ├── tailwind.config.js                ← Styling config
-│   ├── README.md                         ← Frontend guide
-│   └── .env.example                      ← Frontend config
-│
-├── 📁 modeling/                           ← Machine Learning
-│   ├── api.py                            ← FastAPI REST service
-│   ├── price_model.py                    ← ML model implementation
-│   ├── train_model.py                    ← Training script
-│   ├── predict_service.py                ← Legacy prediction service
-│   ├── Dockerfile.api                    ← API container
-│   ├── Dockerfile.trainer                ← Training container
-│   └── Dockerfile.predictor              ← Predictor container
-│
-├── 📁 processing/                         ← Data Processing
-│   ├── kafka_to_mongo.py                 ← Main processor
-│   ├── export_training_dataset.py        ← Dataset export
-│   ├── dataset_quality_report.py         ← Quality checks
-│   └── Dockerfile                        ← Processor container
-│
-├── 📁 scraper/                            ← Web Scraping
-│   ├── kafka_producer.py                 ← Scraper + Publisher
-│   ├── listing_feature_scraper.py        ← Scraping logic
-│   └── Dockerfile                        ← Scraper container
-│
-├── 📁 monitoring/                         ← Observability
-│   ├── prometheus.yml                    ← Prometheus config
-│   ├── alert_rules.yml                   ← Alert rules
-│   ├── grafana/
-│   │   ├── dashboards/
-│   │   │   └── real_estate_pipeline.json ← Dashboard config
-│   │   └── provisioning/                 ← Grafana provisioning
-│   └── README.md                         ← Monitoring guide
-│
-├── 📁 utils/                              ← Shared Utilities
-│   ├── logging_utils.py                  ← Logging setup
-│   ├── metrics.py                        ← Metrics setup
-│   └── validation.py                     ← Validation helpers
-│
-├── 📁 tests/                              ← Test Suite
-│   ├── test_model.py                     ← Model tests
-│   └── test_utils.py                     ← Utility tests
-│
-├── 📁 docs/                               ← Technical Documentation
-│   ├── README.md                         ← Docs index
-│   ├── REQUIREMENTS.md                   ← Business requirements
-│   ├── DATA_SCHEMA.md                    ← Data models
-│   ├── METRICS_AND_SLA.md                ← KPIs & SLAs
-│   ├── ACCEPTANCE_CRITERIA.md            ← Quality gates
-│   ├── ERROR_HANDLING_STRATEGY.md        ← Error handling
-│   ├── MONITORING_AND_ALERTING.md        ← Monitoring setup
-│   ├── FLOW_DIAGRAMS.md                  ← Architecture diagrams
-│   ├── FLOW_ANALYSIS.md                  ← System analysis
-│   ├── IMPLEMENTATION_SUMMARY.md         ← Implementation details
-│   ├── RUNBOOK.md                        ← Operations guide
-│   └── DASHBOARD.md                      ← Dashboard guide
-│
-├── 📁 scripts/                            ← Automation Scripts
-│   ├── auto_scrape.py                    ← Auto scraper
-│   ├── auto_train.py                     ← Auto trainer
-│   ├── health_check.py                   ← Health checker
-│   ├── start_all.sh                      ← Start all services
-│   └── stop_all.sh                       ← Stop all services
-│
-└── 📁 artifacts/                          ← Generated Files
-    ├── models/
-    │   └── price_model_*.joblib          ← Model versions
-    ├── price_model.joblib                ← Stable model path
-    ├── price_model_metrics.json          ← Metrics
-    └── ...
+│   │   │   ├── AuthPanel.tsx
+│   │   │   ├── Header.tsx
+│   │   │   ├── ModelInfo.tsx
+│   │   │   ├── PredictionForm.tsx
+│   │   │   ├── ResultsDisplay.tsx
+│   │   │   ├── StatsCard.tsx
+│   │   │   └── UserAdminPanel.tsx
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   └── README.md
+├── modeling/
+│   ├── api.py
+│   ├── auth.py
+│   ├── price_model.py
+│   └── train_model.py
+├── processing/
+│   ├── kafka_to_mongo.py
+│   ├── export_training_dataset.py
+│   └── dataset_quality_report.py
+├── scraper/
+│   ├── kafka_producer.py
+│   └── listing_feature_scraper.py
+├── monitoring/
+├── scripts/
+├── utils/
+│   ├── tests/test_auth.py
+│   ├── tests/test_model.py
+│   └── tests/test_utils.py
+└── docs/
 ```
 
----
-
-## 🚀 Getting Started
-
-### 5-Minute Quick Start
-```bash
-docker-compose up -d
-# Open http://localhost:3000
-```
-
-### Full Development Setup
-See [DEPLOYMENT.md](../DEPLOYMENT.md#local-development)
-
-### API Testing
-See [QUICK_REFERENCE.md](QUICK_REFERENCE.md#-api-quick-reference)
-
----
-
-## 📊 Key Features
+## Key Features
 
 ### Backend
-- ✅ Production-ready Kafka pipeline
-- ✅ MongoDB data storage
-- ✅ ML model training & versioning
-- ✅ FastAPI REST service
-- ✅ Prometheus metrics
-- ✅ Comprehensive error handling
+
+- Kafka ingestion pipeline
+- MongoDB storage
+- ML model training and versioning
+- FastAPI REST service
+- Bearer-token authentication
+- Role-based access control for `admin`, `manager`, and `user`
+- Prometheus metrics
+- Structured error handling
 
 ### Frontend
-- ✅ Beautiful React interface
-- ✅ Real-time price predictions
-- ✅ Model performance dashboard
-- ✅ Responsive design
-- ✅ TypeScript type safety
+
+- React + TypeScript app
+- Register and sign in flow
+- Single prediction workspace
+- Model info panel for `manager` and `admin`
+- Admin user and role management panel
 
 ### DevOps
-- ✅ Docker containerization
-- ✅ Docker Compose orchestration
-- ✅ Prometheus + Grafana monitoring
-- ✅ Deployment guides
-- ✅ Production-ready
 
----
+- Docker Compose orchestration
+- Prometheus and Grafana monitoring
+- Deployment and runbook documentation
 
-## 🔌 Service Endpoints
+## Service Endpoints
 
 | Component | Port | URL | Purpose |
-|-----------|------|-----|---------|
+| --- | --- | --- | --- |
 | Frontend | 3000 | http://localhost:3000 | Web UI |
 | API | 8000 | http://localhost:8000 | REST API |
 | API Docs | 8000 | http://localhost:8000/docs | Swagger UI |
@@ -203,151 +124,64 @@ See [QUICK_REFERENCE.md](QUICK_REFERENCE.md#-api-quick-reference)
 | Kafka | 9092 | localhost:9092 | Message queue |
 | MongoDB | 27017 | localhost:27017 | Database |
 
----
+## Common Tasks
 
-## 📖 Common Tasks
+| Task | Where to Go |
+| --- | --- |
+| Start the system | `docker-compose up -d` |
+| Predict a price | http://localhost:3000 |
+| Bootstrap the first admin | [QUICK_REFERENCE.md](QUICK_REFERENCE.md#authentication-quick-reference) |
+| Check API status | http://localhost:8000/health |
+| View API documentation | http://localhost:8000/docs |
+| View dashboards | http://localhost:3001 |
+| Train a model | `python modeling/train_model.py` |
+| Scrape new data | `python scraper/kafka_producer.py` |
+| Deploy to production | [DEPLOYMENT.md](../DEPLOYMENT.md) |
+| Troubleshoot issues | [DEPLOYMENT.md#troubleshooting](../DEPLOYMENT.md#troubleshooting) |
 
-### I want to...
+## API Access Summary
 
-**Predict a price**
-→ Open http://localhost:3000 and fill the form
+| Endpoint | Access |
+| --- | --- |
+| `GET /health` | Public |
+| `POST /auth/register` | Public |
+| `POST /auth/login` | Public |
+| `GET /auth/me` | Authenticated |
+| `POST /predict` | `user`, `manager`, `admin` |
+| `GET /model/info` | `manager`, `admin` |
+| `POST /predict/batch` | `manager`, `admin` |
+| `/auth/users*` | `admin` |
 
-**Check API status**
-→ Go to http://localhost:8000/health
+## Search and Find
 
-**View API documentation**
-→ Go to http://localhost:8000/docs
-
-**See real-time metrics**
-→ Go to http://localhost:9090
-
-**View dashboards**
-→ Go to http://localhost:3001 (Grafana)
-
-**Train a new model**
-→ Run `python modeling/train_model.py`
-
-**Scrape new data**
-→ Run `python scraper/kafka_producer.py`
-
-**Deploy to production**
-→ See [DEPLOYMENT.md](../DEPLOYMENT.md)
-
-**Troubleshoot issues**
-→ See [DEPLOYMENT.md#troubleshooting](../DEPLOYMENT.md#troubleshooting)
-
-**Understand the data flow**
-→ See [docs/FLOW_DIAGRAMS.md](FLOW_DIAGRAMS.md)
-
-**Check requirements**
-→ See [docs/REQUIREMENTS.md](REQUIREMENTS.md)
-
----
-
-## 🔍 Search & Find
-
-**Looking for...**
-
-| What | Where |
-|------|-------|
-| API endpoints | [QUICK_REFERENCE.md](QUICK_REFERENCE.md#-api-quick-reference) |
-| Configuration | [.env.example](../.env.example) |
-| Data fields | [docs/DATA_SCHEMA.md](DATA_SCHEMA.md) |
-| ML model details | [modeling/price_model.py](../modeling/price_model.py) |
-| Frontend code | [frontend/README.md](../frontend/README.md) |
+| Looking For | File |
+| --- | --- |
+| API endpoints and auth policies | [modeling/api.py](../modeling/api.py) |
+| Auth internals | [modeling/auth.py](../modeling/auth.py) |
+| API curl examples | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) |
+| Frontend auth flow | [frontend/src/components/AuthPanel.tsx](../frontend/src/components/AuthPanel.tsx) |
+| Admin panel | [frontend/src/components/UserAdminPanel.tsx](../frontend/src/components/UserAdminPanel.tsx) |
 | Deployment steps | [DEPLOYMENT.md](../DEPLOYMENT.md) |
-| Database schema | [docs/DATA_SCHEMA.md](DATA_SCHEMA.md) |
-| Error handling | [docs/ERROR_HANDLING_STRATEGY.md](ERROR_HANDLING_STRATEGY.md) |
+| Data fields | [DATA_SCHEMA.md](DATA_SCHEMA.md) |
 | Monitoring setup | [monitoring/README.md](../monitoring/README.md) |
-| Kafka configuration | [docker-compose.yml](../docker-compose.yml) |
 
----
+## Quick Help
 
-## 🎓 Learning Path
-
-### New to the Project?
-1. Read [README.md](../README.md)
-2. Run quick start: `docker-compose up -d`
-3. Explore http://localhost:3000
-4. Read [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-
-### Want to Deploy?
-1. Read [DEPLOYMENT.md](../DEPLOYMENT.md)
-2. Set up environment in `.env`
-3. Choose deployment option
-4. Follow step-by-step guide
-
-### Want to Develop?
-1. Read [frontend/README.md](../frontend/README.md)
-2. Or read [docs/](./) for backend
-3. Set up local development
-4. Start coding!
-
-### Want to Understand Data?
-1. Read [docs/DATA_SCHEMA.md](DATA_SCHEMA.md)
-2. Check [docs/FLOW_DIAGRAMS.md](FLOW_DIAGRAMS.md)
-3. Run data quality report
-4. Explore MongoDB UI
-
----
-
-## 🆘 Quick Help
-
-**System won't start?**
 ```bash
 docker-compose logs
-docker-compose down -v
-docker-compose up -d
-```
-
-**API not responding?**
-```bash
+docker-compose ps
 curl http://localhost:8000/health
-docker-compose logs api
 ```
 
-**Frontend won't load?**
-```bash
-cat frontend/.env | grep VITE_API_URL
-npm run build --verbose
-```
+If the API returns:
 
-**More help?**
-→ See [DEPLOYMENT.md#troubleshooting](../DEPLOYMENT.md#troubleshooting)
+- `401`: sign in again or provide `Authorization: Bearer <token>`.
+- `403`: the account does not have the required role.
+- `503`: the model artifact is not available yet.
 
----
-
-## 📞 Support Resources
-
-| Issue Type | Resource |
-|------------|----------|
-| General setup | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) |
-| Deployment | [DEPLOYMENT.md](../DEPLOYMENT.md) |
-| API usage | http://localhost:8000/docs |
-| Architecture | [docs/FLOW_DIAGRAMS.md](FLOW_DIAGRAMS.md) |
-| Troubleshooting | [DEPLOYMENT.md#troubleshooting](../DEPLOYMENT.md#troubleshooting) |
-| Data model | [docs/DATA_SCHEMA.md](DATA_SCHEMA.md) |
-
----
-
-## 📝 Version Info
+## Version Info
 
 - **Project**: Real Estate Price Prediction System
 - **Version**: 1.0.0
-- **Status**: Production Ready ✅
-- **Created**: May 1, 2026
-- **Last Updated**: May 1, 2026
-
----
-
-## 🎯 Navigation
-
-- **Back to Top**: [Go to top](#project-index--navigation-guide)
-- **Main README**: [README.md](../README.md)
-- **Quick Reference**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-- **Deployment**: [DEPLOYMENT.md](../DEPLOYMENT.md)
-- **Summary**: [PROJECT_STATUS.md](PROJECT_STATUS.md)
-
----
-
-**Happy coding! 🚀**
+- **Status**: Production-oriented local system with auth/RBAC
+- **Last Updated**: May 31, 2026

@@ -86,6 +86,7 @@ python processing/kafka_to_mongo.py \
 
 **Terminal 3 - Model API**
 ```bash
+$env:AUTH_SECRET_KEY="local-dev-auth-secret-key-change-before-production-12345"
 python -m uvicorn modeling.api:app \
   --host 0.0.0.0 \
   --port 8000 \
@@ -105,6 +106,24 @@ npm run dev
 - **MongoDB Express**: http://localhost:8081
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3001
+
+### Authentication Setup
+
+The API requires bearer tokens for all prediction and model-management endpoints. The first account registered becomes `admin`; later self-registered accounts become `user`.
+
+```bash
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"StrongPass1","full_name":"Admin"}'
+
+TOKEN="<access_token_from_login_or_register>"
+```
+
+Role access:
+
+- `user`: `POST /predict`
+- `manager`: user access plus `GET /model/info` and `POST /predict/batch`
+- `admin`: full access plus user, role, and account status management
 
 ## Docker Deployment
 
@@ -141,8 +160,9 @@ docker-compose down
 # Check API health
 curl http://localhost:8000/health
 
-# Check model info
-curl http://localhost:8000/model/info
+# Check model info as manager/admin
+curl http://localhost:8000/model/info \
+  -H "Authorization: Bearer $TOKEN"
 
 # Check frontend
 curl http://localhost:3000
@@ -153,6 +173,7 @@ curl http://localhost:3000
 ### Pre-deployment Checklist
 
 - [ ] Environment variables configured (`.env`)
+- [ ] Strong `AUTH_SECRET_KEY` configured
 - [ ] Models trained and validated
 - [ ] Database backups configured
 - [ ] CORS origins configured
@@ -280,7 +301,7 @@ Key metrics:
 
 ### Grafana
 
-Access dashboard: http://localhost:3000 (default: admin/admin)
+Access dashboard: http://localhost:3001 (default: admin/admin)
 
 Pre-configured dashboards in `monitoring/grafana/dashboards/`
 
@@ -389,6 +410,17 @@ curl -H "Origin: http://localhost:3000" \
 
 # Verify API_URL in frontend .env
 cat frontend/.env
+```
+
+#### API returns 401 or 403
+```bash
+# 401 means missing, invalid, or expired bearer token.
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"StrongPass1"}'
+
+# 403 means the signed-in account does not have the required role.
+# Promote users from the frontend admin panel or the admin-only role endpoint.
 ```
 
 #### High latency

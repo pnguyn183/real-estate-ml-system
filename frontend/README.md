@@ -1,177 +1,136 @@
 # Real Estate Price Predictor - Frontend
 
-A modern, professional React frontend for the Real Estate Price Prediction system.
+A React + TypeScript frontend for the Real Estate Price Prediction system.
 
 ## Features
 
-✨ **Beautiful UI**
-- Modern design with Tailwind CSS
-- Responsive layout (mobile, tablet, desktop)
-- Glass-morphism effects
-- Smooth animations and transitions
-
-📊 **Prediction Interface**
+**Prediction workspace**
 - Single property prediction form
-- Batch prediction support
-- Real-time results display
-- Model information dashboard
+- Real-time prediction results
+- Role-aware model information dashboard
 
-🔧 **Technical**
-- Built with React 18 & TypeScript
-- Vite for fast development & building
-- Axios for API communication
-- Recharts for data visualization (ready for extension)
+**Authentication and access control**
+- Register and sign in with bearer-token authentication
+- The first registered account becomes `admin`
+- Admin panel for user role and account status management
+
+**Technical**
+- React 18 and TypeScript
+- Vite for development and production builds
+- Axios API client with bearer-token injection
+- Tailwind CSS and Lucide icons
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 16+ or npm 8+
+
+- Node.js 18+ and npm 8+
 - Backend API running on http://localhost:8000
 
 ### Installation
 
 ```bash
-# Install dependencies
 npm install
 
-# Create .env file (copy from .env.example)
-cp .env.example .env
-
-# Update API URL if needed
+# Create .env if needed
 # VITE_API_URL=http://localhost:8000
 ```
 
 ### Development
 
 ```bash
-# Start dev server (runs on http://localhost:3000)
 npm run dev
 ```
+
+The default dev URL is http://localhost:3000.
 
 ### Building
 
 ```bash
-# Build for production
 npm run build
-
-# Preview production build
 npm run preview
 ```
 
 ## Project Structure
 
-```
+```text
 frontend/
-├── public/              # Static assets
 ├── src/
-│   ├── api/            # API client functions
-│   ├── components/     # React components
+│   ├── api/client.ts
+│   ├── components/
+│   │   ├── AuthPanel.tsx
 │   │   ├── Header.tsx
+│   │   ├── ModelInfo.tsx
 │   │   ├── PredictionForm.tsx
 │   │   ├── ResultsDisplay.tsx
 │   │   ├── StatsCard.tsx
-│   │   └── ModelInfo.tsx
-│   ├── App.tsx         # Main app component
-│   ├── main.tsx        # Entry point
-│   └── index.css       # Tailwind styles
-├── index.html          # HTML template
-├── vite.config.ts      # Vite configuration
-├── tsconfig.json       # TypeScript configuration
-├── tailwind.config.js  # Tailwind CSS configuration
-└── package.json        # Dependencies
+│   │   └── UserAdminPanel.tsx
+│   ├── App.tsx
+│   ├── main.tsx
+│   └── index.css
+├── index.html
+├── package.json
+├── tailwind.config.js
+├── tsconfig.json
+└── vite.config.ts
 ```
 
 ## API Integration
 
-The frontend communicates with the backend API at `http://localhost:8000`. 
+The frontend communicates with the backend API at `VITE_API_URL`, defaulting to `http://localhost:8000`.
 
-### Available Endpoints
+Available endpoints:
 
-- `GET /health` - Check API health
-- `GET /model/info` - Get model information
-- `POST /predict` - Predict for single property
-- `POST /predict/batch` - Predict for multiple properties
+- `GET /health` - Public API health check
+- `POST /auth/register` - Create an account; first account is `admin`
+- `POST /auth/login` - Sign in and receive a bearer token
+- `GET /auth/me` - Restore the current authenticated session
+- `GET /model/info` - Model information for `manager` and `admin`
+- `POST /predict` - Single prediction for `user`, `manager`, and `admin`
+- `POST /predict/batch` - Batch prediction for `manager` and `admin`
+- `GET /auth/users`, `PATCH /auth/users/{id}/role`, `PATCH /auth/users/{id}/status` - Admin-only access control
 
-See `/src/api/client.ts` for implementation details.
+See `src/api/client.ts` for request helpers and token storage.
 
-## Styling
+## Role Behavior
 
-This project uses **Tailwind CSS** for styling. Custom configurations can be found in `tailwind.config.js`.
+- `user`: can submit single predictions.
+- `manager`: can submit single predictions, view model info, and call batch prediction APIs.
+- `admin`: can do everything and manage accounts.
 
-### Color Scheme
-- Primary: Blue/Cyan gradient
-- Accent: Various gradient colors
-- Background: Gradient backgrounds with glassmorphism effects
+The UI hides unavailable controls, but permissions are enforced by the API.
 
-## Deployment
+## Environment Variables
 
-### Docker
-
-```dockerfile
-FROM node:18-alpine as builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+```bash
+VITE_API_URL=http://localhost:8000
 ```
-
-### Environment Variables
-
-Create a `.env` file based on `.env.example`:
-
-```
-VITE_API_URL=http://your-api-host:8000
-```
-
-## Browser Support
-
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
-
-## Performance
-
-- ⚡ Fast development with Vite
-- 📦 Optimized production builds
-- 🎯 Tree-shaking for minimal bundle size
-- 💨 CSS purging with Tailwind
 
 ## Troubleshooting
 
 ### API Connection Issues
 
-If you see "Failed to fetch model info" error:
+1. Check the backend: `curl http://localhost:8000/health`
+2. Verify `VITE_API_URL` in `.env`
+3. Check backend CORS origins include the frontend URL
 
-1. Check if backend is running: `curl http://localhost:8000/health`
-2. Check CORS settings in backend
-3. Verify `VITE_API_URL` in `.env`
+### Sign-in or Permission Issues
+
+1. Register the first account to bootstrap `admin`
+2. Use a password with at least 8 characters, one uppercase letter, one lowercase letter, and one number
+3. Ask an admin to promote accounts that need `manager` access
+4. Sign in again if the API returns `401`
 
 ### Build Issues
 
 ```bash
-# Clear cache and reinstall
 rm -rf node_modules package-lock.json
 npm install
 npm run build
 ```
 
+`npm run lint` currently requires an ESLint config file before it can run.
+
 ## License
 
-Same as parent project
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Submit a pull request
-
-## Support
-
-For issues or questions, please open an issue in the main repository.
+Same as parent project.

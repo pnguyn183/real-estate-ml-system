@@ -12,11 +12,10 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,8 +23,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
+    from modeling.auth import ROLES, AuthService, Role, UserRecord, build_auth_service, require_minimum_role
     from modeling.price_model import RealEstatePriceModel
 except ImportError:
+    from auth import ROLES, AuthService, Role, UserRecord, build_auth_service, require_minimum_role
     from price_model import RealEstatePriceModel
 
 
@@ -42,6 +43,11 @@ logger = logging.getLogger(__name__)
 _model: RealEstatePriceModel | None = None
 _model_mtime: float | None = None
 _model_metadata: Dict[str, Any] | None = None
+_auth_service: AuthService = build_auth_service()
+_login_attempts: dict[str, list[float]] = {}
+
+LOGIN_ATTEMPT_LIMIT = int(os.environ.get("LOGIN_ATTEMPT_LIMIT", "5"))
+LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
 
 
 # ============================================================================
@@ -132,6 +138,47 @@ class ModelInfo(BaseModel):
     last_update: Optional[str] = Field(None, description="Last model update time")
 
 
+class UserPublic(BaseModel):
+    """Safe user profile returned to clients"""
+    id: str
+    email: str
+    full_name: str
+    role: Role
+    is_active: bool
+    created_at: str
+    updated_at: str
+    last_login_at: Optional[str] = None
+
+
+class RegisterRequest(BaseModel):
+    """New account registration"""
+    email: str = Field(..., min_length=5, max_length=254)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str = Field("", max_length=120)
+
+
+class LoginRequest(BaseModel):
+    """Login credentials"""
+    email: str = Field(..., min_length=5, max_length=254)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class AuthResponse(BaseModel):
+    """Bearer token response"""
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserPublic
+
+
+class RoleUpdateRequest(BaseModel):
+    role: Role
+
+
+class UserStatusRequest(BaseModel):
+    is_active: bool
+
+
 # ============================================================================
 # Model Loading and Management
 # ============================================================================
@@ -168,6 +215,62 @@ def get_model() -> RealEstatePriceModel:
 
 
 # ============================================================================
+# Authentication Helpers
+# ============================================================================
+
+def user_response(user: UserRecord) -> UserPublic:
+    """Convert internal user record to a safe response model."""
+    return UserPublic(**user.public())
+
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Authorization header")
+    return token
+
+
+def current_user(token: str = Depends(get_bearer_token)) -> UserRecord:
+    return _auth_service.user_from_token(token)
+
+
+def require_roles(*roles: Role) -> Callable[[UserRecord], UserRecord]:
+    def dependency(user: UserRecord = Depends(current_user)) -> UserRecord:
+        require_minimum_role(user, roles)
+        return user
+
+    return dependency
+
+
+def login_rate_limit_key(request: Request, email: str) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{email.strip().lower()}"
+
+
+def assert_login_allowed(request: Request, email: str) -> str:
+    key = login_rate_limit_key(request, email)
+    now = time.time()
+    attempts = [item for item in _login_attempts.get(key, []) if now - item < LOGIN_ATTEMPT_WINDOW_SECONDS]
+    _login_attempts[key] = attempts
+    if len(attempts) >= LOGIN_ATTEMPT_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later.",
+        )
+    return key
+
+
+def record_failed_login(key: str) -> None:
+    _login_attempts.setdefault(key, []).append(time.time())
+
+
+def clear_login_attempts(key: str) -> None:
+    _login_attempts.pop(key, None)
+
+
+# ============================================================================
 # FastAPI Application
 # ============================================================================
 
@@ -180,16 +283,96 @@ app = FastAPI(
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")],
+    allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
 
 
 # ============================================================================
 # API Endpoints
 # ============================================================================
+
+@app.post("/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED, tags=["Auth"])
+async def register_account(request: RegisterRequest):
+    """Register a new account. The first account becomes admin; later accounts become user."""
+    user = _auth_service.register(request.email, request.password, request.full_name)
+    token = _auth_service.create_access_token(user)
+    return AuthResponse(
+        access_token=token,
+        expires_in=_auth_service.token_expire_seconds,
+        user=user_response(user),
+    )
+
+
+@app.post("/auth/login", response_model=AuthResponse, tags=["Auth"])
+async def login(request: LoginRequest, http_request: Request):
+    """Authenticate and issue a short-lived bearer token."""
+    rate_key = assert_login_allowed(http_request, request.email)
+    try:
+        user = _auth_service.authenticate(request.email, request.password)
+    except HTTPException:
+        record_failed_login(rate_key)
+        raise
+    clear_login_attempts(rate_key)
+    token = _auth_service.create_access_token(user)
+    return AuthResponse(
+        access_token=token,
+        expires_in=_auth_service.token_expire_seconds,
+        user=user_response(user),
+    )
+
+
+@app.get("/auth/me", response_model=UserPublic, tags=["Auth"])
+async def get_current_profile(user: UserRecord = Depends(current_user)):
+    """Return the authenticated user's profile."""
+    return user_response(user)
+
+
+@app.get("/auth/roles", tags=["Auth"])
+async def get_roles(user: UserRecord = Depends(current_user)):
+    """Return available roles for authenticated users."""
+    return {"roles": list(ROLES), "current_role": user.role}
+
+
+@app.get("/auth/users", response_model=List[UserPublic], tags=["Admin"])
+async def list_users(user: UserRecord = Depends(require_roles("admin"))):
+    """List users. Admin only."""
+    return [user_response(item) for item in _auth_service.list_users()]
+
+
+@app.patch("/auth/users/{user_id}/role", response_model=UserPublic, tags=["Admin"])
+async def update_user_role(
+    user_id: str,
+    request: RoleUpdateRequest,
+    user: UserRecord = Depends(require_roles("admin")),
+):
+    """Change a user's role. Admin only."""
+    updated = _auth_service.update_user_role(user_id, request.role, user)
+    return user_response(updated)
+
+
+@app.patch("/auth/users/{user_id}/status", response_model=UserPublic, tags=["Admin"])
+async def update_user_status(
+    user_id: str,
+    request: UserStatusRequest,
+    user: UserRecord = Depends(require_roles("admin")),
+):
+    """Enable or disable a user. Admin only."""
+    updated = _auth_service.set_user_active(user_id, request.is_active, user)
+    return user_response(updated)
+
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
@@ -218,8 +401,8 @@ async def health_check():
 
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])
-async def model_info():
-    """Get current model information"""
+async def model_info(user: UserRecord = Depends(require_roles("manager", "admin"))):
+    """Get current model information. Manager or admin only."""
     try:
         if not MODEL_PATH.exists():
             raise HTTPException(status_code=503, detail="Model not available")
@@ -241,8 +424,11 @@ async def model_info():
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Predictions"])
-async def predict_single(property: PropertyFeatures):
-    """Predict price for a single property"""
+async def predict_single(
+    property: PropertyFeatures,
+    user: UserRecord = Depends(require_roles("user", "manager", "admin")),
+):
+    """Predict price for a single property. Any authenticated active user."""
     try:
         if not MODEL_PATH.exists():
             raise HTTPException(status_code=503, detail="Model not available")
@@ -285,8 +471,11 @@ async def predict_single(property: PropertyFeatures):
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Predictions"])
-async def predict_batch(request: PredictionRequest):
-    """Predict prices for multiple properties (batch)"""
+async def predict_batch(
+    request: PredictionRequest,
+    user: UserRecord = Depends(require_roles("manager", "admin")),
+):
+    """Predict prices for multiple properties. Manager or admin only."""
     try:
         if not MODEL_PATH.exists():
             raise HTTPException(status_code=503, detail="Model not available")

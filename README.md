@@ -125,7 +125,31 @@ http://localhost:8000
 ```
 
 ### Authentication
-Currently open (consider adding API keys in production)
+The API uses bearer token authentication with role-based access control.
+
+- `POST /auth/register` creates an account. The first registered account is bootstrapped as `admin`; later self-registrations are `user`.
+- `POST /auth/login` returns an access token.
+- `GET /auth/me` returns the current profile.
+- `GET /auth/users`, `PATCH /auth/users/{id}/role`, and `PATCH /auth/users/{id}/status` are admin-only.
+
+Role access:
+
+- `user`: single property predictions via `POST /predict`.
+- `manager`: `user` access plus `GET /model/info` and `POST /predict/batch`.
+- `admin`: full access, including user and role management.
+
+Set a strong `AUTH_SECRET_KEY` in production. Passwords are stored as salted PBKDF2 hashes and the default local user store is `artifacts/auth/users.json`.
+
+Register and store a token:
+
+```bash
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"StrongPass1","full_name":"Admin"}'
+
+# For later requests:
+TOKEN="<access_token_from_login_or_register>"
+```
 
 ### Endpoints
 
@@ -146,12 +170,14 @@ Response:
 #### Model Information
 ```bash
 GET /model/info
+Authorization: Bearer <manager-or-admin-token>
 ```
 
 #### Single Prediction
 ```bash
 POST /predict
 Content-Type: application/json
+Authorization: Bearer <user-manager-or-admin-token>
 
 {
   "area_m2": 100,
@@ -167,6 +193,7 @@ Content-Type: application/json
 ```bash
 POST /predict/batch
 Content-Type: application/json
+Authorization: Bearer <manager-or-admin-token>
 
 {
   "properties": [
