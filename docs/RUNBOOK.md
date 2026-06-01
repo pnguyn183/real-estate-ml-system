@@ -20,6 +20,42 @@ Endpoint chính:
 - Trainer metrics: http://localhost:8001/metrics
 - Legacy predictor health: http://localhost:8002/health
 
+## Cào Dữ Liệu Lần Đầu và Định Kỳ
+
+Scraper hỗ trợ hai cấu hình riêng:
+
+- `SCRAPE_INITIAL_*`: dùng đúng một lần khi container scraper khởi động.
+- `SCRAPE_*`: dùng cho các lần cào định kỳ sau đó.
+- Initial và periodic dùng state file riêng để lần cào lớn không làm vòng định kỳ bị nhảy qua các trang đầu.
+
+Ví dụ `.env` để lần đầu cào lớn, sau đó cào nhẹ mỗi 30 phút:
+
+```bash
+SCRAPE_INITIAL_LIMIT=5000
+SCRAPE_INITIAL_MAX_PAGES=200
+SCRAPE_INITIAL_TIMEOUT=1800
+SCRAPE_INITIAL_FRESH_START=true
+SCRAPE_INITIAL_STATE_FILE=runtime/scrape_state/producer_initial_state.json
+
+SCRAPE_LIMIT=300
+SCRAPE_MAX_PAGES=5
+SCRAPE_INTERVAL=1800
+SCRAPE_TIMEOUT=300
+SCRAPE_FRESH_START=true
+```
+
+Sau khi đổi `.env`, vì code scraper nằm trong image, nếu đã sửa code thì build lại scraper:
+
+```bash
+docker compose up -d --build scraper
+```
+
+Nếu chỉ đổi giá trị `.env` mà không sửa code, recreate là đủ:
+
+```bash
+docker compose up -d --force-recreate scraper
+```
+
 ## Kiểm Tra Nhanh
 
 ```bash

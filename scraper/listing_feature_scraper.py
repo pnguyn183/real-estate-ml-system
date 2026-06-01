@@ -140,10 +140,11 @@ def build_list_url(page: int, config: ScrapeConfig) -> str:
     query = {}
     if config.use_verified_filter:
         query.update(DEFAULT_QUERY)
-    query["page"] = str(page)
     if config.extra_query:
         query.update({key: str(value) for key, value in config.extra_query.items() if value is not None})
-    return f"{BASE_URL}{DEFAULT_LIST_PATH}?{urlencode(query)}"
+    page_path = DEFAULT_LIST_PATH if page <= 1 else f"{DEFAULT_LIST_PATH}/p{page}"
+    query_string = urlencode(query)
+    return f"{BASE_URL}{page_path}" + (f"?{query_string}" if query_string else "")
 
 
 def extract_listing_links(list_html: str) -> List[str]:
