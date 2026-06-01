@@ -8,7 +8,7 @@ from pathlib import Path
 
 from confluent_kafka import Producer
 
-from listing_feature_scraper import ScrapeConfig, scrape_listing_records
+from listing_feature_scraper import ScrapeConfig, iter_listing_records
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -56,16 +56,18 @@ def main() -> None:
         use_verified_filter=not args.include_unverified,
         state_file=args.state_file,
     )
-    records = scrape_listing_records(config)
-    logger.info("Scraped %s verified listings", len(records))
-
-    for record in records:
+    published_count = 0
+    for record in iter_listing_records(config):
         payload = json.dumps(record, ensure_ascii=False).encode("utf-8")
         producer.produce(args.topic, key=record["url"], value=payload, callback=delivery_report)
         producer.poll(0)
+        published_count += 1
+        if published_count % 20 == 0:
+            producer.flush()
+            logger.info("Published %s messages to topic %s so far", published_count, args.topic)
 
     producer.flush()
-    logger.info("Published %s messages to topic %s", len(records), args.topic)
+    logger.info("Published %s messages to topic %s", published_count, args.topic)
 
 
 if __name__ == "__main__":
