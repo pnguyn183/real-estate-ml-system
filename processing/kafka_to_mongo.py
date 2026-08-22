@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+"""
+Module: processing/kafka_to_mongo.py
+Purpose: Consume raw scraped listings from Kafka, normalize/validate them, and upsert
+documents into MongoDB. Publishes cleaned feature messages and writes DLQ/invalid records.
+Algorithms/techniques: localized number parsing, price/unit normalization, idempotent upsert by URL,
+dead-letter handling, graceful shutdown via signals, and Prometheus instrumentation.
+Inputs: JSON messages from Kafka topic (raw listing fields).
+Outputs: MongoDB collections (`listings_raw`, `training_features`, `invalid_records`, `dlq_raw`) and optional Kafka clean topic.
+"""
+
 import argparse
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -19,6 +30,7 @@ from pymongo import MongoClient
 import signal
 import threading
 from utils.logging_utils import log_structured, get_logger
+from processing.price_anomaly import PriceAnomalyConfig, PriceAnomalyDetector, safe_price_per_m2
 from utils.metrics import (
     start_prometheus_server,
     kafka_messages_consumed,
@@ -171,6 +183,8 @@ def normalize_listing(raw: Dict[str, Any]) -> Dict[str, Any]:
     front_width_m = parse_number(raw.get("front_width_text"))
     road_width_m = parse_number(raw.get("road_width_text"))
     price_vnd, price_per_m2_vnd = parse_price_to_vnd(raw.get("price_text"), area_m2=area_m2)
+    # Keep the existing price parser as the source of units, then reject NaN/Infinity/invalid divisions.
+    price_per_m2_vnd = safe_price_per_m2(price_vnd, area_m2)
 
     normalized = {
         "url": raw.get("url"),
@@ -245,9 +259,11 @@ def validate_normalized_record(record: Dict[str, Any]) -> tuple[bool, list[str]]
     pv = record.get("price_vnd")
     if pv is not None:
         try:
-            if pv <= 0:
+            if not isinstance(pv, (int, float)) or isinstance(pv, bool) or not math.isfinite(float(pv)):
+                errors.append("price_invalid")
+            elif pv <= 0:
                 errors.append("price_non_positive")
-            if pv > 500_000_000_000:
+            elif pv > 500_000_000_000:
                 errors.append("price_too_large")
         except Exception:
             errors.append("price_invalid")
@@ -255,9 +271,11 @@ def validate_normalized_record(record: Dict[str, Any]) -> tuple[bool, list[str]]
     area = record.get("area_m2")
     if area is not None:
         try:
-            if area <= 0:
+            if not isinstance(area, (int, float)) or isinstance(area, bool) or not math.isfinite(float(area)):
+                errors.append("area_invalid")
+            elif area <= 0:
                 errors.append("area_non_positive")
-            if area > 10000:
+            elif area > 10000:
                 errors.append("area_too_large")
         except Exception:
             errors.append("area_invalid")
@@ -301,6 +319,8 @@ class KafkaToMongoPipeline:
         self.feature_collection = self.db["training_features"]
         self.invalid_collection = self.db["invalid_records"]
         self.dlq_collection = self.db["dlq_raw"]
+        self.anomaly_threshold_collection = self.db["price_anomaly_thresholds"]
+        self.price_anomaly_detector = PriceAnomalyDetector(PriceAnomalyConfig.from_env())
         self._logger = get_logger(__name__)
         self._ensure_indexes()
 
@@ -314,6 +334,10 @@ class KafkaToMongoPipeline:
         self.feature_collection.create_index("district_slug")
         self.feature_collection.create_index("is_model_candidate")
         self.feature_collection.create_index("feature_coverage_score")
+        self.feature_collection.create_index(
+            [("province_slug", 1), ("district_slug", 1), ("property_type", 1), ("price_per_m2_vnd", 1)]
+        )
+        self.anomaly_threshold_collection.create_index([("config_id", 1), ("group_key", 1)], unique=True)
         self.db["offset_checkpoint"].create_index(
             [("group_id", 1), ("topic", 1), ("partition", 1)],
             unique=True,
@@ -359,6 +383,36 @@ class KafkaToMongoPipeline:
                 kafka_messages_failed.inc()
             processing_duration.observe(time.time() - start_time)
             return normalized
+
+        # Build thresholds from historical features before this listing is upserted, then flag the Silver record.
+        try:
+            refreshed = self.price_anomaly_detector.refresh_if_needed(
+                self.feature_collection,
+                self.anomaly_threshold_collection,
+                exclude_url=normalized.get("url"),
+            )
+            self.price_anomaly_detector.annotate(normalized)
+            if refreshed or normalized.get("is_price_anomaly"):
+                log_structured(
+                    logging.INFO,
+                    "price_anomaly_detection_result",
+                    url=normalized.get("url"),
+                    refreshed_baseline=refreshed,
+                    is_price_anomaly=normalized.get("is_price_anomaly"),
+                    anomaly_type=normalized.get("price_anomaly_type"),
+                    anomaly_status=normalized.get("price_anomaly_status"),
+                    anomaly_reason=normalized.get("price_anomaly_reason"),
+                )
+        except Exception as exc:
+            # Detection must not stop ingestion; preserve an explicit audit state rather than silently omitting it.
+            log_structured(logging.ERROR, "price_anomaly_detection_failed", url=normalized.get("url"), error=str(exc))
+            normalized.update(
+                {
+                    "is_price_anomaly": False,
+                    "price_anomaly_status": "UNAVAILABLE",
+                    "price_anomaly_reason": "detector_error",
+                }
+            )
 
         # Store normalized features
         try:
@@ -438,6 +492,7 @@ class KafkaToMongoPipeline:
             self.close()
 
     def close(self) -> None:
+        log_structured(logging.INFO, "price_anomaly_detection_summary", **self.price_anomaly_detector.metrics())
         self.clean_producer.flush()
         self.consumer.close()
         self.mongo_client.close()

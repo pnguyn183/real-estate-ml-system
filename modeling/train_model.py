@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Module: modeling/train_model.py
+Purpose: CLI trainer that loads normalized feature records from MongoDB (or JSON),
+trains the `RealEstatePriceModel`, saves model artifacts and metrics, and exposes Prometheus metrics for training runs.
+Notes: uses `MIN_RECORDS_FOR_TRAINING` env var, writes metrics to `artifacts` by default.
+"""
+
 import argparse
 import json
 import logging
@@ -19,6 +26,7 @@ try:
 except ImportError:
     from price_model import RealEstatePriceModel
 from utils.metrics import start_prometheus_server, update_metrics_from_result, model_train_duration
+from processing.price_anomaly import add_anomaly_training_filter
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -29,7 +37,8 @@ def load_records_from_mongo(mongo_uri: str, mongo_db: str, collection_name: str)
     client = MongoClient(mongo_uri)
     try:
         collection = client[mongo_db][collection_name]
-        return list(collection.find({"price_vnd": {"$gt": 0}}, {"_id": 0}))
+        query = add_anomaly_training_filter({"price_vnd": {"$gt": 0}})
+        return list(collection.find(query, {"_id": 0}))
     finally:
         client.close()
 

@@ -7,8 +7,11 @@ from pathlib import Path
 import pandas as pd
 from pymongo import MongoClient
 
+# Export training candidate documents from MongoDB into dataset files
+
 
 def main() -> None:
+    # CLI entrypoint: query MongoDB and write a training dataset file
     parser = argparse.ArgumentParser(description="Export model candidate records from MongoDB to a training dataset file.")
     parser.add_argument("--mongo-uri", default="mongodb://localhost:27017/")
     parser.add_argument("--mongo-db", default="real_estate_db")

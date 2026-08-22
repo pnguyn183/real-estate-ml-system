@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Price model training pipeline and helpers (numeric, categorical, text, ensemble)
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+from processing.price_anomaly import get_anomaly_training_policy
 
 
 NUMERIC_FEATURES = [
@@ -50,16 +52,19 @@ DEFAULT_MIN_TRAINING_RECORDS = 200
 
 
 def flatten_text_column(values):
+    # Flatten transformer column output into a 1-D pandas Series
     if hasattr(values, "squeeze"):
         values = values.squeeze(axis=1)
     return pd.Series(values).fillna("")
 
 
 def to_dense_matrix(values):
+    # Convert sparse matrix outputs to dense ndarray when needed
     return values.toarray() if hasattr(values, "toarray") else values
 
 
 def build_feature_frame(records: Iterable[Dict[str, Any]]) -> pd.DataFrame:
+    # Build DataFrame and ensure `text_features` is present by concatenating key fields
     rows = []
     for record in records:
         row = dict(record)
@@ -80,6 +85,7 @@ def build_feature_frame(records: Iterable[Dict[str, Any]]) -> pd.DataFrame:
 
 
 def build_regression_pipeline() -> Pipeline:
+    # Construct sklearn Pipeline: numeric, categorical, text preprocessing + ensemble regressor
     numeric_pipeline = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="median")),
@@ -163,11 +169,14 @@ class RealEstatePriceModel:
         self.metadata = metadata or {}
 
     def train(self, records: Iterable[Dict[str, Any]], model_path: str, metrics_path: str | None = None) -> TrainResult:
+        # Train model pipeline, compute metrics, and save versioned artifacts
         frame = build_feature_frame(records)
         if frame.empty or TARGET not in frame.columns:
             raise ValueError("Training data must include records with price_vnd.")
         if "is_model_candidate" in frame.columns:
             frame = frame[frame["is_model_candidate"].fillna(True)]
+        if get_anomaly_training_policy() == "EXCLUDE" and "is_price_anomaly" in frame.columns:
+            frame = frame[~frame["is_price_anomaly"].fillna(False)]
         frame = frame[frame[TARGET].notna() & (frame[TARGET] > 0)]
 
         min_records = int(os.environ.get("MIN_RECORDS_FOR_TRAINING", DEFAULT_MIN_TRAINING_RECORDS))

@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from modeling.price_model import RealEstatePriceModel
+from processing.price_anomaly import add_anomaly_training_filter
 from utils.metrics import (
     model_train_duration,
     start_prometheus_server,
@@ -39,7 +40,8 @@ def check_training_data():
     try:
         client = MongoClient(MONGO_URI)
         db = client[MONGO_DB]
-        count = db["training_features"].count_documents({"is_model_candidate": True, "has_target_price": True})
+        query = add_anomaly_training_filter({"is_model_candidate": True, "has_target_price": True})
+        count = db["training_features"].count_documents(query)
         logger.info(f"Found {count} training candidates")
         return count >= MIN_RECORDS
     except Exception as exc:
@@ -61,7 +63,7 @@ def run_trainer():
         try:
             records = list(
                 client[MONGO_DB][MONGO_FEATURE_COLLECTION].find(
-                    {"price_vnd": {"$gt": 0}, "is_model_candidate": True},
+                    add_anomaly_training_filter({"price_vnd": {"$gt": 0}, "is_model_candidate": True}),
                     {"_id": 0},
                 )
             )

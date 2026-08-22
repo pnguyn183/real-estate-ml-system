@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""
+Module: scraper/listing_feature_scraper.py
+Purpose: Crawl Batdongsan listing pages, extract listing details and normalize raw HTML into
+structured records suitable for the Kafka producer. Uses `curl_cffi` for HTTP and `parsel` for CSS selection.
+Key behaviors: retry/backoff, persist resume state to `runtime/scrape_state`, basic dedup of recently seen URLs.
+Inputs: list pages and detail pages of the source website.
+Outputs: Python dict records describing a single listing per yield.
+"""
+
 import json
 import re
 import time

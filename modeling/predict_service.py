@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Module: modeling/predict_service.py
+Purpose: Lightweight HTTP predictor service exposing `/predict` and `/health` endpoints.
+This is a simple process-based alternative to the FastAPI server and loads joblib model artifacts.
+Note: The service intentionally performs no authentication and is intended for internal/private use only.
+"""
+
 import json
 import logging
 import os

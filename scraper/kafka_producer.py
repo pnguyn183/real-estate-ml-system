@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+Module: scraper/kafka_producer.py
+Purpose: Entrypoint for the scraper Kafka producer. Iterates listing records from
+`iter_listing_records` and publishes JSON-encoded messages to the configured Kafka topic.
+Behavior: flushes periodically, supports resuming via state file, configurable delays and limits.
+"""
+
 import argparse
 import json
 import logging

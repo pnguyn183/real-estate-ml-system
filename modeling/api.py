@@ -184,7 +184,13 @@ class UserStatusRequest(BaseModel):
 # ============================================================================
 
 def get_model() -> RealEstatePriceModel:
-    """Load model with caching and reload on file change"""
+    """Load model with caching and reload on file change.
+
+    Caches an in-memory `RealEstatePriceModel` instance and reloads it when the
+    underlying joblib file's modification time changes. Also attempts to load
+    the most recent metadata JSON next to the model file.
+    Raises FileNotFoundError if the model artifact is missing.
+    """
     global _model, _model_mtime, _model_metadata
     
     if not MODEL_PATH.exists():
@@ -224,6 +230,11 @@ def user_response(user: UserRecord) -> UserPublic:
 
 
 def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    """Extract and validate the bearer token from the `Authorization` header.
+
+    This dependency is used by route handlers to obtain the raw token string.
+    Raises 401 if header is missing or malformed.
+    """
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
     scheme, _, token = authorization.partition(" ")
@@ -233,11 +244,21 @@ def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
 
 
 def current_user(token: str = Depends(get_bearer_token)) -> UserRecord:
+    """Resolve a `UserRecord` from the provided bearer token.
+
+    Delegates to the injected `AuthService`. Used as a FastAPI dependency to
+    provide the authenticated user object to route handlers.
+    """
     return _auth_service.user_from_token(token)
 
 
 def require_roles(*roles: Role) -> Callable[[UserRecord], UserRecord]:
     def dependency(user: UserRecord = Depends(current_user)) -> UserRecord:
+        """Dependency factory that enforces the given minimum roles.
+
+        Example usage in route: `Depends(require_roles('manager'))`.
+        Raises 403 if the user's role is not in the allowed set.
+        """
         require_minimum_role(user, roles)
         return user
 
@@ -250,6 +271,11 @@ def login_rate_limit_key(request: Request, email: str) -> str:
 
 
 def assert_login_allowed(request: Request, email: str) -> str:
+    """Check simple in-memory rate limit for login attempts by (host,email).
+
+    Tracks recent attempts in `_login_attempts` and raises HTTP 429 when the
+    configured limit is exceeded. Returns the rate-limit key on success.
+    """
     key = login_rate_limit_key(request, email)
     now = time.time()
     attempts = [item for item in _login_attempts.get(key, []) if now - item < LOGIN_ATTEMPT_WINDOW_SECONDS]

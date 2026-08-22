@@ -1,3 +1,10 @@
+/*
+Module: frontend/src/api/client.ts
+Purpose: Thin API client for the frontend. Exposes typed functions for auth, health, model info and prediction.
+Notes: Stores token in `localStorage` and attaches `Authorization: Bearer` header for authenticated requests.
+Errors are normalized via `handleApiError` to friendly strings for UI display.
+*/
+
 import axios, { AxiosInstance } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';

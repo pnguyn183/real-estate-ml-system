@@ -1,3 +1,9 @@
+"""
+Module: utils/metrics.py
+Purpose: Define Prometheus metrics used across processor/trainer/API and helper to start the metrics HTTP server.
+Metrics include counters/gauges for Kafka consumption, DB writes, processing durations, and trainer metrics.
+"""
+
 import logging
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
