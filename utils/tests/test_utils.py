@@ -23,6 +23,8 @@ def test_normalize_listing():
     assert norm["area_m2"] == 100
     assert norm["price_vnd"] == 2_000_000_000
     assert norm["url"] == "abc"
+    assert norm["geo_coordinate_status"] == "MISSING"
+    assert len(norm["text_embedding"]) == 32
 
 
 def test_validate_normalized_record():
@@ -36,3 +38,8 @@ def test_validate_normalized_record():
     assert "missing_url" in errors2
     assert "price_non_positive" in errors2
     assert "area_non_positive" in errors2
+
+    extreme = {"url": "huge", "price_vnd": 600_000_000_000, "area_m2": 100, "price_per_m2_vnd": 6_000_000_000}
+    valid3, errors3 = validate_normalized_record(extreme)
+    assert not valid3
+    assert "price_too_large" in errors3

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
 def log_structured(level: int, message: str, **kwargs: Any) -> None:
     payload = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "level": logging.getLevelName(level),
         "message": message,
     }

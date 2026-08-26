@@ -34,6 +34,8 @@
   "verified": 1,
   "source": "batdongsan",
   "location_slug": "...-tai-ha-noi",
+  "latitude": 21.0285,
+  "longitude": 105.8542,
   "scraped_at": "2024-04-29T10:30:00Z"
 }
 ```
@@ -92,8 +94,31 @@
   "road_width_m": 10.0,
   "price_vnd": 1500000000,
   "price_per_m2_vnd": 15000000,
+  "latitude": 21.0285,
+  "longitude": 105.8542,
+  "geo_grid_2dp": "21.03:105.85",
+  "geo_coordinate_status": "VALID",
   "has_target_price": true,
   "text_features": "Nhà đẹp | apartment | ha-noi | ...",
+  "text_embedding": [0.0, 0.12],
+  "text_embedding_provider": "local_hashing_v1",
+  "text_embedding_dimension": 32,
+  "text_content_hash": "sha256...",
+  "extracted_bedrooms": 3,
+  "extracted_bathrooms": null,
+  "extracted_direction": null,
+  "extracted_furnishing": null,
+  "extracted_legal_status": "redbook",
+  "extracted_amenity_count": 0,
+  "listing_review_status": "NORMAL",
+  "is_anomaly": false,
+  "anomaly_type": null,
+  "anomaly_types": [],
+  "anomaly_score": null,
+  "anomaly_reason": null,
+  "detection_method": "none",
+  "detected_at": "2024-04-29T10:35:00Z",
+  "llm_review_status": "SKIPPED",
   "source": "batdongsan_verified",
   "scraped_at": "2024-04-29T10:30:00Z",
   "updated_at": "2024-04-29T10:35:00Z",
@@ -167,6 +192,14 @@ Document structure: Same as real_estate_features Kafka topic
 | Feature | Type | Example |
 |---------|------|---------|
 | text_features | string | "Nhà đẹp \| apartment \| ha-noi \| ... " (pipe-separated) |
+
+### Optional geographic and enriched-text features
+
+- `latitude`/`longitude` are accepted only when supplied by an upstream source and within WGS84 bounds. The current scraper does not produce them; missing coordinates remain null with `geo_coordinate_status=MISSING`.
+- `geo_grid_2dp` is a non-target-derived, two-decimal-degree grid key. It is null without valid coordinates. No distance, geocoding, spatial cluster or local target-price statistic is fabricated from location slugs.
+- `text_embedding` is a deterministic 32-dimensional local hashing vector built from listing text. Ingestion caches it by SHA-256 text hash in a local SQLite cache. It makes no API request and no secret is required.
+- Structured text fields are populated only when their pattern is explicitly present in title/description/metadata. They do not overwrite scraper-provided structural fields.
+- `listing_review_status` is `NORMAL`, `SUSPICIOUS`, or `INVALID`. Raw listings are retained in all cases; `llm_review_status` is `DISABLED` unless an optional provider is explicitly configured.
 
 ### Target Variable
 | Feature | Type | Range | Unit |

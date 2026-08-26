@@ -69,6 +69,12 @@ Lựa chọn này ưu tiên tránh false positive: luxury, waterfront, commercia
 
 Record `FLAGGED` vẫn được publish vào `real_estate_features` và lưu Mongo để review/audit. Repository chưa có listing-analytics endpoint, nên anomaly metadata không được đưa vào FastAPI prediction response; không tạo API riêng không cần thiết.
 
+## Unified review status and optional LLM review
+
+Sau bước validation/IQR, processor ghi schema audit chung: `listing_review_status` (`NORMAL`, `SUSPICIOUS`, `INVALID`), `is_anomaly`, `anomaly_type`/`anomaly_types`, `anomaly_score`, `anomaly_reason`, `detection_method`, và `detected_at`. Validation error là `DATA_QUALITY`/`INVALID`; fingerprint lặp lại là `DUPLICATE`/`SUSPICIOUS`; IQR flag là `PRICE`/`SUSPICIOUS`. Không trạng thái nào tự xóa record hoặc thay đổi `price_vnd`.
+
+`processing/llm_review.py` chỉ được gọi sau khi record đã là `SUSPICIOUS`. Mặc định `LLM_REVIEW_ENABLED=false`, nên không có network/API call. Một provider tương lai phải trả đúng JSON schema đã validate; response malformed/timeout trở thành `llm_review_status=UNAVAILABLE` trong khi kết quả deterministic vẫn giữ nguyên. LLM không được phép thay đổi ground-truth price.
+
 ## Configuration
 
 | Environment variable | Default | Mô tả |

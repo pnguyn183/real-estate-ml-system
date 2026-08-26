@@ -60,7 +60,7 @@ def test_normal_high_low_and_explainable_iqr_metadata():
 
 @pytest.mark.parametrize(
     "price,area",
-    [(None, 100), (1_000_000_000, None), (1_000_000_000, 0), (-1, 100), (float("nan"), 100), (float("inf"), 100)],
+    [(None, 100), (0, 100), (1_000_000_000, None), (1_000_000_000, 0), (-1, 100), (float("nan"), 100), (float("inf"), 100)],
 )
 def test_invalid_price_or_area_is_not_silently_made_valid(price, area):
     subject = detector()

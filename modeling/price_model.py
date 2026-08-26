@@ -24,9 +24,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 from processing.price_anomaly import get_anomaly_training_policy
+from processing.feature_engineering import GEO_CATEGORICAL_FEATURES, GEO_NUMERIC_FEATURES, enrich_geographic_features
+from processing.text_enrichment import TEXT_EMBEDDING_DIMENSIONS, enrich_text_record
 
 
-NUMERIC_FEATURES = [
+BASE_NUMERIC_FEATURES = [
     "area_m2",
     "bedroom_count",
     "bathroom_count",
@@ -35,7 +37,7 @@ NUMERIC_FEATURES = [
     "road_width_m",
 ]
 
-CATEGORICAL_FEATURES = [
+BASE_CATEGORICAL_FEATURES = [
     "property_type",
     "direction",
     "legal",
@@ -44,6 +46,21 @@ CATEGORICAL_FEATURES = [
     "district_slug",
     "ward_slug",
     "project_hint",
+]
+
+NUMERIC_FEATURES = BASE_NUMERIC_FEATURES + [
+    *GEO_NUMERIC_FEATURES,
+    "extracted_bedrooms",
+    "extracted_bathrooms",
+    "extracted_amenity_count",
+    *[f"text_embedding_{index:03d}" for index in range(TEXT_EMBEDDING_DIMENSIONS)],
+]
+
+CATEGORICAL_FEATURES = BASE_CATEGORICAL_FEATURES + [
+    *GEO_CATEGORICAL_FEATURES,
+    "extracted_direction",
+    "extracted_furnishing",
+    "extracted_legal_status",
 ]
 
 TEXT_FEATURE = "text_features"
@@ -64,7 +81,8 @@ def to_dense_matrix(values):
 
 
 def build_feature_frame(records: Iterable[Dict[str, Any]]) -> pd.DataFrame:
-    # Build DataFrame and ensure `text_features` is present by concatenating key fields
+    # Build one schema-stable frame for training and inference. Geographic and text
+    # enrichment is deterministic and has no target-derived input.
     rows = []
     for record in records:
         row = dict(record)
@@ -80,22 +98,46 @@ def build_feature_frame(records: Iterable[Dict[str, Any]]) -> pd.DataFrame:
             ]
             if part
         )
+        row.update(enrich_geographic_features(row))
+        text_enrichment = enrich_text_record(row)
+        row.update({key: value for key, value in text_enrichment.items() if key != "text_embedding"})
+        for index, value in enumerate(text_enrichment["text_embedding"]):
+            row[f"text_embedding_{index:03d}"] = value
         rows.append(row)
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(rows)
+    # Missing fields are explicit columns rather than an inference-time schema
+    # accident. sklearn imputers then apply the same handling on both paths.
+    for feature in NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TEXT_FEATURE]:
+        if feature not in frame.columns:
+            frame[feature] = None
+    return frame
 
 
-def build_regression_pipeline() -> Pipeline:
+def build_regression_pipeline(
+    *, include_geographic_features: bool = True, include_text_enrichment: bool = True
+) -> Pipeline:
     # Construct sklearn Pipeline: numeric, categorical, text preprocessing + ensemble regressor
+    numeric_features = list(BASE_NUMERIC_FEATURES)
+    categorical_features = list(BASE_CATEGORICAL_FEATURES)
+    if include_geographic_features:
+        numeric_features.extend(GEO_NUMERIC_FEATURES)
+        categorical_features.extend(GEO_CATEGORICAL_FEATURES)
+    if include_text_enrichment:
+        numeric_features.extend(
+            ["extracted_bedrooms", "extracted_bathrooms", "extracted_amenity_count"]
+            + [f"text_embedding_{index:03d}" for index in range(TEXT_EMBEDDING_DIMENSIONS)]
+        )
+        categorical_features.extend(["extracted_direction", "extracted_furnishing", "extracted_legal_status"])
     numeric_pipeline = Pipeline(
         [
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
             ("scaler", StandardScaler()),
         ]
     )
 
     categorical_pipeline = Pipeline(
         [
-            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("imputer", SimpleImputer(strategy="most_frequent", keep_empty_features=True)),
             ("onehot", OneHotEncoder(handle_unknown="ignore")),
         ]
     )
@@ -109,8 +151,8 @@ def build_regression_pipeline() -> Pipeline:
 
     preprocessor = ColumnTransformer(
         [
-            ("num", numeric_pipeline, NUMERIC_FEATURES),
-            ("cat", categorical_pipeline, CATEGORICAL_FEATURES),
+            ("num", numeric_pipeline, numeric_features),
+            ("cat", categorical_pipeline, categorical_features),
             ("txt", text_pipeline, [TEXT_FEATURE]),
         ]
     )
@@ -234,6 +276,13 @@ class RealEstatePriceModel:
                 "p50": float(np.quantile(y, 0.50)),
                 "p90": float(np.quantile(y, 0.90)),
             },
+            "feature_schema": {
+                "numeric": NUMERIC_FEATURES,
+                "categorical": CATEGORICAL_FEATURES,
+                "text": TEXT_FEATURE,
+                "text_embedding_dimensions": TEXT_EMBEDDING_DIMENSIONS,
+                "geographic_features": list(GEO_NUMERIC_FEATURES + GEO_CATEGORICAL_FEATURES),
+            },
         }
         self.metadata = metadata
         model_bundle = {"model": self.model, "metadata": metadata}
@@ -321,3 +370,51 @@ class RealEstatePriceModel:
             explanations.append("Listing text contributes semantic signals such as legal status, furniture, and frontage.")
         explanations.append(f"Confidence range uses the model validation residual, currently about {interval_vnd / 1_000_000_000:.2f}B VND.")
         return explanations
+
+
+def evaluate_feature_variants(records: Iterable[Dict[str, Any]]) -> dict[str, dict[str, float]]:
+    """Evaluate the same held-out split across baseline and optional new features.
+
+    The function is intentionally explicit rather than automatically publishing a
+    winner. It exists to produce real ablation results only when a caller supplies
+    sufficient real training records.
+    """
+    frame = build_feature_frame(records)
+    if TARGET not in frame.columns:
+        raise ValueError("Feature evaluation data must include price_vnd.")
+    if "is_model_candidate" in frame.columns:
+        frame = frame[frame["is_model_candidate"].fillna(True)]
+    frame = frame[frame[TARGET].notna() & (frame[TARGET] > 0)]
+    min_records = int(os.environ.get("MIN_RECORDS_FOR_TRAINING", DEFAULT_MIN_TRAINING_RECORDS))
+    if len(frame) < min_records:
+        raise ValueError(f"Need at least {min_records} valid candidate listings for feature evaluation.")
+    for feature in NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TEXT_FEATURE]:
+        if feature not in frame.columns:
+            frame[feature] = None
+    indices = np.arange(len(frame))
+    train_indices, test_indices = train_test_split(indices, test_size=0.2, random_state=42)
+    y = frame[TARGET].astype(float)
+    variants = {
+        "current_model_baseline": (False, False),
+        "baseline_plus_geographic": (True, False),
+        "baseline_plus_text_enrichment": (False, True),
+        "geographic_plus_text_enrichment": (True, True),
+    }
+    results: dict[str, dict[str, float]] = {}
+    for name, (with_geo, with_text) in variants.items():
+        model = build_regression_pipeline(
+            include_geographic_features=with_geo,
+            include_text_enrichment=with_text,
+        )
+        model.fit(frame.iloc[train_indices], y.iloc[train_indices])
+        predictions = model.predict(frame.iloc[test_indices])
+        actual = y.iloc[test_indices]
+        results[name] = {
+            "mae_vnd": float(mean_absolute_error(actual, predictions)),
+            "rmse_vnd": float(np.sqrt(mean_squared_error(actual, predictions))),
+            "r2": float(r2_score(actual, predictions)),
+            "median_absolute_error_vnd": float(np.median(np.abs(actual.to_numpy() - predictions))),
+            "train_size": float(len(train_indices)),
+            "test_size": float(len(test_indices)),
+        }
+    return results

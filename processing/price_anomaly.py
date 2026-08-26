@@ -57,6 +57,54 @@ def add_anomaly_training_filter(query: Mapping[str, Any], policy: str | None = N
     return filtered_query
 
 
+def annotate_listing_review(
+    record: dict[str, Any],
+    *,
+    validation_errors: Sequence[str] = (),
+    is_duplicate: bool = False,
+) -> dict[str, Any]:
+    """Create one auditable status across data-quality, duplicate and price checks.
+
+    This function never deletes a record and never adjusts its price. The detailed
+    IQR metadata remains on the record; this layer only makes downstream routing
+    explicit as ``NORMAL``, ``SUSPICIOUS`` or ``INVALID``.
+    """
+    detected_at = datetime.now(timezone.utc).isoformat()
+    anomaly_types: list[str] = []
+    methods: list[str] = []
+    reasons: list[str] = []
+    if validation_errors:
+        anomaly_types.append("DATA_QUALITY")
+        methods.append("validation_rules")
+        reasons.extend(validation_errors)
+        status = "INVALID"
+    else:
+        status = "NORMAL"
+        if is_duplicate:
+            anomaly_types.append("DUPLICATE")
+            methods.append("content_fingerprint")
+            reasons.append("duplicate_listing_content")
+        if record.get("is_price_anomaly"):
+            anomaly_types.append("PRICE")
+            methods.append("contextual_iqr_price_per_m2")
+            reasons.append(str(record.get("price_anomaly_reason") or "price_anomaly"))
+        if anomaly_types:
+            status = "SUSPICIOUS"
+    record.update(
+        {
+            "listing_review_status": status,
+            "is_anomaly": bool(anomaly_types),
+            "anomaly_type": anomaly_types[0] if anomaly_types else None,
+            "anomaly_types": anomaly_types,
+            "anomaly_score": record.get("price_anomaly_score") if "PRICE" in anomaly_types else None,
+            "anomaly_reason": "; ".join(reasons) if reasons else None,
+            "detection_method": ",".join(methods) if methods else "none",
+            "detected_at": detected_at,
+        }
+    )
+    return record
+
+
 @dataclass(frozen=True)
 class PriceAnomalyConfig:
     """Runtime configuration for historical group-based IQR detection."""

@@ -7,7 +7,7 @@ Features a data pipeline, REST API, and modern web interface.
 
 This system combines:
 - **Data Pipeline**: Kafka-based real estate scraping and normalization
-- **ML Model**: Ensemble regression model with 94%+ accuracy
+- **ML Model**: Ensemble regression model evaluated with MAE, RMSE and R²
 - **REST API**: FastAPI service with comprehensive documentation
 - **Frontend**: Beautiful React interface for price predictions
 - **Monitoring**: Prometheus + Grafana for system observability
@@ -39,7 +39,7 @@ This system combines:
 │
 ├── monitoring/                # Prometheus + Grafana configs
 ├── utils/                     # Shared utilities
-├── tests/                     # Test suite
+├── utils/tests/               # Python test suite
 └── DEPLOYMENT.md              # Deployment guide
 ```
 
@@ -84,7 +84,7 @@ Web Scraper → Kafka → MongoDB → Model Training → REST API → Frontend
 
 3. **Model Training** (`modeling/train_model.py`)
    - Trains ensemble regression model (Ridge + HistGradientBoosting)
-   - Includes TF-IDF text features
+   - Includes TF-IDF, deterministic local text embeddings and optional geographic features when coordinates exist
    - Auto-versioning of models for rollback capability
 
 4. **REST API** (`modeling/api.py`)
@@ -248,7 +248,7 @@ Key metrics:
 ### Running Tests
 ```bash
 # Backend tests
-pytest tests/
+pytest utils/tests/
 
 # Frontend tests
 cd frontend && npm test

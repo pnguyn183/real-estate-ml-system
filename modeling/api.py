@@ -63,6 +63,8 @@ class PropertyFeatures(BaseModel):
     floor_count: Optional[int] = Field(None, description="Number of floors")
     front_width_m: Optional[float] = Field(None, description="Front width in meters")
     road_width_m: Optional[float] = Field(None, description="Road width in meters")
+    latitude: Optional[float] = Field(None, description="Optional WGS84 latitude from a trusted source")
+    longitude: Optional[float] = Field(None, description="Optional WGS84 longitude from a trusted source")
     
     property_type: Optional[str] = Field(None, description="Type: apartment, house, land, etc.")
     direction: Optional[str] = Field(None, description="Direction: north, south, east, west")
@@ -88,6 +90,18 @@ class PropertyFeatures(BaseModel):
     def validate_non_negative_int(cls, v):
         if v is not None and v < 0:
             raise ValueError("must be non-negative")
+        return v
+
+    @validator("latitude")
+    def validate_latitude(cls, v):
+        if v is not None and not -90 <= v <= 90:
+            raise ValueError("must be within [-90, 90]")
+        return v
+
+    @validator("longitude")
+    def validate_longitude(cls, v):
+        if v is not None and not -180 <= v <= 180:
+            raise ValueError("must be within [-180, 180]")
         return v
 
 

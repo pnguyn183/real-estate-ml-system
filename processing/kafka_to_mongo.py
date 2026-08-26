@@ -17,6 +17,7 @@ import math
 import os
 import re
 import sys
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -30,7 +31,15 @@ from pymongo import MongoClient
 import signal
 import threading
 from utils.logging_utils import log_structured, get_logger
-from processing.price_anomaly import PriceAnomalyConfig, PriceAnomalyDetector, safe_price_per_m2
+from processing.feature_engineering import enrich_geographic_features
+from processing.llm_review import OptionalLLMReviewer
+from processing.price_anomaly import (
+    PriceAnomalyConfig,
+    PriceAnomalyDetector,
+    annotate_listing_review,
+    safe_price_per_m2,
+)
+from processing.text_enrichment import SQLiteTextEmbeddingCache
 from utils.metrics import (
     start_prometheus_server,
     kafka_messages_consumed,
@@ -225,6 +234,17 @@ def normalize_listing(raw: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     normalized["text_features"] = build_text_features(normalized)
+    normalized.update(enrich_geographic_features(raw))
+    # Local hashing is deterministic and cacheable. It does not call an external
+    # embedding/LLM service or introduce a secret into this ingestion path.
+    normalized.update(SQLiteTextEmbeddingCache().enrich_many([normalized])[0])
+    fingerprint_source = {
+        key: normalized.get(key)
+        for key in ("url", "price_vnd", "area_m2", "property_type", "title", "description")
+    }
+    normalized["listing_fingerprint"] = hashlib.sha256(
+        json.dumps(fingerprint_source, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
     normalized["feature_coverage_score"] = sum(
         value is not None
         for value in [
@@ -321,6 +341,7 @@ class KafkaToMongoPipeline:
         self.dlq_collection = self.db["dlq_raw"]
         self.anomaly_threshold_collection = self.db["price_anomaly_thresholds"]
         self.price_anomaly_detector = PriceAnomalyDetector(PriceAnomalyConfig.from_env())
+        self.llm_reviewer = OptionalLLMReviewer()
         self._logger = get_logger(__name__)
         self._ensure_indexes()
 
@@ -334,6 +355,7 @@ class KafkaToMongoPipeline:
         self.feature_collection.create_index("district_slug")
         self.feature_collection.create_index("is_model_candidate")
         self.feature_collection.create_index("feature_coverage_score")
+        self.feature_collection.create_index("listing_fingerprint")
         self.feature_collection.create_index(
             [("province_slug", 1), ("district_slug", 1), ("property_type", 1), ("price_per_m2_vnd", 1)]
         )
@@ -347,6 +369,12 @@ class KafkaToMongoPipeline:
         import time
         start_time = time.time()
         normalized = normalize_listing(payload)
+        existing_feature = self.feature_collection.find_one(
+            {"url": normalized.get("url")}, {"_id": 0, "listing_fingerprint": 1}
+        )
+        is_duplicate = bool(
+            existing_feature and existing_feature.get("listing_fingerprint") == normalized.get("listing_fingerprint")
+        )
         # Save raw payload
         try:
             self.raw_collection.update_one({"url": payload.get("url")}, {"$set": payload}, upsert=True)
@@ -364,6 +392,8 @@ class KafkaToMongoPipeline:
         is_valid, errors = validate_normalized_record(normalized)
         if not is_valid:
             normalized["validation_errors"] = errors
+            annotate_listing_review(normalized, validation_errors=errors, is_duplicate=is_duplicate)
+            normalized.update(self.llm_reviewer.review(normalized))
             try:
                 self.invalid_collection.update_one({"url": normalized.get("url")}, {"$set": normalized}, upsert=True)
                 db_writes_success.inc()
@@ -413,6 +443,9 @@ class KafkaToMongoPipeline:
                     "price_anomaly_reason": "detector_error",
                 }
             )
+
+        annotate_listing_review(normalized, is_duplicate=is_duplicate)
+        normalized.update(self.llm_reviewer.review(normalized))
 
         # Store normalized features
         try:

@@ -42,8 +42,8 @@
    - Auto-build and run via `scripts/start_all.sh`
 
 ### 8. **Testing Infrastructure**
-   - Unit tests in `tests/` for parsing, normalization, validation, model train/predict
-   - Run with: `pytest tests/`
+   - Unit tests in `utils/tests/` for parsing, normalization, validation, model train/predict
+   - Run with: `pytest utils/tests/`
 
 ## Quick Start
 
@@ -88,8 +88,8 @@ bash scripts/stop_all.sh
 - `monitoring/README.md` - Monitoring docs
 - `docs/RUNBOOK.md` - Operational runbook
 - `docs/DASHBOARD.md` - Dashboard guide
-- `tests/test_utils.py` - Unit tests for utils
-- `tests/test_model.py` - Unit tests for model
+- `utils/tests/test_utils.py` - Unit tests for utils
+- `utils/tests/test_model.py` - Unit tests for model
 - Dockerfile for each service (scraper, processor, modeling)
 
 ### Modified Files:

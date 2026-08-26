@@ -22,9 +22,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from modeling.price_model import RealEstatePriceModel
+    from modeling.price_model import RealEstatePriceModel, evaluate_feature_variants
 except ImportError:
-    from price_model import RealEstatePriceModel
+    from price_model import RealEstatePriceModel, evaluate_feature_variants
 from utils.metrics import start_prometheus_server, update_metrics_from_result, model_train_duration
 from processing.price_anomaly import add_anomaly_training_filter
 
@@ -55,6 +55,12 @@ def main() -> None:
     parser.add_argument("--input-json", type=Path, default=None)
     parser.add_argument("--model-path", default="artifacts/price_model.joblib")
     parser.add_argument("--metrics-path", default="artifacts/price_model_metrics.json")
+    parser.add_argument(
+        "--evaluate-variants",
+        action="store_true",
+        help="Run held-out baseline/geographic/text ablations and write real metrics before training.",
+    )
+    parser.add_argument("--variant-metrics-path", default="artifacts/feature_variant_metrics.json")
     args = parser.parse_args()
 
     # Start Prometheus metrics server
@@ -67,6 +73,13 @@ def main() -> None:
     else:
         records = load_records_from_mongo(args.mongo_uri, args.mongo_db, args.collection)
         logger.info("Loaded %s records from MongoDB %s.%s", len(records), args.mongo_db, args.collection)
+
+    if args.evaluate_variants:
+        variant_metrics = evaluate_feature_variants(records)
+        variant_path = Path(args.variant_metrics_path)
+        variant_path.parent.mkdir(parents=True, exist_ok=True)
+        variant_path.write_text(json.dumps(variant_metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Feature-variant metrics written to %s: %s", variant_path, variant_metrics)
 
     start_time = time.time()
     trainer = RealEstatePriceModel()
