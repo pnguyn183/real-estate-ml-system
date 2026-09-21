@@ -2,24 +2,32 @@ from __future__ import annotations
 
 """
 Module: scraper/listing_feature_scraper.py
-Purpose: Crawl Batdongsan listing pages, extract listing details and normalize raw HTML into
-structured records suitable for the Kafka producer. Uses `curl_cffi` for HTTP and `parsel` for CSS selection.
+Purpose: Historical Batdongsan parser retained for compatibility and offline tests.
+NOT registered in the active crawler. No CLI entrypoint. Shared ScrapeConfig and
+atomic checkpoint helpers are still used by the three-source crawler.
 Key behaviors: retry/backoff, persist resume state to `runtime/scrape_state`, basic dedup of recently seen URLs.
 Inputs: list pages and detail pages of the source website.
 Outputs: Python dict records describing a single listing per yield.
 """
 
 import json
+import math
+import os
 import re
-import time
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List
 from urllib.parse import urlencode, urljoin, urlparse
 
-from curl_cffi import requests
+import requests
 from parsel import Selector
+
+if __package__:
+    from .http_policy import PoliteHTTPClient, ScraperPolicyError
+else:
+    from http_policy import PoliteHTTPClient, ScraperPolicyError
 
 
 BASE_URL = "https://batdongsan.com.vn"
@@ -30,16 +38,44 @@ STATE_DIR = Path("runtime") / "scrape_state"
 
 @dataclass
 class ScrapeConfig:
-    max_pages: int = 50
+    max_pages: int = 1
     start_page: int = 1
-    max_items: int | None = None
-    request_delay_seconds: float = 0.25
-    detail_delay_seconds: float = 0.1
+    max_items: int | None = 10
+    request_delay_seconds: float = 0.0
+    detail_delay_seconds: float = 0.0
     max_retries: int = 4
     timeout_seconds: int = 30
     use_verified_filter: bool = True
     state_file: Path | None = None
     extra_query: Dict[str, str] | None = None
+    delay_min_seconds: float = 2.0
+    delay_max_seconds: float = 5.0
+    user_agent: str = "RealEstatePipelineCrawler/1.0"
+    retry_backoff_seconds: float = 2.0
+    max_retry_wait_seconds: float = 120.0
+    max_response_bytes: int = 8_000_000
+
+    def __post_init__(self):
+        if not 1 <= self.max_pages <= 1000 or self.start_page < 1:
+            raise ValueError("max_pages must be 1..1000 and start_page must be positive")
+        if self.max_items is not None and (isinstance(self.max_items, bool) or self.max_items < 1):
+            raise ValueError("max_items must be positive or None")
+        if not 1 <= self.max_retries <= 8 or not 1 <= self.timeout_seconds <= 120:
+            raise ValueError("max_retries must be 1..8; timeout_seconds must be 1..120")
+        for value in (self.delay_min_seconds, self.delay_max_seconds, self.request_delay_seconds,
+                      self.detail_delay_seconds, self.retry_backoff_seconds, self.max_retry_wait_seconds):
+            if not math.isfinite(value):
+                raise ValueError("HTTP delays must be finite")
+        if not 2 <= self.delay_min_seconds <= self.delay_max_seconds <= 60:
+            raise ValueError("random delay must satisfy 2 <= minimum <= maximum <= 60")
+        if not all(0 <= value <= 60 for value in (self.request_delay_seconds, self.detail_delay_seconds)):
+            raise ValueError("legacy delay floors must be between 0 and 60 seconds")
+        if not 0 < self.retry_backoff_seconds <= 60 or not 1 <= self.max_retry_wait_seconds <= 600:
+            raise ValueError("retry backoff must be 0..60; maximum wait must be 1..600")
+        if not 1 <= self.max_response_bytes <= 32_000_000:
+            raise ValueError("max_response_bytes must be 1..32000000")
+        if not self.user_agent.strip() or any(char in self.user_agent for char in "\r\n"):
+            raise ValueError("user_agent must be a nonempty single-line crawler identity")
 
 
 DETAIL_LABELS = {
@@ -117,32 +153,24 @@ def parse_location_parts(url: str) -> Dict[str, str | None]:
     }
 
 
-def make_session(timeout_seconds: int) -> requests.Session:
-    return requests.Session(
-        impersonate="chrome124",
-        headers={
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-        },
-        timeout=timeout_seconds,
-    )
+def make_session(timeout_seconds: int, user_agent: str = "RealEstatePipelineCrawler/1.0") -> requests.Session:
+    # Timeout is enforced per request by the policy helper. Never impersonate a
+    # browser or fabricate a search-engine referrer to work around HTTP 403.
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": user_agent,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+    })
+    return session
 
 
 def fetch_html(session: requests.Session, url: str, config: ScrapeConfig) -> str:
-    last_error: Exception | None = None
-    for attempt in range(1, config.max_retries + 1):
-        try:
-            response = session.get(url)
-            response.raise_for_status()
-            return response.text
-        except Exception as exc:
-            last_error = exc
-            if attempt >= config.max_retries:
-                break
-            time.sleep(min(2.0 * attempt, 8.0))
-    raise RuntimeError(f"Failed to fetch {url}") from last_error
+    client = getattr(session, "_scrape_policy", None)
+    if client is None:
+        client = PoliteHTTPClient(session, config, BASE_URL)
+        session._scrape_policy = client
+    return client.get_html(url)
 
 
 def build_list_url(page: int, config: ScrapeConfig) -> str:
@@ -232,57 +260,61 @@ def save_state(path: Path | None, state: Dict[str, Any]) -> None:
     if not path:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    # A killed scheduler must not leave a half-written checkpoint.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(state, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
 
 
 def iter_listing_records(config: ScrapeConfig) -> Iterator[Dict[str, Any]]:
-    session = make_session(timeout_seconds=config.timeout_seconds)
     state = load_state(config.state_file)
     current_page = max(config.start_page, int(state.get("next_page", config.start_page)))
     emitted = int(state.get("emitted_count", 0))
-    seen_urls = set(state.get("seen_urls", []))
+    seen_order = list(dict.fromkeys(state.get("seen_urls", [])))
+    seen_urls = set(seen_order)
+    run_emitted = 0
+    session = make_session(timeout_seconds=config.timeout_seconds, user_agent=config.user_agent)
 
-    stop_page = config.start_page + config.max_pages - 1
-    for page in range(current_page, stop_page + 1):
-        list_html = fetch_html(session, build_list_url(page, config), config)
-        urls = extract_listing_links(list_html)
-        if not urls:
-            break
+    def checkpoint(next_page):
+        save_state(config.state_file, {
+            "next_page": next_page, "emitted_count": emitted,
+            "seen_urls": seen_order[-5000:],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "config": asdict(config) | {"state_file": str(config.state_file) if config.state_file else None},
+        })
 
-        for url in urls:
-            if url in seen_urls:
-                continue
-            record = parse_listing_detail(session, url, config)
-            seen_urls.add(url)
-            emitted += 1
-            save_state(
-                config.state_file,
-                {
-                    "next_page": page,
-                    "emitted_count": emitted,
-                    "seen_urls": list(seen_urls)[-5000:],
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "config": asdict(config) | {"state_file": str(config.state_file) if config.state_file else None},
-                },
-            )
-            yield record
-            if config.max_items is not None and emitted >= config.max_items:
-                return
-            if config.detail_delay_seconds:
-                time.sleep(config.detail_delay_seconds)
-
-        save_state(
-            config.state_file,
-            {
-                "next_page": page + 1,
-                "emitted_count": emitted,
-                "seen_urls": list(seen_urls)[-5000:],
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "config": asdict(config) | {"state_file": str(config.state_file) if config.state_file else None},
-            },
-        )
-        if config.request_delay_seconds:
-            time.sleep(config.request_delay_seconds)
+    try:
+        # max_pages is a per-run budget, including when resuming an older run.
+        for page in range(current_page, current_page + config.max_pages):
+            list_html = fetch_html(session, build_list_url(page, config), config)
+            urls = extract_listing_links(list_html)
+            if not urls:
+                break
+            for url in urls:
+                if url in seen_urls:
+                    continue
+                record = parse_listing_detail(session, url, config)
+                # The consumer must acknowledge its destination before asking
+                # for the next record. Closing/raising leaves this URL replayable.
+                yield record
+                seen_urls.add(url)
+                seen_order.append(url)
+                emitted += 1
+                run_emitted += 1
+                checkpoint(page)
+                if config.max_items is not None and run_emitted >= config.max_items:
+                    return
+            checkpoint(page + 1)
+    finally:
+        session.close()
 
 
 def scrape_listing_records(config: ScrapeConfig) -> List[Dict[str, Any]]:

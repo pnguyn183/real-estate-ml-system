@@ -1,0 +1,1706 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "Pipeline overview",
+      "url": "/d/real-estate-pipeline",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Start here — optional agents, existing pipeline",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Normal website records still use the three deterministic Processors. Difficult records can enter **AI request → AI worker → AI result → Processor → MongoDB**; the result Processor applies business validation.\n\n**Disabled is not unhealthy:** check scrape reachability separately from `AI enabled`. Stress active = 0 means idle/finished, not failed. Empty event series may mean no events yet; **No data is not a PASS**.\n\nThis dashboard reads exported operational metrics only. It does **not** establish real API connectivity, extraction accuracy or successful result persistence. Local mock tests use isolated registries; metrics have no mock/real label. Verify run provenance in the project status and MongoDB receipts."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Metrics reachable",
+      "description": "Prometheus up reports scrape success, not application/business health or Kafka readiness.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "UNREACHABLE",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "REACHABLE",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"ai-agent|stress-agent|processor(-[23])?|trainer\"}",
+          "legendFormat": "{{job}} · {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "AI enabled",
+      "description": "0 is intentionally disabled: no AI Kafka consumption or provider calls. This is independent of the scrape target being reachable.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DISABLED",
+                  "color": "blue"
+                },
+                "1": {
+                  "text": "ENABLED",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai_agent_enabled{job=\"ai-agent\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Stress run",
+      "description": "0 means disabled, idle or a finite run has finished. Use target reachability and logs to diagnose a stopped service.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "IDLE / FINISHED",
+                  "color": "blue"
+                },
+                "1": {
+                  "text": "ACTIVE",
+                  "color": "orange"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "stress_run_active{job=\"stress-agent\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Minimum confidence",
+      "description": "Active AI_MIN_CONFIDENCE exported by each worker. A configuration gate, not model accuracy. Lower values are rejected; equality is accepted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 5,
+        "w": 4,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai_extraction_confidence_threshold{job=\"ai-agent\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "AI work: routing, extraction and durable hand-off",
+      "description": "Different stages, not a one-to-one funnel: response-cache hits skip extraction; completed worker outcomes include stale/failed records. Worker completion means durable handling/result delivery, NOT downstream MongoDB feature persistence.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(processor_ai_requests_total{job=~\"processor(-[23])?\",outcome=\"queued\"}[$__rate_interval]))",
+          "legendFormat": "Processor queued AI request",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(ai_extraction_requests_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "Extraction requests (cache misses)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(ai_extraction_success_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "Schema + confidence + evidence accepted",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(ai_records_completed_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "Worker completed hand-offs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "AI failures and recoverable outcomes",
+      "description": "Reasons come from actual bounded failure labels. Low confidence is a rejection, not an API outage. Fallback means returning failure/review output, not automatic recovery or a human review service.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(ai_extraction_failure_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (outcome) (rate(ai_records_completed_total{job=\"ai-agent\",outcome=~\"failed|malformed|stale\"}[$__rate_interval]))",
+          "legendFormat": "worker {{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Extraction time (approximate percentiles)",
+      "description": "Existing end-to-end extraction histogram includes local validation and retries, and also disabled/rejected calls. It is NOT isolated network API latency. Highest finite bucket is 30 seconds; longer-tail percentile estimates are limited by that bucket layout.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(ai_extraction_duration_seconds_bucket{job=\"ai-agent\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ai_extraction_duration_seconds_bucket{job=\"ai-agent\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Provider confidence distribution — not accuracy",
+      "description": "Disjoint histogram bands of schema-valid provider self-reports, before confidence/evidence checks. Includes later-rejected outputs; excludes malformed schema and cached replays. Bands are fixed observation buckets, NOT the configurable acceptance threshold. No confidence calibration or labelled extraction-accuracy metric exists.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.25\"}[$__rate_interval]))",
+          "legendFormat": "[0, 0.25]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.5\"}[$__rate_interval])) - sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.25\"}[$__rate_interval]))",
+          "legendFormat": "(0.25, 0.5]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.75\"}[$__rate_interval])) - sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.5\"}[$__rate_interval]))",
+          "legendFormat": "(0.5, 0.75]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.9\"}[$__rate_interval])) - sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.75\"}[$__rate_interval]))",
+          "legendFormat": "(0.75, 0.9]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "E",
+          "expr": "sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"1.0\"}[$__rate_interval])) - sum(rate(ai_extraction_confidence_bucket{job=\"ai-agent\",le=\"0.9\"}[$__rate_interval]))",
+          "legendFormat": "(0.9, 1]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Low-confidence rejections",
+      "description": "Number of extraction outputs rejected as low_confidence in the selected dashboard period. Uses the real configured gate, not an estimated histogram boundary. No series may mean the event has never occurred.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(ai_extraction_failure_total{job=\"ai-agent\",reason=\"low_confidence\"}[$__range]))",
+          "legendFormat": "rejections",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Cache reuse",
+      "description": "Reused durable result/event output or exact-content response cache in the selected period. This counter combines both mechanisms; it is not a separately measured response-cache hit ratio.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 26,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(ai_cached_results_total{job=\"ai-agent\"}[$__range]))",
+          "legendFormat": "cache reuses",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Circuit state",
+      "description": "0 = closed; 1 = open or awaiting a recovery probe. The gauge remains 1 after cooldown until a successful provider call closes it. Not a live provider reachability probe.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "CLOSED",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "OPEN / PROBE PENDING",
+                  "color": "orange"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai_extraction_circuit_open{job=\"ai-agent\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Extraction in flight",
+      "description": "Concurrent extraction operations per AI service process. Kafka AIWorker currently handles one message at a time. An extraction concurrency limit does not create a parallel worker pool.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 26,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai_extraction_inflight{job=\"ai-agent\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Provider calls, retries and throttling",
+      "description": "Provider-call counter means an attempted provider-interface call, not proof that a real external request succeeded. Limits are per AI process, not a cluster-wide spending cap; retries consume call budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ai_extraction_provider_calls_total{job=\"ai-agent\"}[$__rate_interval])) * 60",
+          "legendFormat": "provider attempts / min",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(ai_extraction_retries_total{job=\"ai-agent\"}[$__rate_interval])) * 60",
+          "legendFormat": "additional attempts / min",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (source) (rate(ai_rate_limit_events_total{job=\"ai-agent\"}[$__rate_interval])) * 60",
+          "legendFormat": "{{source}} rate-limit events / min",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Validation and review / DLQ activity",
+      "description": "Extraction validation covers schema, confidence and evidence; the shared Processor independently validates business rules. ai_dlq_total counts acknowledged worker DLQs (for malformed input), NOT all result-Processor DLQ messages. No separate result-Processor completion/DLQ counter is exported.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ai_validation_success_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "extraction validation accepted",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (reason) (rate(ai_validation_failure_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "validation: {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (reason) (rate(ai_extraction_fallback_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "returned for review: {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(ai_dlq_total{job=\"ai-agent\"}[$__rate_interval]))",
+          "legendFormat": "worker DLQ delivered",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "AI input lag per assigned partition",
+      "description": "High watermark minus committed next offset, refreshed about every 15 seconds by active workers. Disabled workers do not consume or emit assignments/lag. Results-topic lag is not included. Rebalance can briefly leave a stale series until the next scrape.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ai_consumer_lag{job=\"ai-agent\"}",
+          "legendFormat": "{{instance}} · partition {{partition}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Processor last-observed lag — not group total",
+      "description": "Existing gauge is overwritten when a Processor handles a message. It has no topic/partition labels and represents that worker's last observed message partition, not the total backlog across raw/stress/results topics. Do NOT sum these gauges as whole-group lag. Verify exact group assignments/lag with Kafka CLI.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kafka_consumer_lag{job=~\"processor(-[23])?\"}",
+          "legendFormat": "{{job}} · last observed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Stress production — dedicated stress topic",
+      "description": "Finite deterministic generator only; no LLM calls by the generator. Delivered means Kafka acknowledged the publish. Delivery failures are explicit. Records go to real_estate_stress_raw and the isolated stress database.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "msgps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (scenario) (rate(stress_generated_messages_total{job=\"stress-agent\"}[$__rate_interval]))",
+          "legendFormat": "generated · {{scenario}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (scenario) (rate(stress_delivered_messages_total{job=\"stress-agent\"}[$__rate_interval]))",
+          "legendFormat": "delivered · {{scenario}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (reason) (rate(stress_failed_messages_total{job=\"stress-agent\"}[$__rate_interval]))",
+          "legendFormat": "failed · {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Stress cases and origin-guard rejections",
+      "description": "Duplicate/unstructured counters describe generated cases, not measured detection accuracy. Guard rejections indicate records rejected at a live/stress origin boundary. Zero rejections is NOT proof that training contains no synthetic data; verify deterministic safety tests and dataset filters.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "msgps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(stress_duplicate_messages_total{job=\"stress-agent\"}[$__rate_interval]))",
+          "legendFormat": "generated duplicate cases",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(stress_unstructured_messages_total{job=\"stress-agent\"}[$__rate_interval]))",
+          "legendFormat": "generated text-first cases",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(processor_synthetic_rejected_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "origin boundary rejections",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Existing Processor activity",
+      "description": "Existing per-process counters combine real, stress and AI-result processing. Consumed is read; processed is the valid-feature branch after enqueueing best-effort audit output, NOT a unique listing count or an acknowledgment from all downstream components.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "msgps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job) (rate(kafka_messages_consumed_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} consumed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (job) (rate(kafka_messages_processed_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} processed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (job) (rate(kafka_messages_failed_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} failed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "MongoDB write operations — shared Processor counters",
+      "description": "Success/failure counters count instrumented write operations, not unique persisted listings. They have no collection/origin labels and cannot prove AI result receipt or synthetic isolation. Confirm those in MongoDB and integration tests.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job) (rate(db_writes_success_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} successful writes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (job) (rate(db_writes_failed_total{job=~\"processor(-[23])?\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} failed writes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Primary trainer sample count",
+      "description": "Sample count reported by the latest completed model training run. It does not establish ground-truth quality or synthetic-free content; primary training uses candidate, real-data and configured anomaly filters.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "model_sample_count{job=\"trainer\"}",
+          "legendFormat": "latest model samples",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Time since successful training",
+      "description": "No data is shown until trainer_last_success_timestamp_seconds is positive. A healthy metrics endpoint or old model artifact is not evidence of a new training run.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 63,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
+          "legendFormat": "since last success",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Failed training runs",
+      "description": "Failures in the selected period. Use trainer logs to distinguish insufficient data, dependency errors and fit errors. This dashboard never triggers training.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 63,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(trainer_runs_failed_total{job=\"trainer\"}[$__range]))",
+          "legendFormat": "failed runs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "text",
+      "title": "Safety and verification boundaries",
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Primary training safety:** tagged synthetic records are rejected from live ingestion, stress records use their own database, and trainer/manual/JSON/export paths apply real-record filters. These are code/test guarantees to verify — there is no dataset-contamination gauge.\n\n**Evidence levels:** fixture/mock tests are reproducible without websites or API keys. A reachable service and a nonzero call counter do not prove a real website crawl or real external LLM call. Review actual receipts, source provenance and dated verification results before claiming a complete live pipeline.\n\n**Not exported:** broker/JMX health, whole consumer-group lag, per-origin Processor writes, result-Processor completion totals, labelled extraction accuracy, confidence calibration or external API cost. Do not infer them from these panels."
+      }
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": [
+    "real-estate",
+    "agents",
+    "demo",
+    "operational"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Agent Operations — AI, Stress & Safety",
+  "uid": "real-estate-agent-ops",
+  "version": 1,
+  "weekStart": ""
+}

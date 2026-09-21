@@ -1,0 +1,63 @@
+{
+  "profile": [
+    {
+      "rate": 10,
+      "seconds": 45
+    },
+    {
+      "rate": 40,
+      "seconds": 45
+    },
+    {
+      "rate": 100,
+      "seconds": 45
+    },
+    {
+      "rate": 250,
+      "seconds": 45
+    },
+    {
+      "rate": 500,
+      "seconds": 45
+    }
+  ],
+  "seed": 42,
+  "sample_seconds": 5,
+  "decision_seconds": 10,
+  "drain_seconds": 120,
+  "max_records": 50000,
+  "hard_lag": 5000,
+  "hard_cpu_percent": 95,
+  "hard_ram_percent": 90,
+  "control": {
+    "min_rate": 1,
+    "max_rate": 500,
+    "initial_rate": 500,
+    "lag_high": 200,
+    "lag_low": 30,
+    "cpu_high_percent": 80,
+    "cpu_low_percent": 65,
+    "ram_high_percent": 80,
+    "ram_low_percent": 65,
+    "latency_high_seconds": 2,
+    "latency_low_seconds": 1,
+    "error_high": 0.01,
+    "error_low": 0.001,
+    "decrease_factor": 0.7,
+    "increase_step": 20,
+    "cooldown_seconds": 10,
+    "telemetry_max_age_seconds": 15,
+    "recovery_window_seconds": 15
+  },
+  "stability": {
+    "tail_seconds": 25,
+    "minimum_samples": 4,
+    "minimum_served_fraction": 0.95,
+    "max_lag_slope": 1,
+    "max_lag": 200,
+    "max_latency_seconds": 2,
+    "max_cpu_percent": 80,
+    "max_ram_percent": 80,
+    "max_error_rate": 0.01
+  }
+}

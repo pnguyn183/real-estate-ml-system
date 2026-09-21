@@ -1,115 +1,128 @@
-# Project Automation Complete ✅
+# Runtime automation
 
-## What's been automated:
+This page documents the automation that exists in the current checkout. For
+the complete topology and data contracts, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-### 1. **Startup & Shutdown**
-   - `scripts/start_all.sh` - One command to start entire pipeline (services + infrastructure)
-   - `scripts/stop_all.sh` - One command to stop everything
-   - Services auto-restart on failure (restart: always in docker-compose)
+## Compose lifecycle
 
-### 2. **Scheduled Tasks**
-   - **Scraper**: Auto-runs every 1 hour (configurable via SCRAPE_INTERVAL)
-   - **Trainer**: Auto-runs every 6 hours if sufficient data (configurable via TRAIN_INTERVAL)
-   - Both run in background, exit gracefully on schedule completion
-
-### 3. **Health Management**
-   - All services have health checks (Prometheus, Grafana, Processor, Trainer, etc.)
-   - Services wait for dependency health checks before starting
-   - `scripts/health_check.py` - Monitor health anytime
-
-### 4. **Monitoring & Alerting**
-   - Prometheus scrapes metrics from processor (port 8003) and trainer (port 8001)
-   - 5 alert rules configured:
-     - High error rate (>5% failures)
-     - High Kafka consumer lag (>1000 messages)
-     - Processing duration anomaly (>5s avg)
-     - Model training failures (no update in 6h)
-     - Database write failures
-   - Grafana dashboard at http://localhost:3001
-
-### 5. **Offset Checkpointing**
-   - Processor saves Kafka offset to MongoDB after each successful commit
-   - Enables exact replay if needed: query `offset_checkpoint` collection, set consumer offset
-
-### 6. **Structured Logging & Metrics Export**
-   - Processor exports metrics: messages consumed/processed/failed, DB writes, processing time
-   - Trainer exports metrics: training duration, MAE, RMSE, R², sample count
-   - All metrics queryable via Prometheus
-
-### 7. **Docker Automation**
-   - Dockerfile for each service (scraper, processor, trainer)
-   - docker-compose.yml: All services with proper dependencies and health checks
-   - Auto-build and run via `scripts/start_all.sh`
-
-### 8. **Testing Infrastructure**
-   - Unit tests in `utils/tests/` for parsing, normalization, validation, model train/predict
-   - Run with: `pytest utils/tests/`
-
-## Quick Start
+`docker compose up -d` starts the 19 services in `docker-compose.yml`, including
+three Kafka brokers, the one-shot `kafka-init` provisioner and three parallel
+Processor workers and the disabled-by-default AI/stress agents. Existing
+long-running services use `restart: always`; the two agents use
+`restart: unless-stopped`. Compose waits
+for all three healthy Kafka brokers and the completed `kafka-init`, MongoDB,
+Prometheus or API dependencies where configured. Zookeeper,
+mongo-express do not define healthchecks. Scraper health checks its metrics
+server, not website availability or crawl success.
 
 ```bash
-# Start everything automatically
-bash scripts/start_all.sh
-
-# Check health
-python scripts/health_check.py
-
-# View logs
-docker compose logs -f processor
-
-# View metrics
-# - Prometheus: http://localhost:9090
-# - Grafana: http://localhost:3001 (admin/admin)
-
-# Stop everything
-bash scripts/stop_all.sh
+docker compose config --quiet
+docker compose build --no-cache
+docker compose up -d
+docker compose ps
+docker compose logs --tail=200
 ```
 
-## Configuration (Environment Variables)
+`scripts/start_all.sh` is a Bash convenience wrapper. It exports local
+development defaults, starts Compose, restarts the scraper and prints URLs; it
+is not a separate scheduler or orchestration system. The wrapper sets
+`MIN_RECORDS_FOR_TRAINING=30`, overriding the direct Compose default of 3,000
+for a small local run. `scripts/stop_all.sh`
+executes `docker compose down` (without removing the named Mongo volume).
 
-- `KAFKA_BOOTSTRAP_SERVERS`: Default localhost:9092
-- `MONGO_URI`: Default mongodb://localhost:27017/
-- `MONGO_DB`: Default real_estate_db
-- `SCRAPE_INTERVAL`: Default 3600 (1 hour) in seconds
-- `TRAIN_INTERVAL`: Default 21600 (6 hours) in seconds
-- `MIN_RECORDS_FOR_TRAINING`: Default 500
+## Airflow orchestration
 
-## Files Created/Modified
+The preferred scheduled path is the optional `real_estate_pipeline` Airflow
+DAG in `airflow/dags/real_estate_pipeline.py`. It starts paused. When explicitly
+enabled, it runs the multi-source crawler hourly, waits for a snapshot of raw
+Kafka offsets to be committed, then trains. This barrier does not await pending
+AI extractions. Operational failures retry with backoff; access-denial exit20
+fails without task retries. Start it for a local
+UI demo with:
 
-### New Files:
-- `scripts/auto_scrape.py` - Auto scraper runner
-- `scripts/auto_train.py` - Auto trainer runner
-- `scripts/start_all.sh` - Start all services
-- `scripts/stop_all.sh` - Stop all services
-- `scripts/health_check.py` - Health check utility
-- `utils/metrics.py` - Prometheus metrics helpers
-- `monitoring/alert_rules.yml` - Alert rules
-- `monitoring/prometheus.yml` - Prometheus config
-- `monitoring/README.md` - Monitoring docs
-- `docs/RUNBOOK.md` - Operational runbook
-- `docs/DASHBOARD.md` - Dashboard guide
-- `utils/tests/test_utils.py` - Unit tests for utils
-- `utils/tests/test_model.py` - Unit tests for model
-- Dockerfile for each service (scraper, processor, modeling)
+```bash
+docker compose --profile orchestration up -d airflow
+```
 
-### Modified Files:
-- `docker-compose.yml` - Added prometheus, grafana, health checks, restart policies, all services
-- `README.md` - Added automated startup section
-- `requirements.txt` - Added prometheus-client, requests
-- `processing/kafka_to_mongo.py` - Added metrics export, offset checkpointing, graceful shutdown
-- `modeling/train_model.py` - Added metrics export
+Airflow's DAG view, Gantt chart and task logs cover orchestration. Grafana's
+provisioned **Agent Operations — AI, Stress & Safety** dashboard covers the
+agent-specific runtime view: throughput, confidence, validation/failure
+reasons, Kafka lag, provider retries and isolated stress activity.
 
-## Status: Production-Ready Automation ✓
+Sources are configured with `ENABLED_SOURCES=alonhadat,homedy` and
+`CRAWL_ENABLED=false` by default. Guland is disabled pending review; Batdongsan
+is not an accepted source. Stop legacy scraper AND trainer loops before
+unpausing Airflow; do not run two schedulers writing the same artifacts.
 
-The pipeline is now fully automated:
-- ✅ Services start with one command
-- ✅ Auto-healing on failures
-- ✅ Scheduled tasks run automatically
-- ✅ Metrics & alerts configured
-- ✅ Health checks in place
-- ✅ Graceful shutdown handling
-- ✅ Offset checkpointing for replay
-- ✅ Unit tests for critical functions
-- ✅ Comprehensive documentation
+## Legacy scheduled workers
 
-All manual operations converted to automated workflows!
+- `scripts/auto_scrape.py` remains a compatibility loop for deployments that do
+  not run Airflow. It uses the same 2-5 second random request policy and now
+  propagates scraper failures to its process supervisor.
+- `scripts/auto_train.py` checks MongoDB immediately, trains when the candidate
+  count reaches `MIN_RECORDS_FOR_TRAINING` (Compose default 3000), then checks
+  again every `TRAIN_INTERVAL` seconds (default 1800). A failed or insufficient
+  run retries after `TRAIN_RETRY_INTERVAL` (default 60).
+
+Both workers are persistent loops. They do not exit after one scheduled run;
+normal shutdown is handled by their process signal/keyboard paths and Compose.
+
+## Health and monitoring
+
+`scripts/health_check.py` checks the frontend, API, Prometheus, Grafana,
+Processor 1 metrics, trainer metrics and MongoDB. It does not probe Kafka,
+Zookeeper, scraper or the legacy predictor. Prometheus scrapes
+`processor:8003`, `processor-2:8004`, `processor-3:8005`, `trainer:8001`,
+DNS-discovered `ai-agent:8006`, `stress-agent:8007` and `localhost:9090`
+every 15 seconds.
+
+Processor and trainer expose Prometheus metrics through `utils/metrics.py`.
+Agents use `agents/metrics.py`, `agents/stress_metrics.py` and worker-specific
+metrics. `health_check.py` does not probe Processors 2/3 or agents;
+check those separately with the commands in `RUNBOOK.md`.
+There is no ELK, Jaeger, Alertmanager, PagerDuty or Slack integration in this
+repository.
+
+## Tests
+
+```bash
+pytest -q
+cd frontend && npm.cmd run build
+```
+
+The frontend has no `test` script and no ESLint configuration; `npm run lint`
+is therefore not a configured validation gate.
+
+The checked-in `.env.example` sets `MIN_RECORDS_FOR_TRAINING=30` for small
+local experiments. Copying it to `.env` overrides the Compose fallback of
+3,000.
+
+## Effective environment defaults
+
+| Variable | Compose default | Used by |
+| --- | --- | --- |
+| `SCRAPE_INTERVAL` | `1800` seconds | periodic scraper |
+| `SCRAPE_INITIAL_LIMIT` | `5000` | first scraper run |
+| `SCRAPE_INITIAL_MAX_PAGES` | `200` | first scraper run |
+| `TRAIN_INTERVAL` | `1800` seconds | trainer |
+| `TRAIN_RETRY_INTERVAL` | `60` seconds | trainer |
+| `MIN_RECORDS_FOR_TRAINING` | `3000` | trainer gate |
+| `PROMETHEUS_METRICS_PORT` | `8001`/`8003`/`8004`/`8005`/`8006`/`8007` | trainer/processor workers/AI/stress (agent ports internal only) |
+
+## Agent lifecycle
+
+`ai-agent` starts `python -m agents.worker`. With `AI_ENABLED=false` it stays
+healthy and does not connect a consumer or call a provider. When enabled it
+consumes `real_estate_ai_input` in `real_estate_ai_extraction`, persists reusable
+extraction state, and waits for an acknowledged `real_estate_ai_results`
+publication before committing the request. The three existing Processors consume
+results and perform the final deterministic validation/write. Transient provider
+retries are bounded; terminal failures return as results for review and DLQ.
+There is no independent HTTP extraction server or scheduled AI training task.
+
+`stress-agent` starts `python -m agents.stress`. Generation is opt-in and finite;
+after the time/record budget or a previously claimed run ID, it stays idle with
+health/metrics available. Run state is bind-mounted under `runtime/stress`.
+The same three Processors consume stress input into the isolated stress database.
+All primary trainer entrypoints filter synthetic data; no stress trainer exists.
+See [optional configuration](../DEPLOYMENT.md#optional-agent-configuration).

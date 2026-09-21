@@ -13,7 +13,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.3
     platform: linux/amd64
-    container_name: real_estate_kafka
+    container_name: real_estate_kafka_1
     depends_on:
       - zookeeper
     ports:
@@ -22,21 +22,116 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      test: ["CMD-SHELL", "nc -z localhost 29092"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_kafka_2
+    depends_on:
+      - zookeeper
+    ports:
+      - "9093:9093"
+      - "29093:29093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29093,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 29093"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_kafka_3
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9094"
+      - "29094:29094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29094,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:29094,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 29094"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    platform: linux/amd64
+    container_name: real_estate_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ./scripts/init_kafka_cluster.sh:/init_kafka_cluster.sh:ro
+    entrypoint: ["/bin/bash", "/init_kafka_cluster.sh"]
+    restart: "no"
 
   mongodb:
     image: mongo:7
     platform: linux/amd64
     container_name: real_estate_mongodb
+    networks:
+      default:
+        aliases:
+          - mongo
     ports:
       - "27017:27017"
     volumes:
@@ -84,9 +179,9 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
@@ -100,31 +195,175 @@ services:
       timeout: 5s
       retries: 3
 
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    platform: linux/amd64
+    container_name: real_estate_airflow
+    profiles: ["orchestration"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      AIRFLOW_HOME: /opt/airflow/state
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/state/airflow.db
+      ENABLED_SOURCES: ${ENABLED_SOURCES:-alonhadat,homedy}
+      CRAWL_ENABLED: ${CRAWL_ENABLED:-false}
+      ALONHADAT_CATEGORY_URL: ${ALONHADAT_CATEGORY_URL:-https://alonhadat.com.vn/can-ban-nha-dat}
+      HOMEDY_CATEGORY_URL: ${HOMEDY_CATEGORY_URL:-https://homedy.com/ban-nha-dat}
+      GULAND_CATEGORY_URL: ${GULAND_CATEGORY_URL:-https://guland.vn/mua-ban-bat-dong-san-tp-ho-chi-minh}
+      SCRAPE_LIMIT: ${SCRAPE_LIMIT:-10}
+      SCRAPE_MAX_PAGES: ${SCRAPE_MAX_PAGES:-1}
+      SCRAPE_DELAY_MIN: ${SCRAPE_DELAY_MIN:-2}
+      SCRAPE_DELAY_MAX: ${SCRAPE_DELAY_MAX:-5}
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-RealEstatePipelineCrawler/1.0}
+      SCRAPE_HTTP_TIMEOUT: ${SCRAPE_HTTP_TIMEOUT:-30}
+      SCRAPE_HTTP_ATTEMPTS: ${SCRAPE_HTTP_ATTEMPTS:-4}
+      SCRAPE_KAFKA_DELIVERY_TIMEOUT: ${SCRAPE_KAFKA_DELIVERY_TIMEOUT:-30}
+      MIN_RECORDS_FOR_TRAINING: ${MIN_RECORDS_FOR_TRAINING:-3000}
+      MODEL_PATH: artifacts/models/price_model.joblib
+      METRICS_PATH: artifacts/price_model_metrics.json
+      PRICE_ANOMALY_TRAINING_POLICY: ${PRICE_ANOMALY_TRAINING_POLICY:-FLAG}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./:/opt/airflow/project:ro
+      - ./runtime:/opt/airflow/project/runtime
+      - ./artifacts:/opt/airflow/project/artifacts
+      - airflow_state:/opt/airflow/state
+    working_dir: /opt/airflow/project
+    command: >-
+      bash -c "airflow db migrate && airflow standalone"
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import json,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8080/health', timeout=5)); assert d['metadatabase']['status']=='healthy' and d['scheduler']['status']=='healthy'\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
   processor:
     build:
       context: .
       dockerfile: processing/Dockerfile
-    container_name: real_estate_processor
+    container_name: real_estate_processor_1
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-      - MONGO_URI=mongodb://mongodb:27017/
-      - MONGO_DB=real_estate_db
-      - PROMETHEUS_METRICS_PORT=8003
-      - PRICE_ANOMALY_IQR_MULTIPLIER=${PRICE_ANOMALY_IQR_MULTIPLIER:-1.5}
-      - PRICE_ANOMALY_MIN_GROUP_SIZE=${PRICE_ANOMALY_MIN_GROUP_SIZE:-30}
-      - PRICE_ANOMALY_GROUP_COLUMNS=${PRICE_ANOMALY_GROUP_COLUMNS:-province_slug,district_slug,property_type}
-      - PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS=${PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS:-province_slug,property_type}
-      - PRICE_ANOMALY_REFRESH_SECONDS=${PRICE_ANOMALY_REFRESH_SECONDS:-300}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_RAW_TOPIC: real_estate_raw
+      KAFKA_CLEAN_TOPIC: real_estate_features
+      KAFKA_GROUP_ID: real_estate_training_pipeline
+      KAFKA_STRESS_TOPIC: real_estate_stress_raw
+      MONGO_STRESS_DB: real_estate_stress_db
+      AI_FALLBACK_ENABLED: ${AI_FALLBACK_ENABLED:-false}
+      AI_STRESS_ENABLED: ${AI_STRESS_ENABLED:-false}
+      KAFKA_AI_TOPIC: real_estate_ai_input
+      KAFKA_AI_RESULT_TOPIC: real_estate_ai_results
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      PROMETHEUS_METRICS_PORT: 8003
+      PRICE_ANOMALY_IQR_MULTIPLIER: ${PRICE_ANOMALY_IQR_MULTIPLIER:-1.5}
+      PRICE_ANOMALY_MIN_GROUP_SIZE: ${PRICE_ANOMALY_MIN_GROUP_SIZE:-30}
+      PRICE_ANOMALY_GROUP_COLUMNS: ${PRICE_ANOMALY_GROUP_COLUMNS:-province_slug,district_slug,property_type}
+      PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS: ${PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS:-province_slug,property_type}
+      PRICE_ANOMALY_REFRESH_SECONDS: ${PRICE_ANOMALY_REFRESH_SECONDS:-300}
     ports:
       - "8003:8003"
     restart: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  processor-2:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    container_name: real_estate_processor_2
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_RAW_TOPIC: real_estate_raw
+      KAFKA_CLEAN_TOPIC: real_estate_features
+      KAFKA_GROUP_ID: real_estate_training_pipeline
+      KAFKA_STRESS_TOPIC: real_estate_stress_raw
+      MONGO_STRESS_DB: real_estate_stress_db
+      AI_FALLBACK_ENABLED: ${AI_FALLBACK_ENABLED:-false}
+      AI_STRESS_ENABLED: ${AI_STRESS_ENABLED:-false}
+      KAFKA_AI_TOPIC: real_estate_ai_input
+      KAFKA_AI_RESULT_TOPIC: real_estate_ai_results
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      PROMETHEUS_METRICS_PORT: 8004
+      PRICE_ANOMALY_IQR_MULTIPLIER: ${PRICE_ANOMALY_IQR_MULTIPLIER:-1.5}
+      PRICE_ANOMALY_MIN_GROUP_SIZE: ${PRICE_ANOMALY_MIN_GROUP_SIZE:-30}
+      PRICE_ANOMALY_GROUP_COLUMNS: ${PRICE_ANOMALY_GROUP_COLUMNS:-province_slug,district_slug,property_type}
+      PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS: ${PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS:-province_slug,property_type}
+      PRICE_ANOMALY_REFRESH_SECONDS: ${PRICE_ANOMALY_REFRESH_SECONDS:-300}
+    ports:
+      - "8004:8004"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  processor-3:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    container_name: real_estate_processor_3
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_RAW_TOPIC: real_estate_raw
+      KAFKA_CLEAN_TOPIC: real_estate_features
+      KAFKA_GROUP_ID: real_estate_training_pipeline
+      KAFKA_STRESS_TOPIC: real_estate_stress_raw
+      MONGO_STRESS_DB: real_estate_stress_db
+      AI_FALLBACK_ENABLED: ${AI_FALLBACK_ENABLED:-false}
+      AI_STRESS_ENABLED: ${AI_STRESS_ENABLED:-false}
+      KAFKA_AI_TOPIC: real_estate_ai_input
+      KAFKA_AI_RESULT_TOPIC: real_estate_ai_results
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      PROMETHEUS_METRICS_PORT: 8005
+      PRICE_ANOMALY_IQR_MULTIPLIER: ${PRICE_ANOMALY_IQR_MULTIPLIER:-1.5}
+      PRICE_ANOMALY_MIN_GROUP_SIZE: ${PRICE_ANOMALY_MIN_GROUP_SIZE:-30}
+      PRICE_ANOMALY_GROUP_COLUMNS: ${PRICE_ANOMALY_GROUP_COLUMNS:-province_slug,district_slug,property_type}
+      PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS: ${PRICE_ANOMALY_FALLBACK_GROUP_COLUMNS:-province_slug,property_type}
+      PRICE_ANOMALY_REFRESH_SECONDS: ${PRICE_ANOMALY_REFRESH_SECONDS:-300}
+    ports:
+      - "8005:8005"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/metrics"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -138,15 +377,15 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      - MONGO_URI=mongodb://mongodb:27017/
-      - MONGO_DB=real_estate_db
-      - PROMETHEUS_METRICS_PORT=8001
-      - MODEL_PATH=artifacts/models/price_model.joblib
-      - METRICS_PATH=artifacts/price_model_metrics.json
-      - MIN_RECORDS_FOR_TRAINING=${MIN_RECORDS_FOR_TRAINING:-3000}
-      - TRAIN_INTERVAL=${TRAIN_INTERVAL:-1800}
-      - TRAIN_RETRY_INTERVAL=${TRAIN_RETRY_INTERVAL:-60}
-      - PRICE_ANOMALY_TRAINING_POLICY=${PRICE_ANOMALY_TRAINING_POLICY:-FLAG}
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      PROMETHEUS_METRICS_PORT: 8001
+      MODEL_PATH: artifacts/models/price_model.joblib
+      METRICS_PATH: artifacts/price_model_metrics.json
+      MIN_RECORDS_FOR_TRAINING: ${MIN_RECORDS_FOR_TRAINING:-3000}
+      TRAIN_INTERVAL: ${TRAIN_INTERVAL:-1800}
+      TRAIN_RETRY_INTERVAL: ${TRAIN_RETRY_INTERVAL:-60}
+      PRICE_ANOMALY_TRAINING_POLICY: ${PRICE_ANOMALY_TRAINING_POLICY:-FLAG}
     ports:
       - "8001:8001"
     volumes:
@@ -167,13 +406,13 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      - MODEL_PATH=artifacts/models/price_model.joblib
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-dev-only-change-this-auth-secret-key-32}
-      - AUTH_USERS_PATH=artifacts/auth/users.json
-      - AUTH_TOKEN_EXPIRE_MINUTES=${AUTH_TOKEN_EXPIRE_MINUTES:-60}
+      MODEL_PATH: artifacts/models/price_model.joblib
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-dev-only-change-this-auth-secret-key-32}
+      AUTH_USERS_PATH: artifacts/auth/users.json
+      AUTH_TOKEN_EXPIRE_MINUTES: ${AUTH_TOKEN_EXPIRE_MINUTES:-60}
     ports:
       - "8000:8000"
     volumes:
@@ -191,26 +430,46 @@ services:
       dockerfile: scraper/Dockerfile
     container_name: real_estate_scraper
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-      - SCRAPE_LIMIT=${SCRAPE_LIMIT:-300}
-      - SCRAPE_MAX_PAGES=${SCRAPE_MAX_PAGES:-5}
-      - SCRAPE_START_PAGE=${SCRAPE_START_PAGE:-1}
-      - SCRAPE_INITIAL_LIMIT=${SCRAPE_INITIAL_LIMIT:-5000}
-      - SCRAPE_INITIAL_MAX_PAGES=${SCRAPE_INITIAL_MAX_PAGES:-200}
-      - SCRAPE_INITIAL_START_PAGE=${SCRAPE_INITIAL_START_PAGE:-1}
-      - SCRAPE_INITIAL_TIMEOUT=${SCRAPE_INITIAL_TIMEOUT:-7200}
-      - SCRAPE_INITIAL_FRESH_START=${SCRAPE_INITIAL_FRESH_START:-true}
-      - SCRAPE_INITIAL_STATE_FILE=${SCRAPE_INITIAL_STATE_FILE:-runtime/scrape_state/producer_initial_state.json}
-      - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-1800}
-      - SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-300}
-      - SCRAPE_REQUEST_DELAY=${SCRAPE_REQUEST_DELAY:-0.25}
-      - SCRAPE_DETAIL_DELAY=${SCRAPE_DETAIL_DELAY:-0.1}
-      - SCRAPE_INCLUDE_UNVERIFIED=${SCRAPE_INCLUDE_UNVERIFIED:-false}
-      - SCRAPE_FRESH_START=${SCRAPE_FRESH_START:-true}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_RAW_TOPIC: real_estate_raw
+      ENABLED_SOURCES: ${ENABLED_SOURCES:-alonhadat,homedy}
+      CRAWL_ENABLED: ${CRAWL_ENABLED:-false}
+      ALONHADAT_CATEGORY_URL: ${ALONHADAT_CATEGORY_URL:-https://alonhadat.com.vn/can-ban-nha-dat}
+      HOMEDY_CATEGORY_URL: ${HOMEDY_CATEGORY_URL:-https://homedy.com/ban-nha-dat}
+      GULAND_CATEGORY_URL: ${GULAND_CATEGORY_URL:-https://guland.vn/mua-ban-bat-dong-san-tp-ho-chi-minh}
+      CRAWL_METRICS_PORT: 8008
+      SCRAPE_LIMIT: ${SCRAPE_LIMIT:-10}
+      SCRAPE_MAX_PAGES: ${SCRAPE_MAX_PAGES:-1}
+      SCRAPE_START_PAGE: ${SCRAPE_START_PAGE:-1}
+      SCRAPE_INITIAL_LIMIT: ${SCRAPE_INITIAL_LIMIT:-10}
+      SCRAPE_INITIAL_MAX_PAGES: ${SCRAPE_INITIAL_MAX_PAGES:-1}
+      SCRAPE_INITIAL_START_PAGE: ${SCRAPE_INITIAL_START_PAGE:-1}
+      SCRAPE_INITIAL_TIMEOUT: ${SCRAPE_INITIAL_TIMEOUT:-7200}
+      SCRAPE_INITIAL_FRESH_START: ${SCRAPE_INITIAL_FRESH_START:-true}
+      SCRAPE_INITIAL_STATE_FILE: ${SCRAPE_INITIAL_STATE_FILE:-runtime/scrape_state/producer_initial_state.json}
+      SCRAPE_INTERVAL: ${SCRAPE_INTERVAL:-1800}
+      SCRAPE_TIMEOUT: ${SCRAPE_TIMEOUT:-300}
+      SCRAPE_REQUEST_DELAY: ${SCRAPE_REQUEST_DELAY:-2}
+      SCRAPE_DETAIL_DELAY: ${SCRAPE_DETAIL_DELAY:-2}
+      SCRAPE_DELAY_MIN: ${SCRAPE_DELAY_MIN:-2}
+      SCRAPE_DELAY_MAX: ${SCRAPE_DELAY_MAX:-5}
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-RealEstatePipelineCrawler/1.0}
+      SCRAPE_HTTP_TIMEOUT: ${SCRAPE_HTTP_TIMEOUT:-30}
+      SCRAPE_HTTP_ATTEMPTS: ${SCRAPE_HTTP_ATTEMPTS:-4}
+      SCRAPE_KAFKA_DELIVERY_TIMEOUT: ${SCRAPE_KAFKA_DELIVERY_TIMEOUT:-30}
+      SCRAPE_INCLUDE_UNVERIFIED: ${SCRAPE_INCLUDE_UNVERIFIED:-false}
+      SCRAPE_FRESH_START: ${SCRAPE_FRESH_START:-true}
+    volumes:
+      - ./runtime:/app/runtime
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8008/metrics',timeout=3).read()\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
@@ -224,7 +483,7 @@ services:
       - "3000:80"
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -235,8 +494,8 @@ services:
       dockerfile: modeling/Dockerfile.predictor
     container_name: real_estate_predictor
     environment:
-      - MODEL_PATH=artifacts/models/price_model.joblib
-      - PREDICTOR_PORT=8002
+      MODEL_PATH: artifacts/models/price_model.joblib
+      PREDICTOR_PORT: 8002
     ports:
       - "8002:8002"
     volumes:
@@ -248,5 +507,95 @@ services:
       timeout: 10s
       retries: 3
 
+  # Disabled by default; both agents remain healthy and expose metrics while idle.
+  # No API credentials are passed to the scraper, stress agent, or processors.
+  ai-agent:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    # No fixed container_name: optional replicas share the extraction group.
+    command: ["python", "-m", "agents.worker"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_AI_TOPIC: real_estate_ai_input
+      KAFKA_AI_RESULT_TOPIC: real_estate_ai_results
+      KAFKA_AI_DLQ_TOPIC: real_estate_ai_dlq
+      KAFKA_AI_GROUP_ID: real_estate_ai_extraction
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      MONGO_STRESS_DB: real_estate_stress_db
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_STRESS_ENABLED: ${AI_STRESS_ENABLED:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      AI_MAX_CONCURRENT_REQUESTS: ${AI_MAX_CONCURRENT_REQUESTS:-1}
+      AI_RATE_LIMIT_PER_MINUTE: ${AI_RATE_LIMIT_PER_MINUTE:-20}
+      AI_MIN_CONFIDENCE: ${AI_MIN_CONFIDENCE:-0.75}
+      AI_CIRCUIT_FAILURE_THRESHOLD: ${AI_CIRCUIT_FAILURE_THRESHOLD:-5}
+      AI_CIRCUIT_COOLDOWN_SECONDS: ${AI_CIRCUIT_COOLDOWN_SECONDS:-60}
+      AI_TOTAL_BUDGET_SECONDS: ${AI_TOTAL_BUDGET_SECONDS:-120}
+      AI_KAFKA_DELIVERY_TIMEOUT_SECONDS: ${AI_KAFKA_DELIVERY_TIMEOUT_SECONDS:-30}
+      PROMETHEUS_METRICS_PORT: 8006
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # Single process/rate budget by default; scaling requires dividing the API
+    # quota between replicas, not just increasing the replica count.
+
+  stress-agent:
+    build:
+      context: .
+      dockerfile: processing/Dockerfile
+    container_name: real_estate_stress_agent
+    command: ["python", "-m", "agents.stress"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092,kafka2:29093,kafka3:29094
+      KAFKA_STRESS_TOPIC: real_estate_stress_raw
+      MONGO_URI: mongodb://mongodb:27017/
+      MONGO_DB: real_estate_db
+      STRESS_ENABLED: ${STRESS_ENABLED:-false}
+      STRESS_SCENARIO: ${STRESS_SCENARIO:-mixed}
+      STRESS_MULTIPLIER: ${STRESS_MULTIPLIER:-10}
+      STRESS_RATE_PER_SECOND: ${STRESS_RATE_PER_SECOND:-1}
+      STRESS_UNSTRUCTURED_RATIO: ${STRESS_UNSTRUCTURED_RATIO:-0.30}
+      STRESS_DUPLICATE_RATIO: ${STRESS_DUPLICATE_RATIO:-0.10}
+      STRESS_DURATION_SECONDS: ${STRESS_DURATION_SECONDS:-60}
+      STRESS_MAX_RECORDS: ${STRESS_MAX_RECORDS:-1000}
+      STRESS_BURST_RATE: ${STRESS_BURST_RATE:-10}
+      STRESS_BURST_DURATION: ${STRESS_BURST_DURATION:-5}
+      STRESS_SEED: ${STRESS_SEED:-42}
+      STRESS_RUN_ID: ${STRESS_RUN_ID:-default}
+      STRESS_TEMPLATE_SOURCE: ${STRESS_TEMPLATE_SOURCE:-builtin}
+      STRESS_TEMPLATE_LIMIT: ${STRESS_TEMPLATE_LIMIT:-100}
+      STRESS_MAX_RATE: ${STRESS_MAX_RATE:-100}
+      STRESS_LOAD_PROFILE: ${STRESS_LOAD_PROFILE:-normal}
+      PROMETHEUS_METRICS_PORT: 8007
+    volumes:
+      - ./runtime/stress:/app/runtime/stress
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   mongo_data:
+  airflow_state:

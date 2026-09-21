@@ -24,6 +24,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 from processing.price_anomaly import get_anomaly_training_policy
+from agents.safety import real_records
 from processing.feature_engineering import GEO_CATEGORICAL_FEATURES, GEO_NUMERIC_FEATURES, enrich_geographic_features
 from processing.text_enrichment import TEXT_EMBEDDING_DIMENSIONS, enrich_text_record
 
@@ -212,7 +213,7 @@ class RealEstatePriceModel:
 
     def train(self, records: Iterable[Dict[str, Any]], model_path: str, metrics_path: str | None = None) -> TrainResult:
         # Train model pipeline, compute metrics, and save versioned artifacts
-        frame = build_feature_frame(records)
+        frame = build_feature_frame(real_records(records))
         if frame.empty or TARGET not in frame.columns:
             raise ValueError("Training data must include records with price_vnd.")
         if "is_model_candidate" in frame.columns:
@@ -379,7 +380,7 @@ def evaluate_feature_variants(records: Iterable[Dict[str, Any]]) -> dict[str, di
     winner. It exists to produce real ablation results only when a caller supplies
     sufficient real training records.
     """
-    frame = build_feature_frame(records)
+    frame = build_feature_frame(real_records(records))
     if TARGET not in frame.columns:
         raise ValueError("Feature evaluation data must include price_vnd.")
     if "is_model_candidate" in frame.columns:

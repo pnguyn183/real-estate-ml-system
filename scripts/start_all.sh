@@ -6,11 +6,13 @@ echo "Starting Real Estate Pipeline (Automated)"
 echo "========================================="
 
 # Set environment variables
-export KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-"localhost:9092"}
+export KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-"localhost:9092,localhost:9093,localhost:9094"}
 export MONGO_URI=${MONGO_URI:-"mongodb://localhost:27017/"}
 export MONGO_DB=${MONGO_DB:-"real_estate_db"}
-export SCRAPE_LIMIT=${SCRAPE_LIMIT:-300}
-export SCRAPE_MAX_PAGES=${SCRAPE_MAX_PAGES:-5}
+export CRAWL_ENABLED=${CRAWL_ENABLED:-false}
+export ENABLED_SOURCES=${ENABLED_SOURCES:-"alonhadat,homedy"}
+export SCRAPE_LIMIT=${SCRAPE_LIMIT:-10}
+export SCRAPE_MAX_PAGES=${SCRAPE_MAX_PAGES:-1}
 export SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-1800}
 export SCRAPE_TIMEOUT=${SCRAPE_TIMEOUT:-300}
 export SCRAPE_FRESH_START=${SCRAPE_FRESH_START:-true}
@@ -36,14 +38,14 @@ echo "Pipeline started successfully!"
 echo "========================================="
 echo ""
 echo "Service endpoints:"
-echo "  - Kafka: localhost:9092"
+echo "  - Kafka brokers: localhost:9092, localhost:9093, localhost:9094"
 echo "  - MongoDB: localhost:27017"
 echo "  - Mongo Express: http://localhost:8081"
 echo "  - Prometheus: http://localhost:9090"
 echo "  - Grafana: http://localhost:3001 (admin/admin)"
 echo "  - Frontend: http://localhost:3000"
 echo "  - API docs: http://localhost:8000/docs"
-echo "  - Processor metrics: http://localhost:8003/metrics"
+echo "  - Processor metrics: http://localhost:8003/metrics, :8004/metrics, :8005/metrics"
 echo "  - Trainer metrics: http://localhost:8001/metrics"
 echo ""
 echo "To view logs:"

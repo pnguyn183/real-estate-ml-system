@@ -17,6 +17,22 @@ kafka_consumer_lag = Gauge("kafka_consumer_lag", "Kafka consumer lag")
 db_writes_success = Counter("db_writes_success_total", "Total successful DB writes")
 db_writes_failed = Counter("db_writes_failed_total", "Total failed DB writes")
 processing_duration = Histogram("processing_duration_seconds", "Processing duration in seconds")
+processor_traffic_instrumentation_version = Gauge(
+    "processor_traffic_instrumentation_version", "Traffic research metric contract version, present even before the first input",
+)
+processor_traffic_instrumentation_version.set(1)
+processor_input_outcomes = Counter(
+    "processor_input_outcomes_total", "Input handling outcomes; handled/invalid/DLQ are counted after durable commit",
+    ["topic", "outcome"],
+)
+processor_input_handling = Histogram(
+    "processor_input_handling_seconds", "Input handling duration through durable Kafka commit and checkpoint",
+    ["topic"], buckets=(.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
+processor_input_end_to_end = Histogram(
+    "processor_input_end_to_end_seconds", "Producer stress_sent_at to durable input commit; includes Kafka queue time",
+    ["topic"], buckets=(.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
 model_train_duration = Histogram("model_train_duration_seconds", "Model training duration in seconds")
 model_mae = Gauge("model_mae_vnd", "Model MAE in VND")
 model_rmse = Gauge("model_rmse_vnd", "Model RMSE in VND")

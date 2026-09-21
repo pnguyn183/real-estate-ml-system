@@ -10,14 +10,19 @@ Note: The service intentionally performs no authentication and is intended for i
 import json
 import logging
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-try:
-    from modeling.price_model import RealEstatePriceModel
-except ImportError:
-    from price_model import RealEstatePriceModel
+# When this file is launched directly (``python modeling/predict_service.py``),
+# Python only adds ``/app/modeling`` to ``sys.path``.  Add the repository root
+# so sibling packages such as ``processing`` remain importable as well.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from modeling.price_model import RealEstatePriceModel
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

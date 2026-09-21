@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from modeling.price_model import RealEstatePriceModel
 from processing.price_anomaly import add_anomaly_training_filter
+from agents.safety import real_data_query
 from utils.metrics import (
     model_train_duration,
     start_prometheus_server,
@@ -36,12 +37,17 @@ MIN_RECORDS = int(os.environ.get("MIN_RECORDS_FOR_TRAINING", 500))
 MODEL_PATH = os.environ.get("MODEL_PATH", "artifacts/models/price_model.joblib")
 METRICS_PATH = os.environ.get("METRICS_PATH", "artifacts/price_model_metrics.json")
 
+def training_query():
+    return real_data_query(add_anomaly_training_filter({
+        "price_vnd": {"$gt": 0}, "is_model_candidate": True, "has_target_price": True,
+    }))
+
+
 def check_training_data():
     try:
         client = MongoClient(MONGO_URI)
         db = client[MONGO_DB]
-        query = add_anomaly_training_filter({"is_model_candidate": True, "has_target_price": True})
-        count = db["training_features"].count_documents(query)
+        count = db[MONGO_FEATURE_COLLECTION].count_documents(training_query())
         logger.info(f"Found {count} training candidates")
         return count >= MIN_RECORDS
     except Exception as exc:
@@ -63,7 +69,7 @@ def run_trainer():
         try:
             records = list(
                 client[MONGO_DB][MONGO_FEATURE_COLLECTION].find(
-                    add_anomaly_training_filter({"price_vnd": {"$gt": 0}, "is_model_candidate": True}),
+                    training_query(),
                     {"_id": 0},
                 )
             )

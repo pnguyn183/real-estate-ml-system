@@ -11,6 +11,7 @@ Outputs: MongoDB collections (`listings_raw`, `training_features`, `invalid_reco
 """
 
 import argparse
+import base64
 import json
 import logging
 import math
@@ -18,16 +19,25 @@ import os
 import re
 import sys
 import hashlib
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Docker executes this file as __main__. Result validation and extraction reuse
+# its parsers by their package name; both names must refer to the same module,
+# otherwise Prometheus counters are registered twice on the first AI result.
+if __name__ == "__main__":
+    sys.modules.setdefault("processing.kafka_to_mongo", sys.modules[__name__])
+
 from confluent_kafka import Consumer, Producer, TopicPartition
 from pymongo import MongoClient
+from prometheus_client import Counter, Histogram
 import signal
 import threading
 from utils.logging_utils import log_structured, get_logger
@@ -40,6 +50,7 @@ from processing.price_anomaly import (
     safe_price_per_m2,
 )
 from processing.text_enrichment import SQLiteTextEmbeddingCache
+from agents.safety import is_synthetic_record
 from utils.metrics import (
     start_prometheus_server,
     kafka_messages_consumed,
@@ -54,6 +65,57 @@ from utils.metrics import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+processor_ai_requests = Counter(
+    "processor_ai_requests_total", "AI queue delivery outcomes", ["outcome"]
+)
+processor_ai_enqueue_duration = Histogram(
+    "processor_ai_enqueue_duration_seconds", "Time spent awaiting AI request delivery acknowledgment"
+)
+processor_synthetic_rejected = Counter(
+    "processor_synthetic_rejected_total", "Records rejected by live/stress isolation checks"
+)
+
+TRACE_FIELDS = (
+    "source_type", "is_synthetic", "generated_by", "scenario", "run_id",
+    "original_record_id", "processing_method", "ai_status", "ai_attempted",
+    "ai_provider", "ai_model", "ai_confidence", "ai_error_code", "ai_attempts",
+    "ai_duration_seconds", "ai_event_id", "ai_requested_at", "ai_completed_at",
+    "_agent_event_id",
+)
+AI_TERMINAL_STATUSES = {"success", "failed", "disabled"}
+
+
+def agent_event_id(payload: Dict[str, Any]) -> str:
+    """Stable source-version identity shared with the asynchronous AI worker."""
+    source = {key: value for key, value in payload.items() if key not in {"_id", "_agent_event_id"}}
+    return hashlib.sha256(
+        json.dumps(source, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def extraction_required_errors(record: Dict[str, Any]) -> list[str]:
+    """Fields the extractor must complete before its result is accepted."""
+    errors = []
+    for field in ("price_vnd", "area_m2"):
+        value = record.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            errors.append(f"missing_or_invalid_{field}")
+    if not safe_text(record.get("property_type")):
+        errors.append("missing_property_type")
+    _, validation_errors = validate_normalized_record(record)
+    errors.extend(error for error in validation_errors if error.startswith(("price_", "area_")))
+    return list(dict.fromkeys(errors))
+
+
+def extraction_routing_errors(record: Dict[str, Any]) -> list[str]:
+    """Include geography gaps when deciding whether to ask the AI for help."""
+    errors = extraction_required_errors(record)
+    if not safe_text(record.get("province_slug")):
+        errors.append("missing_province")
+    if not safe_text(record.get("district_slug")):
+        errors.append("missing_district")
+    return list(dict.fromkeys(errors))
 
 # Graceful shutdown event for consumers
 _shutdown_event = threading.Event()
@@ -185,6 +247,11 @@ def build_text_features(record: Dict[str, Any]) -> str:
 
 
 def normalize_listing(raw: Dict[str, Any]) -> Dict[str, Any]:
+    canonical = None
+    if "schema_version" in raw:
+        from processing.source_contract import normalize_contract
+        canonical = normalize_contract(raw)
+        raw = canonical
     area_m2 = parse_number(raw.get("area_text"))
     bedroom_count = parse_int(raw.get("bedroom_text"))
     bathroom_count = parse_int(raw.get("bathroom_text"))
@@ -229,10 +296,25 @@ def normalize_listing(raw: Dict[str, Any]) -> Dict[str, Any]:
         "price_per_m2_vnd": price_per_m2_vnd,
         "has_target_price": bool(price_vnd and price_vnd > 0),
         "text_features": "",
-        "source": safe_text(raw.get("source")) or "batdongsan_verified",
+        "source": safe_text(raw.get("source")) or "legacy_unknown",
         "scraped_at": raw.get("scraped_at") or datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    normalized.update({key: raw[key] for key in TRACE_FIELDS if key in raw})
+    if canonical is not None:
+        for key in (
+            "schema_version", "source_listing_id", "source_url", "canonical_url", "crawl_timestamp",
+            "raw_payload_hash", "price_raw", "price_value", "price_unit", "price_is_negotiable",
+            "area_raw", "address_raw", "address_old", "address_current", "address_version",
+            "province", "district", "ward", "street", "posted_at", "raw_data", "source_errors",
+            "validation_errors", "validation_warnings", "extraction_status", "training_excluded",
+            "price_vnd", "price_per_m2_vnd", "area_m2", "bedroom_count", "bathroom_count",
+            "floor_count", "front_width_m", "road_width_m",
+        ):
+            normalized[key] = canonical.get(key)
+        normalized["has_target_price"] = bool(normalized["price_vnd"] and normalized["price_vnd"] > 0)
+    normalized["is_synthetic"] = is_synthetic_record(raw)
+    normalized.setdefault("processing_method", "deterministic")
     normalized["text_features"] = build_text_features(normalized)
     normalized.update(enrich_geographic_features(raw))
     # Local hashing is deterministic and cacheable. It does not call an external
@@ -266,12 +348,14 @@ def normalize_listing(raw: Dict[str, Any]) -> Dict[str, Any]:
         and normalized["area_m2"] > 0
         and normalized["property_type"]
         and normalized["feature_coverage_score"] >= 5
+        and not normalized["is_synthetic"]
+        and not normalized.get("training_excluded", False)
     )
     return normalized
 
 
 def validate_normalized_record(record: Dict[str, Any]) -> tuple[bool, list[str]]:
-    errors: list[str] = []
+    errors: list[str] = list(record.get("validation_errors") or [])
     url = record.get("url")
     if not url:
         errors.append("missing_url")
@@ -318,21 +402,61 @@ class KafkaToMongoPipeline:
         group_id: str,
         mongo_uri: str,
         mongo_db: str,
+        *,
+        consumer_enabled: bool = True,
+        allow_synthetic: bool = False,
+        origin: str = "real",
     ) -> None:
+        stress_db = os.environ.get("MONGO_STRESS_DB", "real_estate_stress_db")
+        if origin not in {"real", "stress"}:
+            raise ValueError("Pipeline origin must be real or stress")
+        if stress_db == os.environ.get("MONGO_DB", "real_estate_db"):
+            raise ValueError("Live and stress databases must be distinct")
+        if allow_synthetic and (origin != "stress" or mongo_db != stress_db):
+            raise ValueError("Synthetic records require the isolated configured stress database")
+        if origin == "real" and mongo_db == stress_db:
+            raise ValueError("Live pipeline cannot use the stress database")
+        if origin == "stress" and not allow_synthetic:
+            raise ValueError("Stress pipeline must explicitly allow synthetic records")
         self.raw_topic = raw_topic
         self.clean_topic = clean_topic
         self.group_id = group_id
-        self.consumer = Consumer(
-            {
-                "bootstrap.servers": kafka_bootstrap_servers,
-                "group.id": group_id,
-                "auto.offset.reset": "earliest",
-                "enable.auto.commit": False,
-                "max.poll.interval.ms": 900000,
-            }
-        )
-        self.consumer.subscribe([self.raw_topic])
-        self.clean_producer = Producer({"bootstrap.servers": kafka_bootstrap_servers, "linger.ms": 50})
+        self.origin = origin
+        self.allow_synthetic = allow_synthetic
+        self.ai_enabled = os.environ.get(
+            "AI_STRESS_ENABLED" if origin == "stress" else "AI_FALLBACK_ENABLED", "false"
+        ).lower() in {"1", "true", "yes"}
+        self.ai_topic = os.environ.get("KAFKA_AI_TOPIC", "real_estate_ai_input")
+        self.ai_result_topic = os.environ.get("KAFKA_AI_RESULT_TOPIC", "real_estate_ai_results")
+        self.ai_dlq_topic = os.environ.get("KAFKA_AI_DLQ_TOPIC", "real_estate_ai_dlq")
+        self.ai_delivery_timeout = float(os.environ.get("KAFKA_AI_DELIVERY_TIMEOUT_SECONDS", "15"))
+        if not math.isfinite(self.ai_delivery_timeout) or not 0 < self.ai_delivery_timeout <= 120:
+            raise ValueError("KAFKA_AI_DELIVERY_TIMEOUT_SECONDS must be in (0, 120]")
+        self.stress_topic = os.environ.get("KAFKA_STRESS_TOPIC", "real_estate_stress_raw")
+        if len({self.raw_topic, self.stress_topic, self.ai_topic, self.ai_result_topic, self.ai_dlq_topic}) != 5 and consumer_enabled:
+            raise ValueError("Live, stress, AI request, result and DLQ topics must be distinct")
+        self.consumer = None
+        self.stress_pipeline = None
+        if consumer_enabled:
+            self.consumer = Consumer(
+                {
+                    "bootstrap.servers": kafka_bootstrap_servers,
+                    "group.id": group_id,
+                    "auto.offset.reset": "earliest",
+                    "enable.auto.commit": False,
+                    "enable.auto.offset.store": False,
+                    "max.poll.interval.ms": 900000,
+                }
+            )
+            self.consumer.subscribe(
+                [self.raw_topic, self.stress_topic, self.ai_result_topic],
+                on_assign=self._on_assign, on_revoke=self._on_revoke,
+            )
+        self.clean_producer = Producer({
+            "bootstrap.servers": kafka_bootstrap_servers, "linger.ms": 50,
+            "enable.idempotence": True, "acks": "all",
+            "delivery.timeout.ms": int(self.ai_delivery_timeout * 1000),
+        })
         self.mongo_client = MongoClient(mongo_uri)
         self.db = self.mongo_client[mongo_db]
         self.raw_collection = self.db["listings_raw"]
@@ -344,10 +468,34 @@ class KafkaToMongoPipeline:
         self.llm_reviewer = OptionalLLMReviewer()
         self._logger = get_logger(__name__)
         self._ensure_indexes()
+        if consumer_enabled:
+            self.stress_pipeline = KafkaToMongoPipeline(
+                kafka_bootstrap_servers, self.stress_topic,
+                os.environ.get("KAFKA_STRESS_CLEAN_TOPIC", "real_estate_stress_features"),
+                group_id, mongo_uri, stress_db,
+                consumer_enabled=False, allow_synthetic=True, origin="stress",
+            )
+
+    def _on_assign(self, consumer, partitions) -> None:
+        log_structured(
+            logging.INFO, "processor_partitions_assigned", group_id=self.group_id,
+            partitions=[{"topic": item.topic, "partition": item.partition} for item in partitions],
+        )
+        consumer.assign(partitions)
+
+    def _on_revoke(self, consumer, partitions) -> None:
+        log_structured(
+            logging.INFO, "processor_partitions_revoked", group_id=self.group_id,
+            partitions=[{"topic": item.topic, "partition": item.partition} for item in partitions],
+        )
 
     def _ensure_indexes(self) -> None:
         self.raw_collection.create_index("url", unique=True)
         self.feature_collection.create_index("url", unique=True)
+        # Lookup provenance without imposing a new uniqueness constraint on
+        # historical data. URL remains the existing idempotent upsert key.
+        self.raw_collection.create_index([("source", 1), ("source_listing_id", 1)])
+        self.feature_collection.create_index([("source", 1), ("source_listing_id", 1)])
         self.feature_collection.create_index("price_vnd")
         self.feature_collection.create_index("price_per_m2_vnd")
         self.feature_collection.create_index("property_type")
@@ -365,32 +513,157 @@ class KafkaToMongoPipeline:
             unique=True,
         )
 
-    def process_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        import time
+    def _enqueue_ai(self, payload: Dict[str, Any], event_id: str) -> Dict[str, Any]:
+        """Never acknowledge the input offset before the AI request is delivered."""
+        requested_at = datetime.now(timezone.utc).isoformat()
+        envelope = {
+            "schema_version": 1,
+            "origin": self.origin,
+            "record": payload,
+            "event_id": event_id,
+            "requested_at": requested_at,
+        }
+        delivery = {"done": False, "error": None}
+
+        def delivered(error, message):
+            delivery["done"] = True
+            delivery["error"] = error
+
+        started = time.monotonic()
+        try:
+            self.clean_producer.produce(
+                self.ai_topic, key=payload.get("url"),
+                value=json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                callback=delivered,
+            )
+            deadline = started + self.ai_delivery_timeout
+            while not delivery["done"] and time.monotonic() < deadline:
+                self.clean_producer.poll(min(0.25, max(0, deadline - time.monotonic())))
+            if not delivery["done"]:
+                raise TimeoutError("AI request delivery acknowledgment timed out")
+            if delivery["error"] is not None:
+                raise RuntimeError(f"AI request delivery failed: {delivery['error']}")
+        except Exception:
+            processor_ai_requests.labels(outcome="failed").inc()
+            raise
+        finally:
+            processor_ai_enqueue_duration.observe(time.monotonic() - started)
+        processor_ai_requests.labels(outcome="queued").inc()
+        return {
+            "ai_status": "queued", "ai_attempted": False,
+            "ai_event_id": event_id, "ai_requested_at": requested_at,
+            "processing_method": "ai_pending", "is_model_candidate": False,
+        }
+
+    def _reject_origin(self, payload: Dict[str, Any], event_id: str, reason: str) -> Dict[str, Any]:
+        # A deterministic key makes isolation rejection idempotent across replays.
+        try:
+            self.dlq_collection.update_one(
+                {"event_id": event_id, "reason": reason},
+                {"$set": {"payload": payload, "event_id": event_id, "reason": reason}},
+                upsert=True,
+            )
+            db_writes_success.inc()
+        except Exception:
+            db_writes_failed.inc()
+            raise
+        processor_synthetic_rejected.inc()
+        log_structured(logging.WARNING, "pipeline_origin_rejected", reason=reason, event_id=event_id)
+        return {
+            "url": payload.get("url"), "is_synthetic": is_synthetic_record(payload),
+            "is_model_candidate": False, "listing_review_status": "INVALID",
+            "validation_errors": [reason], "processing_method": "origin_rejected",
+        }
+
+    def process_payload(
+        self, payload: Dict[str, Any], *, skip_ai: bool = False, raw_already_saved: bool = False
+    ) -> Dict[str, Any]:
         start_time = time.time()
-        normalized = normalize_listing(payload)
+        if not isinstance(payload, dict):
+            raise ValueError("Listing payload must be a JSON object")
+        event_id = payload.get("_agent_event_id") if raw_already_saved else None
+        event_id = event_id or agent_event_id(payload)
+        if not self.allow_synthetic and is_synthetic_record(payload):
+            return self._reject_origin(payload, event_id, "synthetic_record_in_live_pipeline")
+        if self.origin == "stress":
+            host = (urlparse(str(payload.get("url") or "")).hostname or "").lower()
+            marked = is_synthetic_record({key: value for key, value in payload.items() if key != "url"})
+            if not marked or not (host == "synthetic.invalid" or host.endswith(".synthetic.invalid")):
+                return self._reject_origin(payload, event_id, "unmarked_or_non_synthetic_url_in_stress_pipeline")
+
+        # Preserve the original source, never overwrite it with AI-returned values.
+        if not raw_already_saved:
+            try:
+                self.raw_collection.update_one(
+                    {"url": payload.get("url")}, {"$set": dict(payload, _agent_event_id=event_id)}, upsert=True
+                )
+                db_writes_success.inc()
+            except Exception as exc:
+                log_structured(logging.ERROR, "raw_db_write_failed", url=payload.get("url"), error=str(exc))
+                db_writes_failed.inc()
+                try:
+                    self.dlq_collection.insert_one({"payload": payload, "error": type(exc).__name__})
+                except Exception:
+                    log_structured(logging.ERROR, "raw_failure_dlq_write_failed", event_id=event_id)
+                raise
+
+        normalization_errors = []
+        try:
+            normalized = normalize_listing(payload)
+        except (ValueError, TypeError, OverflowError) as exc:
+            normalization_errors = [f"normalization_{type(exc).__name__}"]
+            normalized = {
+                "url": payload.get("url"), "is_model_candidate": False,
+                "is_synthetic": is_synthetic_record(payload),
+                **{key: payload[key] for key in TRACE_FIELDS if key in payload},
+            }
+        normalized["_agent_event_id"] = event_id
+        # A newer version must never leave the old feature silently trainable
+        # while validation or asynchronous extraction is pending. Preserve its
+        # historical values for review, but exclude it from every trainer.
+        if normalized.get("schema_version") is not None:
+            previous = self.feature_collection.find_one({"url": payload.get("url")})
+            if previous and previous.get("_agent_event_id") != event_id:
+                self.feature_collection.update_one({"url": payload.get("url")}, {"$set": {
+                    "training_excluded": True, "is_model_candidate": False,
+                    "feature_status": "superseded_pending_validation",
+                }})
+
+        # Validate before storing features
+        _, errors = validate_normalized_record(normalized)
+        errors.extend(normalization_errors)
+        required_errors = extraction_routing_errors(normalized)
+        terminal_status = str(payload.get("ai_status") or "").lower()
+        identity_errors = [error for error in errors if error not in {"area_unparseable_or_out_of_range", "price_unparseable_or_out_of_range"}]
+        if self.ai_enabled and not skip_ai and terminal_status not in AI_TERMINAL_STATUSES and required_errors and not normalization_errors and not identity_errors and not normalized.get("price_is_negotiable"):
+            # Route exactly the scalar facts the extractor can read. A separate
+            # field list can reject supported aliases or enqueue unusable objects.
+            # Import lazily because extraction reuses this module's parsers.
+            from agents.extraction import source_text
+
+            if payload.get("url") and source_text(payload):
+                normalized.update(self._enqueue_ai(payload, event_id))
+                processing_duration.observe(time.time() - start_time)
+                return normalized
+            normalized.update({"ai_status": "failed", "ai_error_code": "no_extractable_text_or_url", "ai_attempted": False})
+
+        # AI-enabled incomplete records must not silently fall through to training.
+        # With AI disabled, historical optional/missing-value behavior stays intact.
+        if self.ai_enabled or skip_ai or terminal_status in AI_TERMINAL_STATUSES:
+            errors.extend(required_errors)
+        if terminal_status in {"failed", "disabled"}:
+            errors.append(f"ai_extraction_{terminal_status}")
+        errors = list(dict.fromkeys(errors))
+        is_valid = not errors
         existing_feature = self.feature_collection.find_one(
             {"url": normalized.get("url")}, {"_id": 0, "listing_fingerprint": 1}
         )
         is_duplicate = bool(
             existing_feature and existing_feature.get("listing_fingerprint") == normalized.get("listing_fingerprint")
         )
-        # Save raw payload
-        try:
-            self.raw_collection.update_one({"url": payload.get("url")}, {"$set": payload}, upsert=True)
-            db_writes_success.inc()
-        except Exception as exc:
-            log_structured(logging.ERROR, "raw_db_write_failed", url=payload.get("url"), error=str(exc))
-            db_writes_failed.inc()
-            # store to DLQ raw collection
-            try:
-                self.dlq_collection.insert_one({"payload": payload, "error": str(exc)})
-            except Exception:
-                pass
-
-        # Validate before storing features
-        is_valid, errors = validate_normalized_record(normalized)
         if not is_valid:
+            normalized["is_model_candidate"] = False
+            normalized["training_excluded"] = True
             normalized["validation_errors"] = errors
             annotate_listing_review(normalized, validation_errors=errors, is_duplicate=is_duplicate)
             normalized.update(self.llm_reviewer.review(normalized))
@@ -400,6 +673,11 @@ class KafkaToMongoPipeline:
             except Exception as exc:
                 log_structured(logging.ERROR, "invalid_collection_write_failed", url=normalized.get("url"), error=str(exc))
                 db_writes_failed.inc()
+                try:
+                    self.dlq_collection.insert_one({"payload": payload, "normalized": normalized, "error": type(exc).__name__})
+                except Exception:
+                    log_structured(logging.ERROR, "invalid_failure_dlq_write_failed", event_id=event_id)
+                raise
             # still produce to features topic for auditing (optional)
             try:
                 self.clean_producer.produce(
@@ -448,6 +726,7 @@ class KafkaToMongoPipeline:
         normalized.update(self.llm_reviewer.review(normalized))
 
         # Store normalized features
+        normalized["feature_status"] = "current"
         try:
             self.feature_collection.update_one({"url": normalized.get("url")}, {"$set": normalized}, upsert=True)
             db_writes_success.inc()
@@ -458,7 +737,8 @@ class KafkaToMongoPipeline:
             try:
                 self.dlq_collection.insert_one({"payload": payload, "normalized": normalized, "error": str(exc)})
             except Exception:
-                pass
+                log_structured(logging.ERROR, "feature_failure_dlq_write_failed", event_id=event_id)
+            raise
 
         # Best-effort: publish normalized message
         try:
@@ -477,6 +757,8 @@ class KafkaToMongoPipeline:
         return normalized
 
     def consume_forever(self, max_messages: int | None = None) -> None:
+        if self.consumer is None:
+            raise RuntimeError("Persistence-only pipeline has no Kafka consumer")
         count = 0
         try:
             while not _shutdown_event.is_set():
@@ -489,31 +771,75 @@ class KafkaToMongoPipeline:
 
                 kafka_messages_consumed.inc()
                 self.update_consumer_lag(message)
+                is_ai_result = message.topic() == self.ai_result_topic
+                if message.topic() == self.raw_topic or is_ai_result:
+                    pipeline = self
+                elif message.topic() == self.stress_topic and self.stress_pipeline is not None:
+                    pipeline = self.stress_pipeline
+                else:
+                    raise RuntimeError("Consumer received an unconfigured topic")
                 try:
                     payload = json.loads(message.value().decode("utf-8"))
+                    if not isinstance(payload, dict):
+                        raise ValueError("Listing payload must be a JSON object")
+                    if is_ai_result:
+                        from agents.results import validate_result_envelope
+                        origin, _, _, _ = validate_result_envelope(payload)
+                        pipeline = self.stress_pipeline if origin == "stress" else self
+                        if pipeline is None:
+                            raise ValueError("Missing isolated pipeline for stress AI result")
                 except Exception as exc:
                     log_structured(logging.ERROR, "kafka_deserialize_failed", error=str(exc))
                     kafka_messages_failed.inc()
-                    # move raw message to DLQ and commit offset
+                    # Preserve arbitrary bytes, including invalid UTF-8/tombstones.
+                    # Failed DLQ persistence must leave the input offset uncommitted.
                     try:
-                        self.dlq_collection.insert_one({"raw": message.value().decode("utf-8"), "error": str(exc)})
+                        identity = {"topic": message.topic(), "partition": message.partition(), "offset": message.offset()}
+                        pipeline.dlq_collection.update_one(
+                            identity,
+                            {"$set": dict(
+                                identity,
+                                raw_base64=base64.b64encode(message.value() or b"").decode("ascii"),
+                                is_tombstone=message.value() is None,
+                                error=type(exc).__name__,
+                            )},
+                            upsert=True,
+                        )
+                        db_writes_success.inc()
                     except Exception:
-                        pass
-                    try:
-                        self.consumer.commit(message=message, asynchronous=False)
-                    except Exception:
-                        pass
+                        db_writes_failed.inc()
+                        log_structured(logging.ERROR, "malformed_message_dlq_failed", topic=message.topic())
+                        raise
+                    self.consumer.commit(message=message, asynchronous=False)
+                    pipeline.commit_offset_checkpoint(message)
+                    count += 1
+                    if max_messages and count >= max_messages:
+                        break
                     continue
 
                 try:
-                    normalized = self.process_payload(payload)
+                    if is_ai_result:
+                        from agents.results import handle_ai_result
+                        normalized = handle_ai_result(payload, pipeline)
+                    else:
+                        normalized = pipeline.process_payload(payload)
                     count += 1
-                    log_structured(logging.INFO, "prepared_features", url=normalized.get("url"))
+                    log_structured(
+                        logging.INFO, "prepared_features", url=normalized.get("url"),
+                        topic=message.topic(), partition=message.partition(), offset=message.offset(),
+                        group_id=self.group_id, origin=pipeline.origin,
+                        processing_method=normalized.get("processing_method", "deterministic"),
+                        ai_status=normalized.get("ai_status"),
+                        listing_review_status=normalized.get("listing_review_status"),
+                    )
                     try:
                         self.consumer.commit(message=message, asynchronous=False)
-                        self.commit_offset_checkpoint(message)
+                        pipeline.commit_offset_checkpoint(message)
                     except Exception as exc:
                         log_structured(logging.WARNING, "commit_failed", error=str(exc))
+                        # Do not poll/commit a higher offset after a failed commit.
+                        # Restart resumes from Kafka's last durable checkpoint.
+                        raise
                 except Exception as exc:
                     # processing failed; do not commit so message can be retried
                     log_structured(logging.ERROR, "processing_failed", error=str(exc))
@@ -526,9 +852,16 @@ class KafkaToMongoPipeline:
 
     def close(self) -> None:
         log_structured(logging.INFO, "price_anomaly_detection_summary", **self.price_anomaly_detector.metrics())
-        self.clean_producer.flush()
-        self.consumer.close()
-        self.mongo_client.close()
+        try:
+            remaining = self.clean_producer.flush(self.ai_delivery_timeout)
+            if remaining:
+                log_structured(logging.WARNING, "producer_shutdown_pending_messages", count=remaining)
+        finally:
+            if self.consumer is not None:
+                self.consumer.close()
+            self.mongo_client.close()
+            if self.stress_pipeline is not None:
+                self.stress_pipeline.close()
 
     def update_consumer_lag(self, message) -> None:
         try:

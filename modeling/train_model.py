@@ -27,6 +27,7 @@ except ImportError:
     from price_model import RealEstatePriceModel, evaluate_feature_variants
 from utils.metrics import start_prometheus_server, update_metrics_from_result, model_train_duration
 from processing.price_anomaly import add_anomaly_training_filter
+from agents.safety import real_data_query
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -37,7 +38,7 @@ def load_records_from_mongo(mongo_uri: str, mongo_db: str, collection_name: str)
     client = MongoClient(mongo_uri)
     try:
         collection = client[mongo_db][collection_name]
-        query = add_anomaly_training_filter({"price_vnd": {"$gt": 0}})
+        query = real_data_query(add_anomaly_training_filter({"price_vnd": {"$gt": 0}}))
         return list(collection.find(query, {"_id": 0}))
     finally:
         client.close()
