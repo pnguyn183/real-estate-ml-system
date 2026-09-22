@@ -1,10 +1,10 @@
-# Báo cáo trả lời câu hỏi giảng viên
+# Báo cáo kiểm định dữ liệu, mô hình và cơ chế điều tiết tải
 
-> Phạm vi: kết quả kiểm tra dữ liệu, benchmark model giá bất động sản và stress test Kafka/adaptive rate limiting. Các kết luận bên dưới dùng artifact đã lưu, không suy diễn ngoài phạm vi thí nghiệm.
+> Phạm vi nghiên cứu: kiểm tra dữ liệu đầu vào, benchmark mô hình giá bất động sản và đánh giá stress test Kafka với cơ chế adaptive rate limiting. Kết luận được xây dựng từ các artifact thực nghiệm đã lưu.
 
-## 1. Tóm tắt kết luận
+## 1. Tóm tắt kết quả
 
-- Đã bổ sung cơ chế provenance để kiểm tra Gemini: mỗi AI result được lưu snapshot trước/sau, provider/model, field thay đổi và SHA-256 trong collection `ai_cleaning_audit`. Tuy nhiên, dữ liệu lịch sử trước khi bổ sung cơ chế này vẫn chưa thể xác minh đầy đủ.
+- Cơ chế provenance cho Gemini đã được bổ sung: mỗi AI result được lưu snapshot trước/sau, provider/model, field thay đổi và SHA-256 trong collection `ai_cleaning_audit`. Dữ liệu lịch sử trước thời điểm triển khai cơ chế này chưa có đủ provenance để xác minh.
 - Dữ liệu có lệch mạnh ở giá, diện tích và một số biến số; đây là skew thống kê, chưa đồng nghĩa mọi outlier đều sai.
 - Trên cùng một holdout, Random Forest và XGBoost tăng R² so với model hiện tại; Gradient Boosting giảm R². Đây là benchmark chẩn đoán, chưa deploy model mới.
 - Trong stress test, leader ingress của 3 Kafka broker gần như đều nhau, khoảng 33% mỗi broker. Tuy nhiên CPU broker 2 cao hơn rõ rệt, nên không thể nói toàn bộ tải tài nguyên là cân bằng.
@@ -13,11 +13,9 @@
 - Mức cao nhất đạt tiêu chí ổn định trong run v4 là 500 messages/s ở baseline và 250 messages/s ở adaptive. Chưa đủ bằng chứng để gọi đây là điểm tối ưu tuyệt đối.
 - Thuật toán giá hiện tại là VotingRegressor gồm Ridge, HistGradientBoostingRegressor và SGDRegressor, dùng log1p/expm1 cho target. Phần traffic controller là luật phản ứng dựa trên lag, latency, CPU/RAM và error rate; traffic forecast 5/10 phút chưa có đủ dữ liệu hợp lệ.
 
-## 2. Câu hỏi 1: Dữ liệu sau Gemini đã được clean kỹ chưa?
+## 2. Kiểm chứng dữ liệu sau Gemini
 
-### Trả lời
-
-Có API key Gemini trong file `.env`, nhưng chỉ riêng API key không chứng minh Gemini đã được gọi hoặc đã clean dữ liệu. Cơ chế mới sử dụng Gemini qua endpoint OpenAI-compatible của `ai-agent`; processor giữ raw record và lưu audit trước/sau trong `ai_cleaning_audit`. Mỗi audit có `event_id`, provider/model, snapshot trước/sau, field thay đổi và SHA-256 để truy nguyên. Cấu hình hiện tại chỉ route record thiếu field bắt buộc khi `AI_FALLBACK_ENABLED=true`, không tự động gửi toàn bộ dataset. Vì vậy chỉ các record có audit tương ứng mới được kết luận là đã qua Gemini; các record lịch sử không có audit vẫn chưa thể xác minh.
+Cấu hình có API key Gemini, nhưng API key không phải là bằng chứng Gemini đã được gọi hoặc đã làm sạch dữ liệu. Cơ chế mới sử dụng Gemini qua endpoint OpenAI-compatible của `ai-agent`; processor giữ raw record và lưu audit trước/sau trong `ai_cleaning_audit`. Mỗi audit có `event_id`, provider/model, snapshot trước/sau, field thay đổi và SHA-256 để truy nguyên. Cấu hình hiện tại chỉ route các record thiếu field bắt buộc khi `AI_FALLBACK_ENABLED=true`, không tự động gửi toàn bộ dataset. Do đó, chỉ các record có audit tương ứng mới được xác nhận là đã qua Gemini; các record lịch sử không có audit vẫn chưa thể xác minh.
 
 Các bằng chứng còn thiếu:
 
@@ -28,7 +26,7 @@ Các bằng chứng còn thiếu:
 - danh sách record bị sửa, xóa hoặc từ chối;
 - log lý do xử lý theo từng record.
 
-Lệnh tạo báo cáo audit sau workload:
+Quy trình tạo artifact audit sau workload:
 
 ```powershell
 python scripts/audit_gemini_clean.py `
@@ -36,7 +34,7 @@ python scripts/audit_gemini_clean.py `
 	--provider openai_compatible
 ```
 
-`GEMINI_API_KEY` đang nằm trong `.env` và `.env` được khai báo trong `.gitignore`, nên giá trị key không được đưa vào báo cáo. Cần rotate/revoke key nếu key đã bị chia sẻ hoặc hiển thị ở nơi không an toàn.
+`GEMINI_API_KEY` được lưu trong `.env`, và `.env` được khai báo trong `.gitignore`; giá trị bí mật không thuộc phạm vi artifact báo cáo. API key cần được thu hồi và cấp lại nếu đã bị lộ.
 
 ### Bằng chứng
 
@@ -48,9 +46,7 @@ python scripts/audit_gemini_clean.py `
 - [scripts/audit_gemini_clean.py](../scripts/audit_gemini_clean.py)
 - [runtime/research/data-audit/audit.json](../runtime/research/data-audit/audit.json)
 
-## 3. Câu hỏi 2: Dữ liệu có bị lệch không?
-
-### Trả lời
+## 3. Phân tích phân phối dữ liệu
 
 Có. Dữ liệu lệch mạnh ở một số biến chính:
 
@@ -73,7 +69,7 @@ Một số missingness đáng chú ý:
 - province/district/ward slug thiếu khoảng 99%;
 - 687 giá trị giá là IQR outlier, nhưng không tự động kết luận là dữ liệu sai.
 
-Kết luận trình bày: dữ liệu có skew và missingness lớn; pipeline đang dùng median imputation, one-hot encoding và log-transform target, nhưng các biện pháp này không sửa được semantic sai hoặc giá trị nguồn sai. Cần giữ outlier để kiểm tra nghiệp vụ thay vì xóa tự động.
+Kết luận: dữ liệu có skew và missingness lớn. Pipeline sử dụng median imputation, one-hot encoding và log-transform target; các biện pháp này không sửa được sai lệch semantic hoặc giá trị nguồn sai. Các outlier được giữ lại để phân biệt giữa cực trị thống kê và dữ liệu sai theo nghiệp vụ.
 
 ### Bằng chứng
 
@@ -81,7 +77,7 @@ Kết luận trình bày: dữ liệu có skew và missingness lớn; pipeline �
 - [runtime/research/data-audit/audit.json](../runtime/research/data-audit/audit.json)
 - Biểu đồ: [price_vnd_distribution.png](../runtime/research/data-audit/charts/price_vnd_distribution.png), [area_m2_distribution.png](../runtime/research/data-audit/charts/area_m2_distribution.png), [missing_values.png](../runtime/research/data-audit/charts/missing_values.png)
 
-## 4. Câu hỏi 3: Random Forest, Gradient Boosting, XGBoost có làm R² tăng không?
+## 4. Benchmark các thuật toán hồi quy
 
 Các model được chạy trên cùng 3.984 train / 996 test, cùng preprocessing, cùng log target và cùng random seed 42.
 
@@ -102,9 +98,7 @@ Random Forest và XGBoost tăng R² trên holdout này; XGBoost tốt nhất. Gr
 - [runtime/research/legacy-benchmark/algorithm_comparison.png](../runtime/research/legacy-benchmark/algorithm_comparison.png)
 - [research/benchmark.py](../research/benchmark.py)
 
-## 5. Câu hỏi 4: Ba Kafka broker có phân phối tải đều trong stress test không?
-
-### Trả lời
+## 5. Phân phối tải giữa ba Kafka broker
 
 Có, xét riêng **leader ingress của stress topic**. Mỗi broker nhận gần một phần ba message. Nhưng xét CPU thì không đều hoàn toàn.
 
@@ -124,7 +118,7 @@ Chỉ số cân bằng ingress:
 | Baseline | 1,003798 | 0,002845 |
 | Adaptive | 1,012267 | 0,008700 |
 
-Cách diễn giải: message ingress được phân phối rất đều giữa 3 leader partition, nhưng broker 2 có CPU khoảng gấp đôi broker 1/3 ở baseline. Vì telemetry hiện tại tính leader log-offset growth, không phải JMX request/byte counter, kết luận chính xác là **ingress cân bằng, resource load chưa cân bằng hoàn toàn**.
+Kết luận: message ingress được phân phối rất đều giữa ba leader partition, nhưng broker 2 có CPU khoảng gấp đôi broker 1/3 ở baseline. Telemetry hiện tại tính leader log-offset growth, không phải JMX request/byte counter; do đó kết luận là **ingress cân bằng, resource load chưa cân bằng hoàn toàn**.
 
 ### Bằng chứng
 
@@ -134,7 +128,7 @@ Cách diễn giải: message ingress được phân phối rất đều giữa 3
 - [runtime/research/paired-v4-20260921/adaptive/observations.jsonl](../runtime/research/paired-v4-20260921/adaptive/observations.jsonl)
 - [research/telemetry.py](../research/telemetry.py)
 
-## 6. Câu hỏi 5: Khi nghẽn, bao lâu hệ thống tự set limit mới?
+## 6. Thời gian phản ứng của cơ chế điều tiết tải
 
 Trong adaptive run v4 có một congestion episode:
 
@@ -152,7 +146,7 @@ Trong adaptive run v4 có một congestion episode:
 | Recovery: T3 - T2 | 80,016758 giây |
 | Tổng T0 - T3 | 80,018243 giây |
 
-Cần trình bày đúng giới hạn: 0,000986 giây là thời gian xử lý quyết định sau khi telemetry sample đã hoàn tất, không phải thời gian từ lúc nghẽn vật lý bắt đầu. Do collector lấy mẫu khoảng 5 giây, thời gian từ Kafka-source timestamp đến quyết định khoảng 2,111 giây. Các lần giảm limit tiếp theo là 1.000 -> 700 -> 490 -> 343 -> 240,10 -> 168,07 msg/s.
+Giá trị 0,000986 giây là thời gian xử lý quyết định sau khi telemetry sample đã hoàn tất, không phải thời gian từ lúc nghẽn vật lý bắt đầu. Collector lấy mẫu khoảng 5 giây; thời gian từ Kafka-source timestamp đến quyết định khoảng 2,111 giây. Các lần giảm limit tiếp theo là 1.000 -> 700 -> 490 -> 343 -> 240,10 -> 168,07 msg/s.
 
 Recovery 80 giây xảy ra trong pha drain sau khi tải dừng; chưa chứng minh recovery ổn định trong khi tải cao vẫn tiếp tục.
 
@@ -163,7 +157,7 @@ Recovery 80 giây xảy ra trong pha drain sau khi tải dừng; chưa chứng m
 - [research/telemetry.py](../research/telemetry.py)
 - [agents/traffic_control.py](../agents/traffic_control.py)
 
-## 7. So sánh trước và sau khi agent điều chỉnh limit
+## 7. So sánh trước và sau khi điều chỉnh limit
 
 Run v4 dùng cùng seed, cùng workload profile, cùng topic stress cô lập và cùng ba processor. Baseline chạy fixed limit; adaptive cho phép controller thay đổi admission limit.
 
@@ -184,7 +178,7 @@ Run v4 dùng cùng seed, cùng workload profile, cùng topic stress cô lập v�
 
 Agent giảm peak lag và peak latency bằng cách giảm lượng traffic được phép vào Kafka, nhưng không làm throughput trung bình tăng và cũng không làm CPU/RAM trung bình giảm trong run này. Vì vậy bằng chứng hiện tại chứng minh **rate limiting có tác dụng bảo vệ hệ thống khi nghẽn**, chưa chứng minh **auto-scaling làm tăng capacity** hay tối ưu toàn diện.
 
-Các biểu đồ cần trình bày:
+Các biểu đồ kết quả:
 
 - [throughput.png](../runtime/research/paired-v4-20260921/analysis/throughput.png)
 - [kafka_lag.png](../runtime/research/paired-v4-20260921/analysis/kafka_lag.png)
@@ -193,7 +187,7 @@ Các biểu đồ cần trình bày:
 - [input_vs_throughput.png](../runtime/research/paired-v4-20260921/analysis/input_vs_throughput.png)
 - [agent_actions.png](../runtime/research/paired-v4-20260921/analysis/agent_actions.png)
 
-## 8. Mục tiêu auto-scaling, rate limiting và điểm chịu tải
+## 8. Cơ chế điều tiết tải và giới hạn chịu tải
 
 ### Cơ chế đã có
 
@@ -205,7 +199,7 @@ Các biểu đồ cần trình bày:
 
 ### Cơ chế chưa có
 
-Chưa có actuator tự động tăng/giảm số processor replicas, broker resources hoặc Docker CPU/memory. Vì vậy không nên báo cáo rằng project đã chứng minh auto-scaling tài nguyên. Cách gọi chính xác là **adaptive admission control / rate limiting agent**.
+Chưa có actuator tự động tăng/giảm số processor replicas, broker resources hoặc Docker CPU/memory. Vì vậy cơ chế được đánh giá trong nghiên cứu là **adaptive admission control / rate limiting**, chưa phải autoscaling tài nguyên.
 
 ### Mức chịu tải quan sát được
 
@@ -228,7 +222,7 @@ Kết luận thực nghiệm: run này quan sát được vùng đạt tiêu ch�
 - [runtime/research/paired-v4-20260921/analysis/kafka_lag.png](../runtime/research/paired-v4-20260921/analysis/kafka_lag.png)
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md#L440-L480)
 
-## 9. Hôm trước đã dùng thuật toán gì để dự đoán?
+## 9. Thuật toán được sử dụng
 
 Có hai phần cần phân biệt:
 
@@ -244,11 +238,11 @@ Pipeline dùng preprocessing số/categorical/text, TF-IDF và text embedding; t
 
 ### Dự đoán traffic/Kafka
 
-Stress controller hiện tại không dùng model ML để dự đoán traffic. Nó là reactive controller dựa trên threshold, hysteresis, cooldown và token bucket. Benchmark forecast 5/10 phút có chạy persistence, Random Forest, Gradient Boosting và XGBoost, nhưng không đủ các cặp dữ liệu chronology-safe nên không báo cáo R² traffic. Không nên nói rằng agent hiện tại đang dùng XGBoost để tự điều chỉnh limit.
+Stress controller hiện tại không dùng model ML để dự đoán traffic. Đây là reactive controller dựa trên threshold, hysteresis, cooldown và token bucket. Benchmark forecast 5/10 phút có chạy persistence, Random Forest, Gradient Boosting và XGBoost, nhưng chưa đủ các cặp dữ liệu chronology-safe để báo cáo R² traffic. Agent hiện tại không dùng XGBoost để tự điều chỉnh limit.
 
-## 10. Cách bật và kiểm chứng Gemini
+## 10. Thiết lập và tái lập kiểm chứng Gemini
 
-Đặt các biến sau trong `.env`, không commit API key:
+Thiết lập thực nghiệm sử dụng các biến môi trường sau; API key không được lưu trong repository:
 
 ```env
 AI_ENABLED=true
@@ -259,21 +253,21 @@ LLM_MODEL=gemini-2.5-flash
 GEMINI_API_KEY=your_rotated_key
 ```
 
-Khởi động lại các service liên quan:
+Các service liên quan được khởi động lại sau khi cập nhật cấu hình:
 
 ```powershell
 docker compose up -d --build ai-agent processor processor-2 processor-3
 ```
 
-Sau workload, chạy script audit ở phần trên. Chỉ các record có `status=success`,
-provider/model đúng cấu hình và audit tồn tại mới là bằng chứng Gemini đã trả
-kết quả được pipeline chấp nhận. Raw record vẫn được giữ nguyên trong
-`listings_raw`; dữ liệu sau validation nằm trong `training_features` hoặc
-`invalid_records`.
+Sau workload, artifact audit được tạo bằng script ở trên. Các record có
+`status=success`, provider/model đúng cấu hình và audit tồn tại được xác định là
+những record Gemini đã trả kết quả được pipeline chấp nhận. Raw record vẫn được
+giữ nguyên trong `listings_raw`; dữ liệu sau validation nằm trong
+`training_features` hoặc `invalid_records`.
 
-## 11. Câu trả lời ngắn khi trình bày
+## 11. Kết luận
 
-> Em đã kiểm tra dữ liệu bằng audit định lượng nhưng chưa thể xác minh đầy đủ phần Gemini vì thiếu provenance trước/sau. Dữ liệu có skew mạnh và missingness đáng kể. Trên cùng một holdout, Random Forest tăng R² từ 0,489 lên 0,510 và XGBoost lên 0,593, còn Gradient Boosting giảm xuống 0,446; đây mới là benchmark, chưa deploy. Trong stress test, ingress của ba Kafka broker đều khoảng 33%, nhưng CPU broker 2 cao hơn nên chỉ kết luận message ingress cân bằng, không phải toàn bộ resource load cân bằng. Agent phát hiện lag sau khoảng 0,001 giây từ sample hoàn tất và xác nhận limit mới sau khoảng 0,0005 giây; tính cả thời gian thu thập Kafka sample là khoảng 2,1 giây. Cơ chế hiện tại là adaptive rate limiting/admission control, chưa phải auto-scaling replica. Peak lag giảm 74,88% và peak latency giảm 65,74%, nhưng throughput trung bình cũng giảm, nên hiệu quả chính là bảo vệ hệ thống khi nghẽn. Mức stable cao nhất trong run này là 500 msg/s baseline và 250 msg/s adaptive; cần thêm thí nghiệm để xác định điểm tối ưu chính xác.
+Nghiên cứu xác nhận ba kết quả chính. Thứ nhất, dữ liệu có skew và missingness đáng kể; chất lượng Gemini chỉ được xác minh đáng tin cậy đối với các record có audit before/after. Thứ hai, XGBoost và Random Forest cho R² cao hơn model hiện tại trên holdout cố định, nhưng chưa đủ cơ sở để khẳng định khả năng tổng quát hoặc thay thế model production. Thứ ba, adaptive rate limiting làm giảm peak Kafka lag và peak latency bằng cách chủ động từ chối một phần tải; run hiện tại chưa chứng minh autoscaling tài nguyên hoặc tăng throughput trung bình. Mức ổn định cao nhất quan sát được là 500 msg/s ở baseline và 250 msg/s ở adaptive; cần thêm các plateau trung gian, nhiều seed và đảo thứ tự run để xác định điểm tối ưu có tính lặp lại.
 
 ## 12. Bộ bằng chứng chính
 
