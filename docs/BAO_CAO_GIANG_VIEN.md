@@ -187,7 +187,63 @@ Các biểu đồ kết quả:
 - [input_vs_throughput.png](../runtime/research/paired-v4-20260921/analysis/input_vs_throughput.png)
 - [agent_actions.png](../runtime/research/paired-v4-20260921/analysis/agent_actions.png)
 
-## 8. Cơ chế điều tiết tải và giới hạn chịu tải
+## 8. Bộ biểu đồ trình bày
+
+Phần này tập hợp các biểu đồ trực tiếp phục vụ mục tiêu đánh giá trước và sau
+khi áp dụng thuật toán cũng như cơ chế điều tiết traffic.
+
+### 8.1. So sánh thuật toán dự đoán giá
+
+Biểu đồ dùng cùng tập train/test và hiển thị R², MAE, RMSE của VotingRegressor,
+Random Forest, Gradient Boosting và XGBoost:
+
+- [algorithm_comparison.png](../runtime/research/legacy-benchmark/algorithm_comparison.png)
+
+Thông điệp chính: XGBoost đạt R² cao nhất trong holdout, tiếp theo là Random
+Forest; Gradient Boosting thấp hơn model hiện tại. Đây là kết quả benchmark,
+không phải bằng chứng model mới đã được deploy production.
+
+### 8.2. Hiệu năng trước và sau agent điều chỉnh limit
+
+Các biểu đồ dưới đây so sánh baseline cố định với adaptive controller:
+
+| Nội dung | Biểu đồ |
+|---|---|
+| Throughput đã commit | [throughput.png](../runtime/research/paired-v4-20260921/analysis/throughput.png) |
+| Kafka lag | [kafka_lag.png](../runtime/research/paired-v4-20260921/analysis/kafka_lag.png) |
+| P95 latency | [latency.png](../runtime/research/paired-v4-20260921/analysis/latency.png) |
+| Admission limit của agent | [rate_limit.png](../runtime/research/paired-v4-20260921/analysis/rate_limit.png) |
+| Traffic requested/admitted/processed | [input_vs_throughput.png](../runtime/research/paired-v4-20260921/analysis/input_vs_throughput.png) |
+| Các quyết định của agent | [agent_actions.png](../runtime/research/paired-v4-20260921/analysis/agent_actions.png) |
+
+Thông điệp chính: adaptive controller giảm peak Kafka lag 74,88% và peak p95
+latency 65,74% bằng cách hạ admission limit; throughput trung bình không tăng
+trong run này vì một phần traffic bị từ chối có chủ đích.
+
+### 8.3. Tài nguyên hệ thống và phân phối tải Kafka
+
+| Nội dung | Biểu đồ |
+|---|---|
+| CPU của pipeline | [cpu.png](../runtime/research/paired-v4-20260921/analysis/cpu.png) |
+| RAM của pipeline | [ram.png](../runtime/research/paired-v4-20260921/analysis/ram.png) |
+| Leader ingress của broker 1/2/3 | [broker_load.png](../runtime/research/paired-v4-20260921/analysis/broker_load.png) |
+
+Thông điệp chính: leader ingress phân phối gần đều, khoảng 33% mỗi broker;
+tuy nhiên CPU broker 2 cao hơn broker 1 và 3. Vì vậy cần phân biệt cân bằng
+message ingress với cân bằng tài nguyên broker.
+
+### 8.4. Điểm chịu tải quan sát được
+
+Điểm chịu tải được đánh giá từ các plateau 10, 40, 100, 250, 500 và 1.000
+messages/s trong báo cáo [summary.json](../runtime/research/paired-v4-20260921/analysis/summary.json).
+
+- Baseline đạt tiêu chí ổn định cao nhất ở 500 messages/s.
+- Adaptive đạt tiêu chí ổn định cao nhất ở 250 messages/s trong run đã lưu.
+- Mức 1.000 messages/s gây tăng lag và latency; baseline bị safety stop.
+- Chưa đủ dữ liệu để xác định điểm tối ưu tuyệt đối; cần thêm plateau trung
+	gian, nhiều seed và các lần chạy đảo thứ tự.
+
+## 9. Cơ chế điều tiết tải và giới hạn chịu tải
 
 ### Cơ chế đã có
 
@@ -226,7 +282,7 @@ Kết luận thực nghiệm: run này quan sát được vùng đạt tiêu ch�
 - [runtime/research/paired-v4-20260921/analysis/kafka_lag.png](../runtime/research/paired-v4-20260921/analysis/kafka_lag.png)
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md#L440-L480)
 
-## 9. Thuật toán được sử dụng
+## 10. Thuật toán được sử dụng
 
 Có hai phần cần phân biệt:
 
@@ -244,7 +300,7 @@ Pipeline dùng preprocessing số/categorical/text, TF-IDF và text embedding; t
 
 Stress controller hiện tại không dùng model ML để dự đoán traffic. Đây là reactive controller dựa trên threshold, hysteresis, cooldown và token bucket. Benchmark forecast 5/10 phút có chạy persistence, Random Forest, Gradient Boosting và XGBoost, nhưng chưa đủ các cặp dữ liệu chronology-safe để báo cáo R² traffic. Agent hiện tại không dùng XGBoost để tự điều chỉnh limit.
 
-## 10. Thiết lập và tái lập kiểm chứng Gemini
+## 11. Thiết lập và tái lập kiểm chứng Gemini
 
 Thiết lập thực nghiệm sử dụng các biến môi trường sau; API key không được lưu trong repository:
 
@@ -269,11 +325,11 @@ những record Gemini đã trả kết quả được pipeline chấp nhận. Ra
 giữ nguyên trong `listings_raw`; dữ liệu sau validation nằm trong
 `training_features` hoặc `invalid_records`.
 
-## 11. Kết luận
+## 12. Kết luận
 
 Nghiên cứu xác nhận ba kết quả chính. Thứ nhất, dữ liệu có skew và missingness đáng kể; chất lượng Gemini chỉ được xác minh đáng tin cậy đối với các record có audit before/after. Thứ hai, XGBoost và Random Forest cho R² cao hơn model hiện tại trên holdout cố định, nhưng chưa đủ cơ sở để khẳng định khả năng tổng quát hoặc thay thế model production. Thứ ba, adaptive rate limiting làm giảm peak Kafka lag và peak latency bằng cách chủ động từ chối một phần tải; run hiện tại chưa chứng minh autoscaling tài nguyên hoặc tăng throughput trung bình. Mức ổn định cao nhất quan sát được là 500 msg/s ở baseline và 250 msg/s ở adaptive; cần thêm các plateau trung gian, nhiều seed và đảo thứ tự run để xác định điểm tối ưu có tính lặp lại.
 
-## 12. Bộ bằng chứng chính
+## 13. Bộ bằng chứng chính
 
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md)
 - [runtime/research/paired-v4-20260921/analysis/summary.json](../runtime/research/paired-v4-20260921/analysis/summary.json)
