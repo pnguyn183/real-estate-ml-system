@@ -4,7 +4,7 @@
 
 ## 1. Tóm tắt kết luận
 
-- Chưa thể xác minh đầy đủ chất lượng dữ liệu sau Gemini vì repository không lưu prompt, phiên bản model, dữ liệu trước/sau, các bản ghi bị loại và log provenance của Gemini.
+- Đã bổ sung cơ chế provenance để kiểm tra Gemini: mỗi AI result được lưu snapshot trước/sau, provider/model, field thay đổi và SHA-256 trong collection `ai_cleaning_audit`. Tuy nhiên, dữ liệu lịch sử trước khi bổ sung cơ chế này vẫn chưa thể xác minh đầy đủ.
 - Dữ liệu có lệch mạnh ở giá, diện tích và một số biến số; đây là skew thống kê, chưa đồng nghĩa mọi outlier đều sai.
 - Trên cùng một holdout, Random Forest và XGBoost tăng R² so với model hiện tại; Gradient Boosting giảm R². Đây là benchmark chẩn đoán, chưa deploy model mới.
 - Trong stress test, leader ingress của 3 Kafka broker gần như đều nhau, khoảng 33% mỗi broker. Tuy nhiên CPU broker 2 cao hơn rõ rệt, nên không thể nói toàn bộ tải tài nguyên là cân bằng.
@@ -17,7 +17,7 @@
 
 ### Trả lời
 
-Chưa thể kết luận là đã clean kỹ sau Gemini. Repository không có đủ bằng chứng provenance để kiểm tra Gemini đã làm gì với dữ liệu. Có thể xác nhận pipeline hiện tại có validation, chuẩn hóa kiểu dữ liệu, kiểm tra miền giá trị, lọc record không phù hợp với training query và kiểm tra anomaly; nhưng các bước này không chứng minh được dữ liệu đã được Gemini làm sạch.
+Có API key Gemini trong file `.env`, nhưng chỉ riêng API key không chứng minh Gemini đã được gọi hoặc đã clean dữ liệu. Cơ chế mới sử dụng Gemini qua endpoint OpenAI-compatible của `ai-agent`; processor giữ raw record và lưu audit trước/sau trong `ai_cleaning_audit`. Mỗi audit có `event_id`, provider/model, snapshot trước/sau, field thay đổi và SHA-256 để truy nguyên. Cấu hình hiện tại chỉ route record thiếu field bắt buộc khi `AI_FALLBACK_ENABLED=true`, không tự động gửi toàn bộ dataset. Vì vậy chỉ các record có audit tương ứng mới được kết luận là đã qua Gemini; các record lịch sử không có audit vẫn chưa thể xác minh.
 
 Các bằng chứng còn thiếu:
 
@@ -28,12 +28,24 @@ Các bằng chứng còn thiếu:
 - danh sách record bị sửa, xóa hoặc từ chối;
 - log lý do xử lý theo từng record.
 
+Lệnh tạo báo cáo audit sau workload:
+
+```powershell
+python scripts/audit_gemini_clean.py `
+	--output runtime/research/gemini-clean-audit.json `
+	--provider openai_compatible
+```
+
+`GEMINI_API_KEY` đang nằm trong `.env` và `.env` được khai báo trong `.gitignore`, nên giá trị key không được đưa vào báo cáo. Cần rotate/revoke key nếu key đã bị chia sẻ hoặc hiển thị ở nơi không an toàn.
+
 ### Bằng chứng
 
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md#L69-L73)
 - [processing/llm_review.py](../processing/llm_review.py)
 - [agents/extraction.py](../agents/extraction.py)
 - [agents/results.py](../agents/results.py)
+- [.env.example](../.env.example)
+- [scripts/audit_gemini_clean.py](../scripts/audit_gemini_clean.py)
 - [runtime/research/data-audit/audit.json](../runtime/research/data-audit/audit.json)
 
 ## 3. Câu hỏi 2: Dữ liệu có bị lệch không?
@@ -234,11 +246,36 @@ Pipeline dùng preprocessing số/categorical/text, TF-IDF và text embedding; t
 
 Stress controller hiện tại không dùng model ML để dự đoán traffic. Nó là reactive controller dựa trên threshold, hysteresis, cooldown và token bucket. Benchmark forecast 5/10 phút có chạy persistence, Random Forest, Gradient Boosting và XGBoost, nhưng không đủ các cặp dữ liệu chronology-safe nên không báo cáo R² traffic. Không nên nói rằng agent hiện tại đang dùng XGBoost để tự điều chỉnh limit.
 
-## 10. Câu trả lời ngắn khi trình bày
+## 10. Cách bật và kiểm chứng Gemini
+
+Đặt các biến sau trong `.env`, không commit API key:
+
+```env
+AI_ENABLED=true
+AI_FALLBACK_ENABLED=true
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+LLM_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=your_rotated_key
+```
+
+Khởi động lại các service liên quan:
+
+```powershell
+docker compose up -d --build ai-agent processor processor-2 processor-3
+```
+
+Sau workload, chạy script audit ở phần trên. Chỉ các record có `status=success`,
+provider/model đúng cấu hình và audit tồn tại mới là bằng chứng Gemini đã trả
+kết quả được pipeline chấp nhận. Raw record vẫn được giữ nguyên trong
+`listings_raw`; dữ liệu sau validation nằm trong `training_features` hoặc
+`invalid_records`.
+
+## 11. Câu trả lời ngắn khi trình bày
 
 > Em đã kiểm tra dữ liệu bằng audit định lượng nhưng chưa thể xác minh đầy đủ phần Gemini vì thiếu provenance trước/sau. Dữ liệu có skew mạnh và missingness đáng kể. Trên cùng một holdout, Random Forest tăng R² từ 0,489 lên 0,510 và XGBoost lên 0,593, còn Gradient Boosting giảm xuống 0,446; đây mới là benchmark, chưa deploy. Trong stress test, ingress của ba Kafka broker đều khoảng 33%, nhưng CPU broker 2 cao hơn nên chỉ kết luận message ingress cân bằng, không phải toàn bộ resource load cân bằng. Agent phát hiện lag sau khoảng 0,001 giây từ sample hoàn tất và xác nhận limit mới sau khoảng 0,0005 giây; tính cả thời gian thu thập Kafka sample là khoảng 2,1 giây. Cơ chế hiện tại là adaptive rate limiting/admission control, chưa phải auto-scaling replica. Peak lag giảm 74,88% và peak latency giảm 65,74%, nhưng throughput trung bình cũng giảm, nên hiệu quả chính là bảo vệ hệ thống khi nghẽn. Mức stable cao nhất trong run này là 500 msg/s baseline và 250 msg/s adaptive; cần thêm thí nghiệm để xác định điểm tối ưu chính xác.
 
-## 11. Bộ bằng chứng chính
+## 12. Bộ bằng chứng chính
 
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md)
 - [runtime/research/paired-v4-20260921/analysis/summary.json](../runtime/research/paired-v4-20260921/analysis/summary.json)
@@ -247,3 +284,5 @@ Stress controller hiện tại không dùng model ML để dự đoán traffic. 
 - [research/report.py](../research/report.py)
 - [research/telemetry.py](../research/telemetry.py)
 - [agents/traffic_control.py](../agents/traffic_control.py)
+- [agents/results.py](../agents/results.py)
+- [scripts/audit_gemini_clean.py](../scripts/audit_gemini_clean.py)

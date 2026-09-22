@@ -8,6 +8,7 @@ transaction when a newer listing is ingested concurrently.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 
@@ -19,6 +20,40 @@ PROVENANCE_FIELDS = (
     "source_type", "is_synthetic", "generated_by", "scenario", "run_id",
     "original_record_id", "generated_at",
 )
+
+AUDIT_FIELDS = tuple(dict.fromkeys((*FIELD_TO_RAW.values(), *PROVENANCE_FIELDS, "title", "description")))
+
+
+def _audit_snapshot(record: dict) -> dict:
+    return {field: record[field] for field in AUDIT_FIELDS if field in record}
+
+
+def _snapshot_hash(snapshot: dict) -> str:
+    payload = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def write_cleaning_audit(pipeline, original: dict, result: dict, event_id: str, origin: str, cleaned: dict | None = None) -> None:
+    """Persist before/after evidence without replacing the immutable raw record."""
+    before = _audit_snapshot(original)
+    after = _audit_snapshot(cleaned if cleaned is not None else result.get("record") or {})
+    changed_fields = sorted(field for field in set(before) | set(after) if before.get(field) != after.get(field))
+    audit = {
+        "_id": event_id,
+        "event_id": event_id,
+        "url": original.get("url"),
+        "origin": origin,
+        "status": result.get("status"),
+        "provider": result.get("provider"),
+        "model": result.get("model"),
+        "before": before,
+        "after": after,
+        "changed_fields": changed_fields,
+        "before_sha256": _snapshot_hash(before),
+        "after_sha256": _snapshot_hash(after),
+        "audited_at": datetime.now(timezone.utc).isoformat(),
+    }
+    pipeline.db["ai_cleaning_audit"].update_one({"_id": event_id}, {"$set": audit}, upsert=True)
 
 
 def validate_result_envelope(envelope):
@@ -117,6 +152,8 @@ def handle_ai_result(envelope, pipeline):
     if receipt and receipt.get("status") == "completed":
         return {"url": record["url"], "ai_status": receipt["outcome"], "processing_method": "ai_result_replay"}
 
+    write_cleaning_audit(pipeline, record, result, event_id, origin)
+
     latest = pipeline.raw_collection.find_one({"url": record["url"]}, {"_agent_event_id": 1})
     if not latest or latest.get("_agent_event_id") != event_id:
         outcome = "stale"
@@ -124,6 +161,7 @@ def handle_ai_result(envelope, pipeline):
     else:
         try:
             merged = result_payload(record, result, event_id)
+            write_cleaning_audit(pipeline, record, result, event_id, origin, merged)
         except ValueError:
             result = {"status": "failed", "error_code": "invalid_extracted_field_type", "attempts": result.get("attempts", 0)}
             merged = result_payload(record, result, event_id)
