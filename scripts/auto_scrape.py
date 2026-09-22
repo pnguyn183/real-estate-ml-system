@@ -25,6 +25,7 @@ SCRAPE_DELAY_MAX = float(os.environ.get("SCRAPE_DELAY_MAX", 5.0))
 SCRAPE_USER_AGENT = os.environ.get("CRAWLER_USER_AGENT", "RealEstatePipelineCrawler/1.0")
 ENABLED_SOURCES = os.environ.get("ENABLED_SOURCES", "alonhadat,homedy")
 SCRAPE_TIMEOUT = int(os.environ.get("SCRAPE_TIMEOUT", max(60, SCRAPE_INTERVAL - 30)))
+SCRAPE_MAX_RESPONSE_BYTES = int(os.environ.get("SCRAPE_MAX_RESPONSE_BYTES", "32000000"))
 INCLUDE_UNVERIFIED = os.environ.get("SCRAPE_INCLUDE_UNVERIFIED", "false").lower() in {"1", "true", "yes"}
 FRESH_START_EACH_RUN = os.environ.get("SCRAPE_FRESH_START", "false").lower() in {"1", "true", "yes"}
 SCRAPE_STATE_FILE = Path(os.environ.get("SCRAPE_STATE_FILE", "runtime/scrape_state/producer_state.json"))
@@ -83,6 +84,8 @@ def run_scraper(
             str(SCRAPE_DELAY_MIN),
             "--delay-max",
             str(SCRAPE_DELAY_MAX),
+            "--max-response-bytes",
+            str(SCRAPE_MAX_RESPONSE_BYTES),
             "--user-agent",
             SCRAPE_USER_AGENT,
             "--state-file",

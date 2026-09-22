@@ -85,6 +85,7 @@ def main(argv=None) -> int:
     parser.add_argument("--delay-max", type=float, default=float(os.environ.get("SCRAPE_DELAY_MAX", "5")))
     parser.add_argument("--http-timeout", type=int, default=int(os.environ.get("SCRAPE_HTTP_TIMEOUT", "30")))
     parser.add_argument("--http-attempts", type=int, default=int(os.environ.get("SCRAPE_HTTP_ATTEMPTS", "4")))
+    parser.add_argument("--max-response-bytes", type=int, default=int(os.environ.get("SCRAPE_MAX_RESPONSE_BYTES", "32000000")))
     parser.add_argument("--delivery-timeout", type=int, default=int(os.environ.get("SCRAPE_KAFKA_DELIVERY_TIMEOUT", "30")))
     parser.add_argument(
         "--user-agent",
@@ -118,6 +119,7 @@ def main(argv=None) -> int:
         user_agent=args.user_agent,
         timeout_seconds=args.http_timeout,
         max_retries=args.http_attempts,
+        max_response_bytes=args.max_response_bytes,
         use_verified_filter=not args.include_unverified,
         state_file=args.state_file,
     )
