@@ -194,12 +194,14 @@ Các biểu đồ kết quả:
 - Observe: đọc lag, throughput, latency, CPU/RAM và error rate.
 - Assess: so sánh với threshold và kiểm tra dữ liệu thiếu/stale.
 - Decide: giảm hoặc tăng admission limit trong giới hạn cấu hình.
-- Act: cập nhật token-bucket rate gate.
-- Measure: ghi actions, acknowledgements, observations và recovery episode.
+- Act: cập nhật token-bucket rate gate; tùy chọn gọi Docker resource actuator.
+- Measure: ghi actions, acknowledgements, resource receipts, observations và recovery episode.
 
-### Cơ chế chưa có
+### Phạm vi actuator
 
-Chưa có actuator tự động tăng/giảm số processor replicas, broker resources hoặc Docker CPU/memory. Vì vậy cơ chế được đánh giá trong nghiên cứu là **adaptive admission control / rate limiting**, chưa phải autoscaling tài nguyên.
+Đã bổ sung actuator bounded cho Docker CPU/memory của ba processor. Khi controller giảm limit do congestion, actuator có thể tăng CPU/memory theo `cpu_step` và `memory_step_mb`; khi controller tăng limit sau giai đoạn an toàn, actuator giảm allocation; cuối run luôn khôi phục allocation ban đầu. Receipt được lưu trong `actions.jsonl` và `report.json`.
+
+Hiện chưa có actuator tự động tăng/giảm số processor replicas hoặc broker resources. Cấu hình `resource_scaling.enabled=false` mặc định để tránh thay đổi hạ tầng ngoài ý muốn; khi bật, phải chạy stress test trong môi trường Docker được cấp quyền `docker update`. Vì vậy phạm vi autoscaling hiện tại là **bounded Docker resource scaling + adaptive rate limiting**, chưa phải replica autoscaling.
 
 ### Mức chịu tải quan sát được
 
@@ -218,6 +220,8 @@ Kết luận thực nghiệm: run này quan sát được vùng đạt tiêu ch�
 
 - [runtime/research/paired-v4-20260921/analysis/summary.json](../runtime/research/paired-v4-20260921/analysis/summary.json)
 - [runtime/research/paired-v4-20260921/analysis/cpu.png](../runtime/research/paired-v4-20260921/analysis/cpu.png)
+- [agents/resource_actuator.py](../agents/resource_actuator.py)
+- [utils/tests/test_resource_actuator.py](../utils/tests/test_resource_actuator.py)
 - [runtime/research/paired-v4-20260921/analysis/ram.png](../runtime/research/paired-v4-20260921/analysis/ram.png)
 - [runtime/research/paired-v4-20260921/analysis/kafka_lag.png](../runtime/research/paired-v4-20260921/analysis/kafka_lag.png)
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md#L440-L480)

@@ -26,6 +26,7 @@ from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient
 
 from agents.generator import ListingGenerator
+from agents.resource_actuator import DockerResourceActuator, ResourceScalingConfig
 from agents.stress import stress_topic
 from agents.traffic_control import ControlConfig, Observation, TrafficController
 from research.telemetry import TelemetryCollector
@@ -105,11 +106,13 @@ def validate_config(config):
     if not 1 <= config["drain_seconds"] <= 600:
         raise ValueError("drain_seconds must be in 1..600")
     ControlConfig(**config["control"])
+    ResourceScalingConfig.from_mapping(config.get("resource_scaling"))
 
 
 def code_identity():
     paths = [Path("agents/traffic_control.py"), Path("agents/generator.py"),
              Path("research/run_experiment.py"), Path("research/telemetry.py"),
+             Path("agents/resource_actuator.py"),
              Path("processing/kafka_to_mongo.py"), Path("utils/metrics.py")]
     result = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     result["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -160,13 +163,21 @@ def run_mode(mode, config, output, bootstrap, topic, group):
     output.mkdir(parents=True, exist_ok=False)
     cfg = ControlConfig(**config["control"], enabled=mode == "adaptive")
     controller = TrafficController(cfg)
+    resource_actuator = DockerResourceActuator(
+        ResourceScalingConfig.from_mapping(config.get("resource_scaling"))
+    )
     collector = TelemetryCollector(bootstrap_servers=bootstrap, topic=topic, group_id=group)
     report = {"run_id": run_id, "mode": mode, "status": "running", "offered": 0, "admitted": 0,
               "rejected": 0, "acknowledged": 0, "delivery_failed": 0, "enqueue_failed": 0,
-              "partitions": {}, "stages": [], "started_at": time.time()}
+              "partitions": {}, "stages": [], "started_at": time.time(),
+              "resource_scaling": {"enabled": resource_actuator.config.enabled,
+                                    "containers": list(resource_actuator.config.containers),
+                                    "initial_cpus": resource_actuator.config.initial_cpus,
+                                    "initial_memory_mb": resource_actuator.config.initial_memory_mb,
+                                    "actions": []}}
     write_json(output / "manifest.json", {"run_id": run_id, "mode": mode, "config": config,
                "control": asdict(cfg), "identity": code_identity(),
-               "semantics": "requested demand is offered before a local admission gate; incoming_rate is broker-admitted; throughput is committed input handling; no replica autoscaling"})
+               "semantics": "requested demand is offered before a local admission gate; incoming_rate is broker-admitted; throughput is committed input handling; optional bounded Docker CPU/memory scaling is enabled by resource_scaling.enabled; no replica or broker autoscaling"})
     generator = ListingGenerator(run_id, "normal", config["seed"], duplicate_ratio=0, unstructured_ratio=0)
     producer = Producer({"bootstrap.servers": bootstrap, "client.id": run_id, "acks": "all",
                          "enable.idempotence": True, "linger.ms": 5, "delivery.timeout.ms": 10000,
@@ -236,7 +247,10 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                         gate.set_limit(decision.new_limit, time.monotonic())
                         applied_at = time.time()
                         controller.acknowledge(decision, applied_at)
+                    resource_receipt = resource_actuator.apply_for_decision(decision)
+                    report["resource_scaling"]["actions"].append(resource_receipt)
                     append_json(actions, {**asdict(decision), "applied_at": applied_at,
+                                          "resource_scaling": resource_receipt,
                                           "elapsed_seconds": time.monotonic() - began, "mode": mode, "run_id": run_id})
                     next_decision = now + config["decision_seconds"]
                 for key, bound in (("kafka_lag", config["hard_lag"]), ("cpu_percent", config["hard_cpu_percent"]),
@@ -321,6 +335,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
     except Exception as exc:
         report["status"], report["error"] = "failed", f"{type(exc).__name__}: {exc}"
     finally:
+        restore_receipt = resource_actuator.restore()
+        report["resource_scaling"]["restore"] = restore_receipt
         producer.flush(12)
         executor.shutdown(wait=True)
         collector.close()
