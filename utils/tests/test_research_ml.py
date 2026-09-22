@@ -2,8 +2,9 @@
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pytest
 
-from research.benchmark import build_traffic_supervised, chronological_split, traffic_benchmark
+from research.benchmark import build_traffic_supervised, chronological_split, comparison_plot, scores, traffic_benchmark
 from research.data_audit import profile_records
 
 
@@ -55,6 +56,31 @@ def test_short_real_run_emits_no_fabricated_forecast_scores(tmp_path):
     result = traffic_benchmark(observations(20), tmp_path, render_plots=False)
     assert all(v["status"] == "insufficient_data" for v in result["horizons"].values())
     assert all("models" not in v for v in result["horizons"].values())
+
+
+@pytest.mark.parametrize("actual,predicted,expected_mae,expected_rmse", [
+    ([20, 20, 20], [20, 20, 20], 0, 0),
+    ([20, 20, 20], [10, 30, 20], 20 / 3, (200 / 3) ** .5),
+    ([20], [15], 5, 5),
+])
+def test_constant_or_single_target_has_undefined_r2(actual, predicted, expected_mae, expected_rmse):
+    result = scores(actual, predicted)
+    assert result["r2"] is None
+    assert result["mae"] == pytest.approx(expected_mae)
+    assert result["rmse"] == pytest.approx(expected_rmse)
+
+
+def test_varying_target_retains_measured_r2():
+    result = scores(pd.Series([10, 20, 30]), [10, 20, 30])
+    assert result == {"r2": 1.0, "mae": 0.0, "rmse": 0.0}
+
+
+def test_model_plot_accepts_undefined_r2_without_inventing_score(tmp_path):
+    results = {"persistence": {"status": "measured", **scores([20, 20], [20, 20])}}
+    output = tmp_path / "constant_target.png"
+    assert comparison_plot(results, output, "Constant-target diagnostic") == str(output)
+    assert output.is_file() and output.stat().st_size > 0
+    assert results["persistence"]["r2"] is None
 
 
 def test_quality_audit_counts_missing_invalid_and_duplicates():

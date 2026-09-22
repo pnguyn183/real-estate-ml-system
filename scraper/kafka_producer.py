@@ -14,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-from confluent_kafka import Producer
+from confluent_kafka import KafkaException, Producer
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -93,6 +93,10 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--include-unverified", action="store_true")
     parser.add_argument("--fresh-start", action="store_true", help="Ignore saved state for this run; replace checkpoint only after Kafka acknowledgment.")
+    parser.add_argument("--revisit-seconds", type=float, default=float(os.environ.get("SCRAPE_REVISIT_SECONDS", "86400")),
+                        help="Refresh acknowledged URLs after this interval; unseen URLs take priority.")
+    parser.add_argument("--max-consecutive-failures", type=int, default=int(os.environ.get("SCRAPE_MAX_CONSECUTIVE_FAILURES", "3")),
+                        help="Stop a source after this many consecutive failed or invalid details.")
     parser.add_argument("--topic", default=os.environ.get("KAFKA_RAW_TOPIC", "real_estate_raw"))
     parser.add_argument("--bootstrap-servers", default=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
     args = parser.parse_args(argv)
@@ -129,14 +133,16 @@ def main(argv=None) -> int:
     status = 0
     for source in sources:
         try:
-            published_count = publish_records(producer, iter_source_records(source, config, fresh_start=args.fresh_start),
+            published_count = publish_records(producer, iter_source_records(source, config, fresh_start=args.fresh_start,
+                                                                           revisit_seconds=args.revisit_seconds,
+                                                                           max_consecutive_failures=args.max_consecutive_failures),
                                               args.topic, args.delivery_timeout)
             logger.info("source=%s acknowledged=%s topic=%s", source, published_count, args.topic)
         except ScraperPolicyError as error:
             logger.error("source=%s policy_stop=%s", source, error)
             status = 20
-        except (ScraperFetchError, KafkaDeliveryError, ValueError) as error:
-            logger.error("source=%s run_failed=%s", source, type(error).__name__)
+        except (ScraperFetchError, KafkaDeliveryError, KafkaException, BufferError, OSError, ValueError) as error:
+            logger.error("source=%s run_failed=%s: %s", source, type(error).__name__, error)
             status = status or 1
     return status
 

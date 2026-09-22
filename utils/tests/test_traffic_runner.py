@@ -2,6 +2,8 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 import zlib
 
@@ -71,7 +73,7 @@ def fake_runtime(monkeypatch):
         def sample(self):
             clock.sleep(.005)
             return {"timestamp": clock.time(), "interval_seconds": 1, "kafka_lag": 0,
-                    "instrumentation_ready": True,
+                    "instrumentation_ready": True, "incoming_rate": 0,
                     "errors": [], "throughput": 20, "cpu_percent": 20, "ram_percent": 30,
                     "latency_p95_seconds": .1, "error_rate": 0}
 
@@ -119,7 +121,7 @@ def fake_runtime(monkeypatch):
                   sample_seconds=1, decision_seconds=1, drain_seconds=1)
     config["control"]["recovery_window_seconds"] = .1
     return SimpleNamespace(clock=clock, collectors=collectors, producers=producers,
-                           executors=executors, config=config, Producer=Producer)
+                           executors=executors, config=config, Producer=Producer, Collector=Collector)
 
 
 def test_baseline_and_safe_adaptive_replay_same_logical_keys_and_facts(fake_runtime, tmp_path):
@@ -172,3 +174,52 @@ def test_failed_topology_preflight_persists_failure_without_publishing(fake_runt
     assert all(c.closed for c in fake_runtime.collectors)
     assert all(e.closed for e in fake_runtime.executors)
     assert json.loads((output / "report.json").read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("incoming_rate", [1, None])
+def test_idle_preflight_rejects_concurrent_or_unmeasured_traffic(fake_runtime, monkeypatch, tmp_path, incoming_rate):
+    original_sample = fake_runtime.Collector.sample
+
+    def sample(collector):
+        return {**original_sample(collector), "incoming_rate": incoming_rate}
+
+    monkeypatch.setattr(fake_runtime.Collector, "sample", sample)
+    output = tmp_path / "baseline"
+    result = runner.run_mode("baseline", fake_runtime.config, output, "fixture", "real_estate_stress_raw", "fixture")
+    assert result["status"] == "failed"
+    assert "concurrent traffic or missing telemetry" in result["error"]
+    assert result["offered"] == result["admitted"] == result["acknowledged"] == 0
+    assert not fake_runtime.producers[0].messages
+    assert all(c.closed for c in fake_runtime.collectors)
+    assert all(e.closed for e in fake_runtime.executors)
+    assert json.loads((output / "report.json").read_text())["status"] == "failed"
+
+
+def test_experiment_lock_excludes_other_process_and_releases_after_exception(tmp_path):
+    lock_path = tmp_path / "experiment.lock"
+    probe = """
+from pathlib import Path
+import sys
+from research.run_experiment import experiment_lock
+try:
+    with experiment_lock(Path(sys.argv[1])):
+        print("acquired")
+except RuntimeError as exc:
+    print(str(exc))
+    sys.exit(9)
+"""
+
+    def attempt():
+        return subprocess.run([sys.executable, "-c", probe, str(lock_path)],
+                              cwd=Path(__file__).resolve().parents[2],
+                              capture_output=True, text=True, timeout=30)
+
+    with pytest.raises(ValueError, match="fixture failure"):
+        with runner.experiment_lock(lock_path):
+            contender = attempt()
+            assert contender.returncode == 9, contender.stderr
+            assert "another traffic experiment holds the lock" in contender.stdout
+            raise ValueError("fixture failure")
+    next_run = attempt()
+    assert next_run.returncode == 0, next_run.stderr
+    assert next_run.stdout.strip() == "acquired"

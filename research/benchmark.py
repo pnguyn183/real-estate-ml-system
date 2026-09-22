@@ -39,7 +39,11 @@ def versions():
 
 
 def scores(actual, predicted):
-    return {"r2": float(r2_score(actual, predicted)) if len(actual) > 1 else None,
+    actual = np.asarray(actual)
+    # R² divides by target variance. sklearn's default replaces undefined
+    # constant-target scores with 0/1; neither is evidence of forecast skill.
+    r2_defined = len(actual) > 1 and np.any(actual != actual[0])
+    return {"r2": float(r2_score(actual, predicted)) if r2_defined else None,
             "mae": float(mean_absolute_error(actual, predicted)),
             "rmse": float(np.sqrt(mean_squared_error(actual, predicted)))}
 
@@ -66,7 +70,12 @@ def comparison_plot(results: dict, path: Path, title: str):
         return None
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     for ax, metric in zip(axes, ("r2", "mae", "rmse")):
-        ax.bar(list(usable), [v[metric] for v in usable.values()])
+        values = [v[metric] for v in usable.values()]
+        ax.bar(list(usable), [value if value is not None else np.nan for value in values])
+        for index, value in enumerate(values):
+            if value is None:
+                ax.text(index, .05, "undefined", transform=ax.get_xaxis_transform(),
+                        ha="center", rotation=90)
         ax.set(ylabel=metric.upper(), xlabel="Model")
         ax.tick_params(axis="x", rotation=30)
         ax.axhline(0, color="black", linewidth=.6)

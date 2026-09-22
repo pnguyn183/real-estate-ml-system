@@ -57,8 +57,9 @@ unpausing Airflow; do not run two schedulers writing the same artifacts.
 ## Legacy scheduled workers
 
 - `scripts/auto_scrape.py` remains a compatibility loop for deployments that do
-  not run Airflow. It uses the same 2-5 second random request policy and now
-  propagates scraper failures to its process supervisor.
+  not run Airflow. It uses the same 2-5 second random request policy, isolates
+  each source in a subprocess with its own timeout, and logs failures before
+  waiting the configured interval. Failed initial runs do not restart the loop.
 - `scripts/auto_train.py` checks MongoDB immediately, trains when the candidate
   count reaches `MIN_RECORDS_FOR_TRAINING` (Compose default 3000), then checks
   again every `TRAIN_INTERVAL` seconds (default 1800). A failed or insufficient
@@ -73,7 +74,7 @@ normal shutdown is handled by their process signal/keyboard paths and Compose.
 Processor 1 metrics, trainer metrics and MongoDB. It does not probe Kafka,
 Zookeeper, scraper or the legacy predictor. Prometheus scrapes
 `processor:8003`, `processor-2:8004`, `processor-3:8005`, `trainer:8001`,
-DNS-discovered `ai-agent:8006`, `stress-agent:8007` and `localhost:9090`
+DNS-discovered `ai-agent:8006`, `stress-agent:8007`, `scraper:8008` and `localhost:9090`
 every 15 seconds.
 
 Processor and trainer expose Prometheus metrics through `utils/metrics.py`.
@@ -102,8 +103,10 @@ local experiments. Copying it to `.env` overrides the Compose fallback of
 | Variable | Compose default | Used by |
 | --- | --- | --- |
 | `SCRAPE_INTERVAL` | `1800` seconds | periodic scraper |
-| `SCRAPE_INITIAL_LIMIT` | `5000` | first scraper run |
-| `SCRAPE_INITIAL_MAX_PAGES` | `200` | first scraper run |
+| `SCRAPE_INITIAL_LIMIT` | `10` per source | first scraper run |
+| `SCRAPE_INITIAL_MAX_PAGES` | `1` per source | first scraper run |
+| `SCRAPE_FRESH_START` / `SCRAPE_INITIAL_FRESH_START` | `false` | preserve acknowledged URLs across runs |
+| `SCRAPE_REVISIT_SECONDS` | `86400` | refresh previously acknowledged URLs |
 | `TRAIN_INTERVAL` | `1800` seconds | trainer |
 | `TRAIN_RETRY_INTERVAL` | `60` seconds | trainer |
 | `MIN_RECORDS_FOR_TRAINING` | `3000` | trainer gate |

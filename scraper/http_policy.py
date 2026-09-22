@@ -20,6 +20,14 @@ class ScraperFetchError(RuntimeError):
     """A bounded transient request failed; a later scheduled run may retry."""
 
 
+class ScraperMissingError(ScraperFetchError):
+    """The requested page is gone; another listing can still be collected."""
+
+
+class ScraperRateLimitError(ScraperFetchError):
+    """Stop this source for this run instead of requesting another detail."""
+
+
 class PoliteHTTPClient:
     def __init__(self, session, config, origin: str):
         self.session = session
@@ -57,7 +65,7 @@ class PoliteHTTPClient:
                 pass
         if delay > self.config.max_retry_wait_seconds:
             # Do not retry earlier than requested merely to fit our run budget.
-            raise ScraperFetchError("retry_after_exceeds_run_budget")
+            raise ScraperRateLimitError("retry_after_exceeds_run_budget")
         return delay
 
     def _request(self, url: str, *, robots: bool = False) -> str:
@@ -74,6 +82,8 @@ class PoliteHTTPClient:
                         raise ScraperPolicyError(f"source_access_denied_http_{status}")
                     if robots and status in {404, 410}:
                         return ""
+                    if status in {404, 410}:
+                        raise ScraperMissingError(f"source_http_{status}_missing")
                     if status in {408, 429, 500, 502, 503, 504}:
                         retry_header = response.headers.get("Retry-After")
                         failure = f"source_http_{status}"
@@ -97,11 +107,19 @@ class PoliteHTTPClient:
                         if robots and re.search(r"<\s*(?:html|!doctype)", text, re.I):
                             raise ScraperPolicyError("unexpected_robots_html")
                         return text
-            except (requests.Timeout, requests.ConnectionError) as error:
+            except (requests.Timeout, requests.ConnectionError,
+                    requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ContentDecodingError) as error:
                 failure = "source_transport_" + type(error).__name__
             except (requests.RequestException, UnicodeError) as error:
                 raise ScraperFetchError("source_response_" + type(error).__name__) from None
             if attempt + 1 >= self.config.max_retries:
+                if failure == "source_http_429":
+                    raise ScraperRateLimitError("source_http_429_attempts_exhausted")
+                if retry_header:
+                    # Exhausting retries is not permission to ignore a server's
+                    # cooldown by immediately requesting the next listing.
+                    raise ScraperRateLimitError(f"{failure}_retry_after")
                 raise ScraperFetchError(f"{failure}_attempts_exhausted")
             self.not_before = time.monotonic() + self._retry_wait(retry_header, attempt)
         raise ScraperFetchError("no_request_attempts")
@@ -110,14 +128,17 @@ class PoliteHTTPClient:
         content = self._request(self.origin + "/robots.txt", robots=True)
         rules = RobotFileParser()
         rules.parse(content.splitlines())
-        self.rules = rules
         delay = rules.crawl_delay(self.config.user_agent)
         rate = rules.request_rate(self.config.user_agent)
         if rate and (rate.requests <= 0 or rate.seconds <= 0):
             raise ScraperPolicyError("invalid_robots_request_rate")
-        self.minimum_interval = max(float(delay or 0), rate.seconds / rate.requests if rate else 0)
-        if self.minimum_interval > self.config.max_retry_wait_seconds:
+        minimum_interval = max(float(delay or 0), rate.seconds / rate.requests if rate else 0)
+        if minimum_interval > self.config.max_retry_wait_seconds:
             raise ScraperPolicyError("robots_delay_exceeds_run_budget")
+        # Cache only a fully validated policy. Failed loading must not let a
+        # later call reuse permissive rules while ignoring its pacing limit.
+        self.minimum_interval = minimum_interval
+        self.rules = rules
 
     def get_html(self, url: str) -> str:
         parts = urlsplit(url)

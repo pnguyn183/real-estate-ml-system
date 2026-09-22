@@ -26,16 +26,16 @@ SCRAPE_USER_AGENT = os.environ.get("CRAWLER_USER_AGENT", "RealEstatePipelineCraw
 ENABLED_SOURCES = os.environ.get("ENABLED_SOURCES", "alonhadat,homedy")
 SCRAPE_TIMEOUT = int(os.environ.get("SCRAPE_TIMEOUT", max(60, SCRAPE_INTERVAL - 30)))
 INCLUDE_UNVERIFIED = os.environ.get("SCRAPE_INCLUDE_UNVERIFIED", "false").lower() in {"1", "true", "yes"}
-FRESH_START_EACH_RUN = os.environ.get("SCRAPE_FRESH_START", "true").lower() in {"1", "true", "yes"}
+FRESH_START_EACH_RUN = os.environ.get("SCRAPE_FRESH_START", "false").lower() in {"1", "true", "yes"}
 SCRAPE_STATE_FILE = Path(os.environ.get("SCRAPE_STATE_FILE", "runtime/scrape_state/producer_state.json"))
 
 INITIAL_SCRAPE_LIMIT = int(os.environ.get("SCRAPE_INITIAL_LIMIT", SCRAPE_LIMIT))
 INITIAL_SCRAPE_MAX_PAGES = int(os.environ.get("SCRAPE_INITIAL_MAX_PAGES", SCRAPE_MAX_PAGES))
 INITIAL_SCRAPE_START_PAGE = int(os.environ.get("SCRAPE_INITIAL_START_PAGE", SCRAPE_START_PAGE))
 INITIAL_SCRAPE_TIMEOUT = int(os.environ.get("SCRAPE_INITIAL_TIMEOUT", SCRAPE_TIMEOUT))
-INITIAL_FRESH_START = os.environ.get("SCRAPE_INITIAL_FRESH_START", "true").lower() in {"1", "true", "yes"}
+INITIAL_FRESH_START = os.environ.get("SCRAPE_INITIAL_FRESH_START", "false").lower() in {"1", "true", "yes"}
 INITIAL_SCRAPE_STATE_FILE = Path(
-    os.environ.get("SCRAPE_INITIAL_STATE_FILE", "runtime/scrape_state/producer_initial_state.json")
+    os.environ.get("SCRAPE_INITIAL_STATE_FILE", str(SCRAPE_STATE_FILE))
 )
 
 
@@ -49,10 +49,15 @@ def run_scraper(
     state_file: Path,
     run_label: str,
 ):
-    try:
+    from scraper.multi_source import selected_sources
+    from scraper.source_metrics import RunMetrics
+
+    failures = []
+    for source in selected_sources(ENABLED_SOURCES):
         logger.info(
-            "Starting %s scraper: limit=%s max_pages=%s start_page=%s timeout=%ss fresh_start=%s",
+            "Starting %s scraper source=%s: limit=%s max_pages=%s start_page=%s timeout=%ss fresh_start=%s",
             run_label,
+            source,
             limit,
             max_pages,
             start_page,
@@ -64,8 +69,8 @@ def run_scraper(
             "scraper/kafka_producer.py",
             "--limit",
             str(limit),
-            "--sources",
-            ENABLED_SOURCES,
+            "--source",
+            source,
             "--max-pages",
             str(max_pages),
             "--start-page",
@@ -87,18 +92,30 @@ def run_scraper(
             cmd.append("--include-unverified")
         if fresh_start:
             cmd.append("--fresh-start")
-        result = subprocess.run(cmd, timeout=timeout)
-        if result.returncode == 0:
-            logger.info("%s scraper completed successfully", run_label.capitalize())
-        else:
-            logger.error("%s scraper failed with code %s", run_label.capitalize(), result.returncode)
-            raise RuntimeError(f"{run_label} scraper exited with code {result.returncode}")
-    except subprocess.TimeoutExpired:
-        logger.warning("%s scraper timeout", run_label.capitalize())
-        raise
-    except Exception as exc:
-        logger.error("%s scraper error: %s", run_label.capitalize(), exc)
-        raise
+        try:
+            # The timeout belongs to this source, so a slow/unavailable site
+            # cannot consume the next source's request budget.
+            result = subprocess.run(cmd, timeout=timeout, cwd=ROOT)
+            if result.returncode == 0:
+                logger.info("%s source=%s scraper completed successfully", run_label.capitalize(), source)
+            else:
+                failures.append(f"{source}: exit {result.returncode}")
+                logger.error("%s source=%s scraper failed with code %s", run_label.capitalize(), source, result.returncode)
+        except subprocess.TimeoutExpired:
+            failures.append(f"{source}: timeout")
+            logger.warning("%s source=%s scraper timeout; continuing other sources", run_label.capitalize(), source)
+            try:
+                metrics = RunMetrics(source)
+                metrics.inc("scheduler_timeouts")
+                metrics.values["last_failure"] = time.time()
+                metrics.save()
+            except OSError as exc:
+                logger.error("source=%s timeout metrics could not be saved: %s", source, exc)
+        except OSError as exc:
+            failures.append(f"{source}: {type(exc).__name__}")
+            logger.error("%s source=%s scraper process error: %s", run_label.capitalize(), source, exc)
+    if failures:
+        raise RuntimeError(f"{run_label} scraper had source failures: {', '.join(failures)}")
 
 def main():
     from scraper.source_metrics import start_metrics

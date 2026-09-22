@@ -1,9 +1,10 @@
 # Airflow orchestration
 
-The `real_estate_pipeline` DAG owns scheduling and task retries for the real
-data path. Its default source is the bounded Homedy sale category:
-
-`https://homedy.com/ban-nha-dat`
+The optional `real_estate_pipeline` DAG owns scheduling and task retries for
+the real data path when enabled. Its default `ENABLED_SOURCES=alonhadat,homedy`
+selects the bounded categories `https://alonhadat.com.vn/can-ban-nha-dat` and
+`https://homedy.com/ban-nha-dat`. Crawling remains disabled unless
+`CRAWL_ENABLED=true`; unpausing the DAG alone does not enable collection.
 
 ```text
 Airflow crawl task -> Kafka real_estate_raw -> parallel Processors -> MongoDB

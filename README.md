@@ -1,5 +1,11 @@
 # Real Estate Price Prediction System
 
+The current **research objective is traffic prediction and adaptive Kafka
+admission control**. The price API below remains the legacy application. See
+[the pre-change lecturer audit](docs/LECTURER_AUDIT_BEFORE.md),
+[reproducible research commands](research/README.md), and
+[measured findings and remaining gaps](docs/LECTURER_RESEARCH_REPORT.md).
+
 Python/Kafka/MongoDB/scikit-learn pipeline with an authenticated FastAPI API and
 React frontend. The supported deployment is a single-host Docker Compose stack
 for local development and validation. Kafka runs as three ZooKeeper-mode
@@ -100,6 +106,12 @@ Kafka host listeners are `localhost:9092`, `localhost:9093` and
 
 ## Three-source ingestion
 
+Latest crawl reliability review and fixes:
+[Crawl stability (2026-09-22)](docs/CRAWL_STABILITY.md). Checkpoints now persist
+between scheduled runs, each source has its own timeout, and failed details
+cannot block the other source. Homedy still shows oversized sequential
+responses in live checks; this is tracked as a source limitation.
+
 Different property websites present information differently. The ingestion
 layer acts as a translator: it converts the selected website's information
 into one common format before sending it into the existing Kafka pipeline.
@@ -115,6 +127,8 @@ is registered. Historical data/parsing tests remain for compatibility.
 See [audit, contract, capabilities and limitations](docs/SOURCE_MIGRATION.md).
 
 ```bash
+# Run only while automatic crawling is disabled (CRAWL_ENABLED=false)
+# and the Airflow crawl DAG is paused: checkpoint/metrics have one writer.
 # Controlled test after permission/reuse review (maximum two real records):
 docker compose exec scraper python -m scraper.kafka_producer --crawl-enabled --source alonhadat --limit 2 --max-pages 1
 # Repeatable synthetic fixtures through actual Kafka/Mongo; never trains:
@@ -131,7 +145,10 @@ Homedy sale listings. It uses the existing Processor's deterministic normalizer
 and validator, but **never publishes to Kafka, connects to MongoDB or trains**.
 It does not replace `auto_scrape.py` or resolve Batdongsan's HTTP 403.
 
-From the repository root, with Python dependencies installed:
+Run this trial only while scheduled crawling for Homedy is stopped, so the
+combined request rate stays within the configured source pacing. Restore the
+previous scheduler state after the trial. From the repository root, with Python
+dependencies installed:
 
 ```bash
 python -m scraper.homedy_scraper --limit 5 --delay 3
@@ -194,7 +211,7 @@ Example:
 ```bash
 curl -X POST http://localhost:8000/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"StrongPass1","full_name":"Admin"}'
+  -d '{"email":"xample.com","password":"StrongPass1","full_name":"Admin"}'
 
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \

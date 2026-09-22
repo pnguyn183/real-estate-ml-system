@@ -215,17 +215,22 @@ class TrialClient:
         text = self.get(BASE_URL + "/robots.txt", robots=True)
         if "<html" in text.lower():
             raise SourceError("unexpected_robots_html")
-        self.rules = RobotFileParser()
-        self.rules.parse(text.splitlines())
+        rules = RobotFileParser()
+        rules.parse(text.splitlines())
         # A generic crawl permission is not permission to reuse data for ML.
         # Persist policy evidence in the local trial report, not as a licence.
         if re.search(r"ai-train\s*=\s*no", text, re.IGNORECASE):
             raise SourceError("source_disallows_training_use")
-        crawl_delay = self.rules.crawl_delay(USER_AGENT)
-        if crawl_delay:
-            if crawl_delay > 30:
-                raise SourceError("source_crawl_delay_exceeds_trial_budget")
-            self.delay = max(self.delay, crawl_delay)
+        crawl_delay = rules.crawl_delay(USER_AGENT)
+        request_rate = rules.request_rate(USER_AGENT)
+        if request_rate and (request_rate.requests <= 0 or request_rate.seconds <= 0):
+            raise SourceError("invalid_robots_request_rate")
+        interval = max(float(crawl_delay or 0),
+                       request_rate.seconds / request_rate.requests if request_rate else 0)
+        if interval > 30:
+            raise SourceError("source_crawl_delay_exceeds_trial_budget")
+        self.delay = max(self.delay, interval)
+        self.rules = rules
         return text
 
     def close(self):

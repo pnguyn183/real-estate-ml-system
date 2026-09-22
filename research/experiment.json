@@ -19,20 +19,24 @@
     {
       "rate": 500,
       "seconds": 45
+    },
+    {
+      "rate": 1000,
+      "seconds": 45
     }
   ],
   "seed": 42,
   "sample_seconds": 5,
   "decision_seconds": 10,
   "drain_seconds": 120,
-  "max_records": 50000,
-  "hard_lag": 5000,
+  "max_records": 100000,
+  "hard_lag": 10000,
   "hard_cpu_percent": 95,
   "hard_ram_percent": 90,
   "control": {
     "min_rate": 1,
-    "max_rate": 500,
-    "initial_rate": 500,
+    "max_rate": 1000,
+    "initial_rate": 1000,
     "lag_high": 200,
     "lag_low": 30,
     "cpu_high_percent": 80,

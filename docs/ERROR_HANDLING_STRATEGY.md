@@ -7,18 +7,21 @@ for component boundaries.
 
 ## Scraper
 
-`listing_feature_scraper.py` uses HTTP retries and parsing fallbacks supplied by
-the scraper implementation. `kafka_producer.py` logs delivery failures through
-its delivery callback. `auto_scrape.py`:
+`multi_source.py` uses source adapters and bounded HTTP retries from
+`http_policy.py`. `kafka_producer.py` requires a successful delivery callback
+before a URL is checkpointed as acknowledged. `auto_scrape.py`:
 
-- runs each subprocess with a configured timeout;
+- runs each source in a subprocess with its own configured timeout;
 - logs non-zero exit codes and timeout warnings;
-- waits 30 seconds after an unexpected loop exception;
+- continues other sources after a source fails, then waits `SCRAPE_INTERVAL`
+  (default 1800 seconds, minimum 60) before the next scheduled run;
 - preserves state files under `runtime/scrape_state/` for resumable runs.
 
-There is no external retry queue, Alertmanager receiver or scraper metrics
-endpoint. A website 4xx/5xx or rate-limit response is therefore diagnosed from
-scraper logs and the persisted state file.
+The scheduler exposes source metrics on port 8008, scraped by Prometheus.
+Counters distinguish valid Kafka acknowledgements, quarantined records,
+partial runs and timeouts. Diagnose website/access failures using these metrics,
+scraper logs and persisted state; see [crawl stability](CRAWL_STABILITY.md).
+There is no external retry queue or Alertmanager receiver.
 
 ## Kafka processor
 

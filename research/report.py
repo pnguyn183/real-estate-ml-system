@@ -213,13 +213,23 @@ def annotations(axis, run):
     if not finite(started):
         return
     for episode in run.get("episodes", []):
-        for key, label, color in (("t0", "risk", "#b91c1c"), ("t1", "detect", "#c2410c"),
-                                  ("t2", "adjust", "#6d28d9"), ("t3", "recover", "#15803d")):
+        for key, label, color, height in (("t0", "risk", "#b91c1c", .98), ("t1", "detect", "#c2410c", .81),
+                                          ("t2", "adjust", "#6d28d9", .64), ("t3", "recover", "#15803d", .98)):
             if finite(episode.get(key)):
+                if key == "t3" and episode[key] > run.get("load_ended_at", math.inf):
+                    label = "recover (drain)"
                 x = episode[key] - started
                 axis.axvline(x, alpha=.4, color=color, linestyle="--", linewidth=.8)
-                axis.text(x, .98, label, color=color, fontsize=7, rotation=90, va="top",
+                axis.text(x, height, label, color=color, fontsize=7, rotation=90, va="top",
                           transform=axis.get_xaxis_transform())
+
+
+def load_boundary(axis, data, mode, color):
+    seconds = data["report"].get("load_seconds")
+    if finite(seconds):
+        axis.axvline(seconds, alpha=.45, color=color, linestyle=":", linewidth=.8)
+        axis.text(seconds, .03, f"{mode} load ends", color=color, fontsize=7,
+                  rotation=90, va="bottom", transform=axis.get_xaxis_transform())
 
 
 def generate_charts(loaded: dict, output: Path) -> list[str]:
@@ -229,8 +239,8 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
 
     paths = []
     plots = (("throughput", "Committed throughput (messages/s)", "throughput.png"),
-             ("cpu_percent", "Selected pipeline CPU (% Docker-engine capacity)", "cpu.png"),
-             ("ram_percent", "Selected pipeline working-set RAM (% engine memory)", "ram.png"),
+             ("cpu_percent", "Pipeline CPU (% Docker-engine capacity)", "cpu.png"),
+             ("ram_percent", "Pipeline RAM (% Docker-engine capacity)", "ram.png"),
              ("kafka_lag", "Stress-topic consumer lag (messages)", "kafka_lag.png"),
              ("latency_p95_seconds", "Interval p95 enqueue-to-commit latency (s)", "latency.png"),
              ("current_limit", "Admission limit (messages/s)", "rate_limit.png"),
@@ -259,6 +269,7 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
                 has_data = True
             if mode == "adaptive":
                 annotations(axis, data["report"])
+            load_boundary(axis, data, mode, colors[mode])
         if has_data:
             axis.set(xlabel="Elapsed from load start (s)", ylabel=label)
             axis.legend()
@@ -280,6 +291,7 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
                 has_data = True
             if mode == "adaptive":
                 annotations(axis, data["report"])
+            load_boundary(axis, data, mode, colors[mode])
         if has_data:
             axis.set(xlabel="Elapsed from load start (s)", ylabel="Observed agent decision")
             axis.set_yticks(list(labels.values()), list(labels))
@@ -300,7 +312,8 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
                     axis.plot([p["elapsed_seconds"] for p in points], [p[key] if finite(p.get(key)) else math.nan for p in points], label=label)
                     has_data = True
             axis.set(title=mode, xlabel="Elapsed (s)", ylabel="Messages/s")
-            if axis.lines:
+            load_boundary(axis, data, mode, colors[mode])
+            if axis.get_legend_handles_labels()[1]:
                 axis.legend()
             axis.grid(alpha=.2)
         if has_data:
@@ -319,7 +332,8 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
                     axis.plot([p["elapsed_seconds"] for p in points], [v if finite(v) else math.nan for v in values], label=f"Broker {broker}")
                     has_data = True
             axis.set(title=mode, xlabel="Elapsed (s)", ylabel="Stress-topic leader log growth/s")
-            if axis.lines:
+            load_boundary(axis, data, mode, colors[mode])
+            if axis.get_legend_handles_labels()[1]:
                 axis.legend()
             axis.grid(alpha=.2)
         if has_data:

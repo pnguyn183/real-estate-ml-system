@@ -7,7 +7,7 @@ import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
 from scraper import multi_source
-from scraper.http_policy import ScraperFetchError, ScraperPolicyError
+from scraper.http_policy import ScraperFetchError, ScraperPolicyError, ScraperMissingError, ScraperRateLimitError
 from scraper.kafka_producer import KafkaDeliveryError, main, publish_records
 from scraper.listing_feature_scraper import ScrapeConfig
 from scraper.source_metrics import RunMetrics, SourceCollector
@@ -66,10 +66,17 @@ def test_unacknowledged_delivery_leaves_source_replayable(configured):
 def test_changed_detail_structure_emits_quarantined_record(configured):
     config, client, _, _ = configured
     client.get_html.side_effect = [fixture("alonhadat", "list"), "<html><h1>unrelated</h1></html>"]
-    row, = list(multi_source.iter_source_records("alonhadat", config))
+    iterator = multi_source.iter_source_records("alonhadat", config)
+    row = next(iterator)
     assert "missing_alonhadat_detail_structure" in row["validation_errors"]
     assert row["price_raw"] is None and row["training_excluded"]
     assert row["source_url"].startswith("https://alonhadat.com.vn/")
+    with pytest.raises(ScraperFetchError, match="invalid_records=1"):
+        next(iterator)
+    counters = RunMetrics("alonhadat").values
+    assert counters["invalid_listings_published"] == 1
+    assert counters["crawl_failure"] == 1
+    assert not counters.get("last_success")
 
 
 def test_changed_listing_structure_fails_explicitly(configured):
@@ -139,3 +146,137 @@ def test_pagination_never_leaves_source_or_guesses(source):
     adapter = get_adapter(source)
     assert adapter.next_page('<a href="https://evil.invalid/p2">next</a>', adapter.category_url) is None
     assert adapter.next_page("<html></html>", adapter.category_url) is None
+
+
+def two_listing_adapter(monkeypatch):
+    adapter = Mock(disabled_reason=None, category_url="https://alonhadat.com.vn/nha-dat-ban")
+    adapter.discover.return_value = ["https://alonhadat.com.vn/first-1.html", "https://alonhadat.com.vn/second-2.html"]
+    adapter.parse.side_effect = lambda html, url: {"url": url, "validation_errors": []}
+    adapter.next_page.return_value = None
+    monkeypatch.setattr(multi_source, "get_adapter", lambda source: adapter)
+    return adapter
+
+
+def test_repeated_small_runs_advance_then_refresh_oldest_ack(configured, monkeypatch):
+    config, client, _, temporary = configured
+    adapter = two_listing_adapter(monkeypatch)
+    client.get_html.return_value = "html"
+    clock = {"now": 1000}
+    monkeypatch.setattr(multi_source.time, "time", lambda: clock["now"])
+    first, = list(multi_source.iter_source_records("alonhadat", config, revisit_seconds=100))
+    clock["now"] += 1
+    second, = list(multi_source.iter_source_records("alonhadat", config, revisit_seconds=100))
+    assert [first["url"], second["url"]] == adapter.discover.return_value
+    assert list(multi_source.iter_source_records("alonhadat", config, revisit_seconds=100)) == []
+    metrics = RunMetrics("alonhadat").values
+    assert metrics["crawl_no_change"] == 1 and metrics["last_checked"] == 1001
+    clock["now"] = 1100
+    refreshed, = list(multi_source.iter_source_records("alonhadat", config, revisit_seconds=100))
+    assert refreshed["url"] == first["url"]
+    state = json.loads((temporary / "state-alonhadat.json").read_text())
+    assert state["acknowledged_at"][first["url"]] == 1100
+
+
+@pytest.mark.parametrize("error", [ScraperFetchError("transient_timeout"), ScraperMissingError("deleted")])
+def test_failed_detail_does_not_starve_other_urls_or_advance_its_checkpoint(configured, monkeypatch, error):
+    config, client, _, temporary = configured
+    adapter = two_listing_adapter(monkeypatch)
+    client.get_html.side_effect = ["category", error, "detail"]
+    iterator = multi_source.iter_source_records("alonhadat", config)
+    row = next(iterator)
+    assert row["url"] == adapter.discover.return_value[1]
+    with pytest.raises(ScraperFetchError, match="incomplete_source_run"):
+        next(iterator)
+    state = json.loads((temporary / "state-alonhadat.json").read_text())
+    assert state["seen_urls"] == [row["url"]]
+    counters = RunMetrics("alonhadat").values
+    assert counters["crawl_partial"] == counters["detail_fetch_errors"] == 1
+    assert counters["valid_listings_published"] == 1 and counters["last_success"] > 0
+    client.get_html.side_effect = ["category", "detail"]
+    retry, = list(multi_source.iter_source_records("alonhadat", config))
+    assert retry["url"] == adapter.discover.return_value[0]
+
+
+@pytest.mark.parametrize("error", [ScraperPolicyError("denied"), ScraperRateLimitError("retry_after_exceeds_run_budget")])
+def test_source_restriction_does_not_continue_with_next_detail(configured, monkeypatch, error):
+    config, client, _, temporary = configured
+    two_listing_adapter(monkeypatch)
+    client.get_html.side_effect = ["category", error, "must not fetch"]
+    with pytest.raises(type(error)):
+        list(multi_source.iter_source_records("alonhadat", config))
+    assert client.get_html.call_count == 2
+    assert not (temporary / "state-alonhadat.json").exists()
+
+
+def test_consecutive_detail_failure_budget_bounds_bad_source(configured, monkeypatch):
+    config, client, _, _ = configured
+    two_listing_adapter(monkeypatch)
+    client.get_html.side_effect = ["category", ScraperFetchError("too_large"), "must not fetch"]
+    with pytest.raises(ScraperFetchError, match="consecutive_detail_failure_budget"):
+        list(multi_source.iter_source_records("alonhadat", config, max_consecutive_failures=1))
+    assert client.get_html.call_count == 2
+
+
+def test_retry_order_moves_past_persistent_broken_first_card(configured, monkeypatch):
+    config, client, _, temporary = configured
+    adapter = two_listing_adapter(monkeypatch)
+    client.get_html.side_effect = ["category", ScraperFetchError("too_large")]
+    with pytest.raises(ScraperFetchError, match="consecutive_detail_failure_budget"):
+        list(multi_source.iter_source_records("alonhadat", config, max_consecutive_failures=1))
+    state = json.loads((temporary / "state-alonhadat.json").read_text())
+    assert state["seen_urls"] == []
+    assert adapter.discover.return_value[0] in state["failed_urls"]
+    client.get_html.side_effect = ["category", "healthy detail"]
+    row, = list(multi_source.iter_source_records("alonhadat", config, max_consecutive_failures=1))
+    assert row["url"] == adapter.discover.return_value[1]
+    client.get_html.side_effect = ["category", "recovered detail"]
+    recovered, = list(multi_source.iter_source_records("alonhadat", config, max_consecutive_failures=1))
+    assert recovered["url"] == adapter.discover.return_value[0]
+    assert not json.loads((temporary / "state-alonhadat.json").read_text())["failed_urls"]
+
+
+def test_corrupt_checkpoint_is_preserved_and_rebuilt_after_ack(configured):
+    config, client, _, temporary = configured
+    checkpoint = temporary / "state-alonhadat.json"
+    checkpoint.write_text("broken", encoding="utf-8")
+    client.get_html.side_effect = [fixture("alonhadat", "list"), fixture("alonhadat", "detail")]
+    row, = list(multi_source.iter_source_records("alonhadat", config))
+    assert json.loads(checkpoint.read_text())["seen_urls"] == [row["url"]]
+    assert next(temporary.glob("state-alonhadat.json.corrupt-*")).read_text() == "broken"
+    assert RunMetrics("alonhadat").values["checkpoint_resets"] == 1
+
+
+@pytest.mark.parametrize("content", ["broken", "[]", '{"last_success": "bad"}', '{"request_count": NaN}'])
+def test_corrupt_metrics_preserved_without_fake_success(configured, content):
+    metrics = RunMetrics("homedy")
+    metrics.path.parent.mkdir(parents=True, exist_ok=True)
+    metrics.path.write_text(content, encoding="utf-8")
+    recovered = RunMetrics("homedy")
+    recovered.save()
+    assert recovered.values == {"metrics_state_resets": 1}
+    assert next(metrics.path.parent.glob("homedy.json.corrupt-*")).read_text() == content
+
+
+def test_enabled_gauge_distinguishes_disabled_sources(configured, monkeypatch):
+    monkeypatch.setenv("CRAWL_ENABLED", "true")
+    monkeypatch.setenv("ENABLED_SOURCES", "alonhadat,guland")
+    registry = CollectorRegistry()
+    registry.register(SourceCollector())
+    text = generate_latest(registry).decode()
+    assert 'source_crawl_enabled{source="alonhadat"} 1.0' in text
+    assert 'source_crawl_enabled{source="homedy"} 0.0' in text
+    assert 'source_crawl_enabled{source="guland"} 0.0' in text
+
+
+def test_cli_sync_kafka_error_is_bounded_and_other_source_runs(monkeypatch):
+    from scraper import kafka_producer
+    seen_sources = []
+    def records(source, config, **kwargs):
+        seen_sources.append(source)
+        yield {"url": "https://example.test/one"}
+    producer = Mock()
+    producer.produce.side_effect = BufferError("queue full")
+    monkeypatch.setattr(kafka_producer, "Producer", Mock(return_value=producer))
+    monkeypatch.setattr(kafka_producer, "iter_source_records", records)
+    assert main(["--crawl-enabled", "--sources", "alonhadat,homedy"]) == 1
+    assert seen_sources == ["alonhadat", "homedy"]

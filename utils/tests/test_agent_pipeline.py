@@ -143,7 +143,8 @@ class Consumer:
         assert asynchronous is False
         self.commits.append((message.topic(), message.partition(), message.offset() + 1))
 
-    def get_watermark_offsets(self, partition, timeout):
+    def get_watermark_offsets(self, partition, cached):
+        assert cached is True
         return 0, 8
 
     def close(self):
@@ -229,6 +230,49 @@ def test_traffic_commit_failure_is_not_counted_as_handled_or_latency(make_pipeli
     end_to_end.labels.assert_not_called()
     handling.labels.assert_not_called()
     outcomes.labels.assert_called_once_with("real_estate_stress_raw", "failed")
+
+
+@pytest.mark.parametrize("high,expected", [(12, 4), (7, 0), (-1001, None)])
+def test_consumer_lag_uses_nonblocking_cache_and_skips_unknown_watermark(make_pipeline, monkeypatch, high, expected):
+    pipeline = make_pipeline()
+    pipeline.consumer.get_watermark_offsets = Mock(return_value=(0, high))
+    lag = Mock()
+    monkeypatch.setattr(module, "kafka_consumer_lag", lag)
+    pipeline.update_consumer_lag(Message(b"{}"))
+    call = pipeline.consumer.get_watermark_offsets.call_args
+    assert call.kwargs == {"cached": True}
+    assert len(call.args) == 1
+    assert (call.args[0].topic, call.args[0].partition) == ("real_estate_raw", 0)
+    if expected is None:
+        lag.set.assert_not_called()
+    else:
+        lag.set.assert_called_once_with(expected)
+
+
+@pytest.mark.parametrize("commit_fails", [False, True])
+def test_malformed_input_metrics_respect_commit_boundary(make_pipeline, monkeypatch, commit_fails):
+    pipeline = make_pipeline()
+    handling, end_to_end, outcomes = Mock(), Mock(), Mock()
+    monkeypatch.setattr(module, "processor_input_handling", handling)
+    monkeypatch.setattr(module, "processor_input_end_to_end", end_to_end)
+    monkeypatch.setattr(module, "processor_input_outcomes", outcomes)
+    pipeline.consumer.messages = [Message(b"{broken")]
+    if commit_fails:
+        pipeline.consumer.commit = Mock(side_effect=RuntimeError("commit rejected"))
+        with pytest.raises(RuntimeError, match="commit rejected"):
+            pipeline.consume_forever(max_messages=1)
+        handling.labels.assert_not_called()
+        outcomes.labels.assert_called_once_with("real_estate_raw", "failed")
+    else:
+        def assert_committed(_duration):
+            assert pipeline.consumer.commits == [("real_estate_raw", 0, 8)]
+
+        handling.labels.return_value.observe.side_effect = assert_committed
+        pipeline.consume_forever(max_messages=1)
+        handling.labels.return_value.observe.assert_called_once()
+        outcomes.labels.assert_called_once_with("real_estate_raw", "dlq")
+    end_to_end.labels.assert_not_called()
+    assert len(pipeline.dlq_collection.documents) == 1
 
 
 def test_current_group_owns_ingestion_and_result_topics_without_extra_consumer(make_pipeline):

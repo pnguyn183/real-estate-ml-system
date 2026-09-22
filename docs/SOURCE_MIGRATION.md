@@ -6,11 +6,14 @@ The working tree already contains uncommitted Agent, Docker, monitoring and
 Airflow changes. They are retained, not reset. This document separates observed
 behavior from implementation and future verification.
 
-Current ingestion entrypoints are `scripts/auto_scrape.py`, the optional Airflow
-DAG and `scraper/kafka_producer.py`. The producer still accepts a Batdongsan
-fallback; an intermediate Homedy-only adapter is also present. Neither is a
-three-source contract. Batdongsan selectors, URL-derived location and verified
-filter must not be reused for other websites.
+The following findings describe the pre-migration state on 2026-09-17, not
+current operating instructions. At that checkpoint, ingestion entrypoints were
+`scripts/auto_scrape.py`, the optional Airflow DAG and `scraper/kafka_producer.py`.
+The producer accepted a Batdongsan fallback; an intermediate Homedy-only adapter
+was also present. Neither provided a three-source contract. Batdongsan selectors,
+URL-derived location and verified filtering must not be reused for other websites.
+The current registry excludes Batdongsan; see
+[crawl stability and current configuration (2026-09-22)](CRAWL_STABILITY.md).
 
 Downstream audit:
 

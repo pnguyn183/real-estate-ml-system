@@ -163,8 +163,10 @@ Compose defaults include Kafka `kafka:29092,kafka2:29093,kafka3:29094` (host
 listeners `localhost:9092,localhost:9093,localhost:9094`), MongoDB
 `mongodb:27017`, API port 8000, frontend port 3000, processor metrics ports
 8003/8004/8005 and trainer metrics port 8001, periodic
-scrape/train checks every 1800 seconds, initial scrape limit 5000/max 200 pages,
-and minimum training candidates 3000. See `.env.example` and
+scrape/train checks every 1800 seconds, initial scrape limit 10/max 1 page per
+source, and minimum training candidates 3000. Crawling defaults to disabled;
+when enabled, initial and periodic runs preserve the shared checkpoint and
+refresh acknowledged URLs after 86400 seconds by default. See `.env.example` and
 [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) for all variable names.
 
 Set a strong `AUTH_SECRET_KEY`, production CORS origins and database credentials

@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
@@ -113,8 +114,23 @@ def code_identity():
     result = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     result["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     result["python"] = platform.python_version()
-    result["containers"] = subprocess.check_output(
-        ["docker", "ps", "--format", "{{.Names}} {{.Image}} {{.ID}}"], text=True).splitlines()
+    result["dependencies"] = {name: importlib.metadata.version(name) for name in
+                              ("confluent-kafka", "requests", "prometheus-client")}
+    try:
+        result["containers"] = subprocess.check_output(
+            ["docker", "ps", "--format", "{{.Names}} {{.Image}} {{.ID}}"], text=True, timeout=10).splitlines()
+    except (subprocess.SubprocessError, OSError) as exc:
+        result["containers"] = None
+        result["container_identity_error"] = type(exc).__name__
+    result["worker_source_hashes"] = {}
+    for service in ("processor", "processor-2", "processor-3"):
+        try:
+            result["worker_source_hashes"][service] = subprocess.check_output(
+                ["docker", "compose", "exec", "-T", service, "python", "-c",
+                 "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('/app/processing/kafka_to_mongo.py').read_bytes()).hexdigest())"],
+                text=True, timeout=10).strip()
+        except (subprocess.SubprocessError, OSError) as exc:
+            result["worker_source_hashes"][service] = {"error": type(exc).__name__}
     return result
 
 
@@ -187,6 +203,7 @@ def run_mode(mode, config, output, bootstrap, topic, group):
         idle = collector.sample()
         if idle.get("incoming_rate") != 0 or idle.get("kafka_lag") != 0 or idle.get("errors"):
             raise RuntimeError("preflight detected concurrent traffic or missing telemetry; finish other stress producers first")
+        report["initial_partitions"] = idle.get("partitions", {})
         began = time.monotonic()
         report["load_started_at"] = time.time()
         next_sample, next_decision = began, began + config["decision_seconds"]
@@ -309,6 +326,14 @@ def run_mode(mode, config, output, bootstrap, topic, group):
         collector.close()
         report["ended_at"] = time.time()
         report["observation_count"] = observation_count
+        report["final_partitions"] = last_sample.get("partitions", {}) if last_sample else {}
+        initial_parts, final_parts = report.get("initial_partitions", {}), report["final_partitions"]
+        if initial_parts and initial_parts.keys() == final_parts.keys():
+            report["observed_topic_offset_growth"] = sum(final_parts[k]["high_offset"] - v["high_offset"]
+                                                          for k, v in initial_parts.items())
+            report["exclusive_topic_confirmed"] = report["observed_topic_offset_growth"] == report["acknowledged"]
+            if not report["exclusive_topic_confirmed"]:
+                report["status"] = "invalid_concurrent_traffic"
         for stage in report["stages"]:
             stage["scheduler_shortfall"] = stage["planned"] - stage["offered"]
         report["episodes"] = controller.episode_reports()
@@ -337,7 +362,7 @@ def main():
             result = run_mode(mode, config, output / mode, args.bootstrap, args.topic, args.group)
             summaries.append(result)
             print(json.dumps({k: result.get(k) for k in ("mode", "status", "offered", "admitted", "rejected", "acknowledged", "final_lag", "error")}), flush=True)
-            if result["status"] in {"failed", "interrupted", "drain_timeout"}:
+            if result["status"] in {"failed", "interrupted", "drain_timeout", "invalid_concurrent_traffic"}:
                 break
     write_json(output / "runs.json", summaries)
     return int(any(r["status"] != "completed" for r in summaries))

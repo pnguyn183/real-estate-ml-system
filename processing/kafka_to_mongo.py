@@ -60,6 +60,9 @@ from utils.metrics import (
     db_writes_success,
     db_writes_failed,
     processing_duration,
+    processor_input_outcomes,
+    processor_input_handling,
+    processor_input_end_to_end,
 )
 
 
@@ -769,6 +772,7 @@ class KafkaToMongoPipeline:
                     log_structured(logging.ERROR, "kafka_consumer_error", error=str(message.error()))
                     continue
 
+                input_started = time.monotonic()
                 kafka_messages_consumed.inc()
                 self.update_consumer_lag(message)
                 is_ai_result = message.topic() == self.ai_result_topic
@@ -808,10 +812,17 @@ class KafkaToMongoPipeline:
                         db_writes_success.inc()
                     except Exception:
                         db_writes_failed.inc()
+                        processor_input_outcomes.labels(message.topic(), "failed").inc()
                         log_structured(logging.ERROR, "malformed_message_dlq_failed", topic=message.topic())
                         raise
-                    self.consumer.commit(message=message, asynchronous=False)
-                    pipeline.commit_offset_checkpoint(message)
+                    try:
+                        self.consumer.commit(message=message, asynchronous=False)
+                        pipeline.commit_offset_checkpoint(message)
+                    except Exception:
+                        processor_input_outcomes.labels(message.topic(), "failed").inc()
+                        raise
+                    processor_input_outcomes.labels(message.topic(), "dlq").inc()
+                    processor_input_handling.labels(message.topic()).observe(time.monotonic() - input_started)
                     count += 1
                     if max_messages and count >= max_messages:
                         break
@@ -835,6 +846,14 @@ class KafkaToMongoPipeline:
                     try:
                         self.consumer.commit(message=message, asynchronous=False)
                         pipeline.commit_offset_checkpoint(message)
+                        outcome = "invalid" if normalized.get("validation_errors") else "handled"
+                        processor_input_outcomes.labels(message.topic(), outcome).inc()
+                        processor_input_handling.labels(message.topic()).observe(time.monotonic() - input_started)
+                        sent_at = payload.get("stress_sent_at")
+                        now = time.time()
+                        if (isinstance(sent_at, (int, float)) and not isinstance(sent_at, bool)
+                                and math.isfinite(sent_at) and 0 < sent_at <= now):
+                            processor_input_end_to_end.labels(message.topic()).observe(now - sent_at)
                     except Exception as exc:
                         log_structured(logging.WARNING, "commit_failed", error=str(exc))
                         # Do not poll/commit a higher offset after a failed commit.
@@ -844,6 +863,7 @@ class KafkaToMongoPipeline:
                     # processing failed; do not commit so message can be retried
                     log_structured(logging.ERROR, "processing_failed", error=str(exc))
                     kafka_messages_failed.inc()
+                    processor_input_outcomes.labels(message.topic(), "failed").inc()
                     raise
                 if max_messages and count >= max_messages:
                     break
@@ -866,8 +886,13 @@ class KafkaToMongoPipeline:
     def update_consumer_lag(self, message) -> None:
         try:
             partition = TopicPartition(message.topic(), message.partition())
-            low, high = self.consumer.get_watermark_offsets(partition, timeout=1.0)
-            kafka_consumer_lag.set(max(high - message.offset() - 1, 0))
+            # A network ListOffsets request here can queue behind a blocking
+            # Fetch on the same broker connection for every buffered record.
+            # Keep this legacy per-partition hint nonblocking. Research/control
+            # use independently sampled group committed offsets across all lanes.
+            _, high = self.consumer.get_watermark_offsets(partition, cached=True)
+            if high >= 0:
+                kafka_consumer_lag.set(max(high - message.offset() - 1, 0))
         except Exception as exc:
             log_structured(logging.DEBUG, "consumer_lag_update_failed", error=str(exc))
 
