@@ -300,7 +300,20 @@ Pipeline dùng preprocessing số/categorical/text, TF-IDF và text embedding; t
 
 Stress controller hiện tại không dùng model ML để dự đoán traffic. Đây là reactive controller dựa trên threshold, hysteresis, cooldown và token bucket. Benchmark forecast 5/10 phút có chạy persistence, Random Forest, Gradient Boosting và XGBoost, nhưng chưa đủ các cặp dữ liệu chronology-safe để báo cáo R² traffic. Agent hiện tại không dùng XGBoost để tự điều chỉnh limit.
 
-## 11. Thiết lập và tái lập kiểm chứng Gemini
+## 11. Mức độ đáp ứng ba hướng đề xuất
+
+| Hướng đề xuất | Trạng thái | Bằng chứng hiện có | Phần còn thiếu và lý do |
+|---|---|---|---|
+| Time-series forecasting bằng Random Forest/XGBoost/LSTM | **Một phần** | `research/benchmark.py` đã có horizon 300/600 giây, lag, rolling và đặc trưng thời gian; Random Forest và XGBoost đã có trong benchmark | Dữ liệu hiện chỉ khoảng 285 giây/60 observations, nên cả horizon 5 phút và 10 phút đều `insufficient_data`. Forecast chưa nối vào `research/run_experiment.py`, chưa đưa `predicted_traffic` vào quyết định limit và chưa có R²/MAE/RMSE traffic hợp lệ. LSTM chưa triển khai vì chưa có chuỗi lịch sử đủ dài. |
+| Q-Learning/DQN | **Chưa triển khai** | Chưa có Q-table, reward, policy, replay buffer, epsilon-greedy hoặc training episodes | Cần nhiều stress episodes, reward ổn định và môi trường an toàn để thử action. DQN hiện là quá phức tạp so với lượng dữ liệu hiện có; chưa thể chứng minh agent đã tự học chiến lược. |
+| Clustering/phân loại tải nhẹ-trung bình-nặng | **Chưa triển khai dưới dạng clustering** | Stress profile có các mức `normal/medium/high`, nhưng đây chỉ là hệ số sinh tải, không phải cluster học từ telemetry | Chưa có K-Means/cluster model, cluster ID hoặc state light/medium/heavy được dùng trong quyết định runtime. Có thể bổ sung rule-based load classification trước, nhưng chưa được tính là clustering. |
+| Reactive rate limiting | **Đã triển khai** | `agents/traffic_control.py`, `research/run_experiment.py`, `actions.jsonl` và v4 report | Cơ chế phản ứng sau khi quan sát lag/CPU/RAM/latency vượt ngưỡng; chưa phải predictive control. |
+
+Vì vậy, trạng thái hiện tại là **reactive traffic control đã hoạt động; forecasting mới dừng ở benchmark; Q-Learning/DQN và clustering chưa có**. Prototype forecasting local chưa được tính là tính năng hoàn tất vì chưa được nối vào runner, chưa có dữ liệu đủ dài và chưa có test thực nghiệm end-to-end.
+
+Để hoàn tất hướng forecasting, cần thu thập telemetry liên tục nhiều giờ hoặc nhiều ngày, tạo đủ cặp nhãn 5/10 phút, đánh giá XGBoost/Random Forest theo chronological holdout, rồi nối `predicted_traffic` vào controller với log lý do `predictive_congestion`. Q-Learning chỉ nên xem xét sau khi có nhiều episode và baseline predictive ổn định; clustering có thể bổ sung như lớp phân loại trạng thái, nhưng không thay thế forecasting.
+
+## 12. Thiết lập và tái lập kiểm chứng Gemini
 
 Thiết lập thực nghiệm sử dụng các biến môi trường sau; API key không được lưu trong repository:
 
@@ -325,11 +338,11 @@ những record Gemini đã trả kết quả được pipeline chấp nhận. Ra
 giữ nguyên trong `listings_raw`; dữ liệu sau validation nằm trong
 `training_features` hoặc `invalid_records`.
 
-## 12. Kết luận
+## 13. Kết luận
 
 Nghiên cứu xác nhận ba kết quả chính. Thứ nhất, dữ liệu có skew và missingness đáng kể; chất lượng Gemini chỉ được xác minh đáng tin cậy đối với các record có audit before/after. Thứ hai, XGBoost và Random Forest cho R² cao hơn model hiện tại trên holdout cố định, nhưng chưa đủ cơ sở để khẳng định khả năng tổng quát hoặc thay thế model production. Thứ ba, adaptive rate limiting làm giảm peak Kafka lag và peak latency bằng cách chủ động từ chối một phần tải; run hiện tại chưa chứng minh autoscaling tài nguyên hoặc tăng throughput trung bình. Mức ổn định cao nhất quan sát được là 500 msg/s ở baseline và 250 msg/s ở adaptive; cần thêm các plateau trung gian, nhiều seed và đảo thứ tự run để xác định điểm tối ưu có tính lặp lại.
 
-## 13. Bộ bằng chứng chính
+## 14. Bộ bằng chứng chính
 
 - [docs/LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md)
 - [runtime/research/paired-v4-20260921/analysis/summary.json](../runtime/research/paired-v4-20260921/analysis/summary.json)
