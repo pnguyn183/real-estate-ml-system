@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents.metrics import AIExtractionMetrics
+from agents.provider_audit import emit
 from agents.providers import AIExtractionProvider, DisabledProvider, OpenAICompatibleProvider, ProviderError
 
 
@@ -380,6 +381,7 @@ class ExtractionService:
                     time.sleep(backoff)
             try:
                 output = ExtractionOutput.model_validate_json(raw_output)
+                emit("parsed", {"parsed_response": output.model_dump()})
             except (ValidationError, ValueError, TypeError):
                 raise ProviderError("invalid_schema") from None
             confidence = output.confidence

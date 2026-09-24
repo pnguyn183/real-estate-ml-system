@@ -21,6 +21,7 @@ from confluent_kafka import Consumer, Producer
 from prometheus_client import Counter, Gauge
 
 from agents.extraction import ExtractionService, FIELD_TO_RAW, source_text
+from agents.provider_audit import capture, emit
 from agents.safety import is_synthetic_record, SYNTHETIC_URL_PREFIX
 from processing.kafka_to_mongo import (
     KafkaToMongoPipeline, agent_event_id, validate_normalized_record,
@@ -202,7 +203,9 @@ class AIWorker:
                     if key in FIELD_TO_RAW.values()
                 }}
             else:
-                result = self.extraction.extract(record)
+                with capture(pipeline.db, event_id, record):
+                    result = self.extraction.extract(record)
+                    emit("extraction_result", {"result": result})
                 if result.get("status") == "success":
                     # Validate before Kafka delivery; result handler independently
                     # repeats validation before writing any training features.

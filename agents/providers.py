@@ -9,6 +9,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 import requests
+from agents.provider_audit import active, emit
 
 
 class ProviderError(Exception):
@@ -77,24 +78,39 @@ class OpenAICompatibleProvider:
             raise ProviderError("disabled")
         deadline = time.monotonic() + timeout
         response = None
+        payload = {"model": self.model, "messages": messages,
+                   "response_format": {"type": "json_object"},
+                   "temperature": 0, "max_tokens": 1600, "stream": False}
         try:
             # Splitting connect/read budgets bounds normal timeout retries; the
             # streamed body also checks the total deadline and maximum size.
+            emit("request", {"provider": self.name, "base_url": self.base_url,
+                             "endpoint": f"{self.base_url}/chat/completions", "request": payload})
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0,
-                    "max_tokens": 1600,
-                    "stream": False,
-                },
+                json=payload,
                 timeout=(min(2.0, timeout / 3), max(0.1, timeout - min(2.0, timeout / 3))),
                 allow_redirects=False,
                 stream=True,
             )
+            emit("http_status", {"http_status": response.status_code})
+            if response.status_code != 200 and active():
+                # Error evidence is opt-in and bounded. Keep the same provider
+                # failure classification even if reading its error body fails.
+                error_body = bytearray()
+                truncated = False
+                try:
+                    for chunk in response.iter_content(chunk_size=1):
+                        if time.monotonic() > deadline or len(error_body) + len(chunk) > self.MAX_RESPONSE_BYTES:
+                            truncated = True
+                            break
+                        error_body.extend(chunk)
+                except Exception:
+                    truncated = True
+                emit("response", {"http_status": response.status_code,
+                                  "raw_response": bytes(error_body).decode("utf-8", errors="replace"),
+                                  "truncated": truncated})
             if response.status_code == 429:
                 raise ProviderError("provider_rate_limited", retryable=True)
             if response.status_code >= 500:
@@ -113,6 +129,8 @@ class OpenAICompatibleProvider:
                 content_bytes.extend(chunk)
                 if len(content_bytes) > self.MAX_RESPONSE_BYTES:
                     raise ProviderError("provider_response_too_large")
+            emit("response", {"http_status": response.status_code,
+                              "raw_response": bytes(content_bytes).decode("utf-8", errors="replace")})
             body = json.loads(content_bytes)
             choice = body["choices"][0]
             if not isinstance(choice, dict):
