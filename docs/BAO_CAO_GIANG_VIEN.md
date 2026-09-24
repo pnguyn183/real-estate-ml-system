@@ -236,6 +236,66 @@ dataset crawl đã qua Gemini, cleaning lịch sử, độ chính xác extractio
 mẫu đại diện hay độ ổn định provider dài hạn. Hai response 503 còn cho thấy
 một lần thành công không chứng minh dịch vụ luôn sẵn sàng.
 
+### Luồng tạo file bằng chứng và cách mở xem
+
+File trực tiếp tạo `runtime/research/gemini-clean-audit.json` là
+[scripts/verify_gemini_pipeline.py](../scripts/verify_gemini_pipeline.py).
+Hàm `run_case()` gửi record kiểm chứng qua Kafka, quan sát các message và
+đọc kết quả từ MongoDB; hàm `write_report()` ghi dữ liệu tổng hợp ra JSON
+tại đường dẫn `--output`. File audit là bản chụp của lượt chạy verifier,
+không tự cập nhật liên tục khi agent xử lý các record mới.
+
+```text
+verify_gemini_pipeline.py: run_case() gửi raw record qua Kafka
+  -> processor chuyển record đủ điều kiện fallback vào real_estate_ai_input
+  -> agents/worker.py: capture() ghi before cho event được chọn
+  -> agents/providers.py: emit() ghi request, HTTP status, raw response Gemini
+  -> agents/extraction.py: emit() ghi parsed response
+  -> agents/worker.py: emit() ghi extraction_result
+       -> agents/provider_audit.py: che secret, thêm timestamp và SHA-256
+       -> MongoDB real_estate_stress_db.ai_provider_audit (lượt kiểm chứng này)
+  -> real_estate_ai_results -> processor validation -> final record + receipt
+  -> verify_gemini_pipeline.py: run_case() đối chiếu Kafka và các collection MongoDB
+  -> write_report() -> runtime/research/gemini-clean-audit.json
+```
+
+Các lệnh `emit()` trong luồng trên cùng sử dụng sink của
+[agents/provider_audit.py](../agents/provider_audit.py), ghi các stage vào
+document có `_id=event_id` trong `ai_provider_audit`. Chỉ event nằm trong
+`AI_AUDIT_EVENT_IDS` mới được ghi; audit mặc định tắt. Collector còn đọc
+`ai_cleaning_audit`, `ai_extractions`, `ai_result_receipts`, `listings_raw`,
+`training_features` và `invalid_records` để đối chiếu quá trình xử lý.
+Vì vậy, file xuất chứa cả bằng chứng provider và kết quả xử lý cuối của pipeline.
+
+Để tự xem, mở
+[runtime/research/gemini-clean-audit.json](../runtime/research/gemini-clean-audit.json)
+trong IDE, rồi tìm các key sau:
+
+| Key trong artifact | Nội dung đối chiếu |
+|---|---|
+| `before` | Raw record trước khi xử lý AI |
+| `gemini_input[*].request.messages` | Toàn bộ system/user messages thực sự gửi Gemini, gồm các lần retry |
+| `gemini_output[*]` | HTTP status và raw response của từng attempt |
+| `parsed_response` | JSON extraction đã qua kiểm tra schema |
+| `after_extraction` | Record sau khi merge các field được trích xuất |
+| `field_changes` | Giá trị trước/sau của từng field thay đổi khi merge |
+| `final_record` | Bản ghi cuối sau processor validation và chuẩn hóa |
+| `receipt`, `final_storage_collection` | Trạng thái xử lý và collection lưu kết quả cuối |
+
+Raw response được giữ trong artifact; ví dụ INPUT/OUTPUT trình bày ở trên
+được đối chiếu với artifact này. Đường dẫn `runtime/` nằm ngoài Git nên cần
+mở file tại máy đã chạy verifier. Nếu lượt chạy thất bại, verifier vẫn lưu
+bằng chứng thu được với `status=blocked`; có file JSON không đồng nghĩa
+Gemini đã trích xuất thành công.
+
+Phân biệt các script có tên gần nhau:
+
+| Script | Vai trò |
+|---|---|
+| `verify_gemini_pipeline.py` | Kiểm chứng cuộc gọi Gemini thật và xuất bằng chứng INPUT/OUTPUT đầy đủ |
+| `audit_gemini_clean.py` | Tổng hợp thống kê và hash từ `ai_cleaning_audit`, không thu raw request/response Gemini; lưu sang file riêng để giữ nguyên artifact đầy đủ |
+| `verify_agent_pipeline.py` | Kiểm thử pipeline với transport LLM mô phỏng, không phải bằng chứng gọi Gemini thật |
+
 ### Code audit và cách kiểm chứng lại
 
 [provider_audit.py](../agents/provider_audit.py),
