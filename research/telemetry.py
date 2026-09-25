@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import json
 import math
@@ -19,9 +20,11 @@ import re
 import subprocess
 import time
 from typing import Any
+from uuid import uuid4
 
 import requests
 from prometheus_client.parser import text_string_to_metric_families
+from research.runtime import keep_system_awake
 
 
 DEFAULT_CONTAINERS = (
@@ -192,7 +195,7 @@ class TelemetryCollector:
                   "collection_duration_seconds": now - started,
                   "source_timestamps": {**{source: raw[source]["timestamp"] for source in ("kafka", "docker") if source in raw},
                                         "workers": {url: item["timestamp"] for url, item in raw["workers"].items()}},
-                  "metric_scope": "stress-topic; selected Kafka/processor/Mongo containers; Docker-engine capacity"}
+                  "metric_scope": f"Kafka topic {self.topic}; selected Kafka/processor/Mongo containers; Docker-engine capacity"}
         self._derive_kafka(raw, previous, result)
         self._derive_docker(raw, previous, result)
         self._derive_workers(raw, previous, result)
@@ -310,29 +313,85 @@ class TelemetryCollector:
         result["worker_outcome_counts"] = {key: totals.get(key, 0) for key in ("handled", "invalid", "dlq", "failed")}
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=12)
     parser.add_argument("--interval", type=float, default=5)
     parser.add_argument("--bootstrap-servers", default="localhost:9092,localhost:9093,localhost:9094")
+    parser.add_argument("--topic", default="real_estate_stress_raw", help="Kafka topic whose incoming traffic and processing are measured")
+    parser.add_argument("--group-id", default="real_estate_training_pipeline", help="Existing consumer group whose committed offsets are observed")
+    parser.add_argument("--run-id", help="Stable identifier for this uninterrupted collection; generated when omitted")
+    parser.add_argument("--duration-seconds", type=float, help="Maximum wall-clock duration; in-flight collection may finish after this deadline")
+    parser.add_argument("--max-consecutive-errors", type=int, default=12, help="Stop rather than record an unbounded infrastructure outage")
     args = parser.parse_args()
     if args.samples < 1 or args.interval <= 0:
         parser.error("samples and interval must be positive")
+    if args.max_consecutive_errors < 1 or (args.duration_seconds is not None and
+            (not math.isfinite(args.duration_seconds) or args.duration_seconds <= 0)):
+        parser.error("duration and consecutive-error budget must be positive")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    collector = TelemetryCollector(bootstrap_servers=args.bootstrap_servers)
+    run_id = args.run_id or f"telemetry-{uuid4().hex}"
+    collector = TelemetryCollector(bootstrap_servers=args.bootstrap_servers, topic=args.topic, group_id=args.group_id)
+    began = time.time()
+    deadline = began + args.duration_seconds if args.duration_seconds is not None else math.inf
+    summary = {"run_id": run_id, "topic": args.topic, "group_id": args.group_id,
+               "requested_samples": args.samples, "interval_seconds": args.interval,
+               "duration_seconds_limit": args.duration_seconds, "started_at": began,
+               "samples": 0, "error_samples": 0, "finite_incoming_samples": 0,
+               "nonzero_incoming_samples": 0, "status": "running", "max_gap_seconds": 0}
+    consecutive_errors = 0
+    previous_timestamp = None
+    created_output = False
     try:
-        with args.output.open("x", encoding="utf-8") as output:
+        with ExitStack() as stack:
+            output = stack.enter_context(args.output.open("x", encoding="utf-8"))
+            created_output = True
+            stack.enter_context(keep_system_awake())
             for index in range(args.samples):
+                if time.time() >= deadline:
+                    summary["status"] = "duration_reached"
+                    break
                 started = time.monotonic()
                 record = collector.sample()
+                record.update(run_id=run_id, topic=args.topic, group_id=args.group_id)
                 output.write(json.dumps(record, allow_nan=False) + "\n")
                 output.flush()
+                summary["samples"] += 1
+                failed = bool(record.get("errors"))
+                summary["error_samples"] += int(failed)
+                consecutive_errors = consecutive_errors + 1 if failed else 0
+                rate = record.get("incoming_rate")
+                if isinstance(rate, (int, float)) and math.isfinite(rate):
+                    summary["finite_incoming_samples"] += 1
+                    summary["nonzero_incoming_samples"] += int(rate > 0)
+                stamp = record.get("timestamp")
+                if isinstance(stamp, (int, float)):
+                    if previous_timestamp is not None:
+                        summary["max_gap_seconds"] = max(summary["max_gap_seconds"], stamp - previous_timestamp)
+                    previous_timestamp = stamp
+                if consecutive_errors >= args.max_consecutive_errors:
+                    summary["status"] = "infrastructure_unavailable"
+                    break
                 if index + 1 < args.samples:
-                    time.sleep(max(0, args.interval - (time.monotonic() - started)))
+                    time.sleep(max(0, min(args.interval - (time.monotonic() - started), deadline - time.time())))
+            else:
+                summary["status"] = "samples_collected"
+    except KeyboardInterrupt:
+        summary["status"] = "interrupted"
+    except Exception as exc:
+        summary.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        raise
     finally:
         collector.close()
+        summary.update(ended_at=time.time(), elapsed_seconds=time.time() - began)
+        summary["forecast_readiness"] = "requires_quality_audit" if summary["nonzero_incoming_samples"] else "no_observed_traffic_variation"
+        # Data is retained even if infrastructure disappears or the user stops.
+        if created_output:
+            args.output.with_suffix(".summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(json.dumps(summary), flush=True)
+    return int(summary["status"] not in {"samples_collected", "duration_reached"})
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

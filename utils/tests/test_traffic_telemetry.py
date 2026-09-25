@@ -2,10 +2,65 @@
 from __future__ import annotations
 
 import copy
+import json
 from unittest.mock import Mock
 import pytest
 
 from research.telemetry import TelemetryCollector, histogram_quantile, parse_docker_stats, size_bytes
+
+
+@pytest.mark.parametrize("explicit_run_id", [None, "crawl-history-test"])
+def test_cli_preserves_topic_and_group_and_writes_stable_run_id(monkeypatch, tmp_path, explicit_run_id):
+    from research import telemetry
+
+    created = []
+
+    class FakeCollector:
+        def __init__(self, **kwargs):
+            self.options = kwargs
+            self.closed = False
+            created.append(self)
+
+        def sample(self):
+            return {"timestamp": 100, "incoming_rate": 2.5}
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(telemetry, "TelemetryCollector", FakeCollector)
+    monkeypatch.setattr(telemetry.time, "sleep", lambda _seconds: None)
+    run_ids = []
+    for index in range(2):
+        output = tmp_path / f"history-{index}.jsonl"
+        argv = ["research.telemetry", "--output", str(output), "--samples", "2", "--interval", "5",
+                "--topic", "real_estate_raw", "--group-id", "crawl-processors", "--bootstrap-servers", "broker:9092"]
+        if explicit_run_id is not None:
+            argv += ["--run-id", explicit_run_id]
+        monkeypatch.setattr("sys.argv", argv)
+        telemetry.main()
+        rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+        assert len(rows) == 2
+        assert rows[0]["run_id"] and rows[0]["run_id"] == rows[1]["run_id"]
+        assert all(row["topic"] == "real_estate_raw" and row["group_id"] == "crawl-processors" for row in rows)
+        assert all(row["incoming_rate"] == 2.5 and "requested_rate" not in row and "current_limit" not in row for row in rows)
+        assert created[-1].options == {"bootstrap_servers": "broker:9092", "topic": "real_estate_raw", "group_id": "crawl-processors"}
+        assert created[-1].closed
+        run_ids.append(rows[0]["run_id"])
+    if explicit_run_id is not None:
+        assert run_ids == [explicit_run_id, explicit_run_id]
+    else:
+        assert run_ids[0] != run_ids[1]
+
+
+def test_sample_scope_names_the_measured_topic(monkeypatch):
+    collector = object.__new__(TelemetryCollector)
+    collector.topic, collector.processor_urls, collector._previous = "real_estate_raw", (), None
+    monkeypatch.setattr(collector, "_docker", lambda: {"timestamp": 100})
+    monkeypatch.setattr(collector, "_kafka", lambda: {"timestamp": 100})
+    for name in ("_derive_kafka", "_derive_docker", "_derive_workers"):
+        monkeypatch.setattr(collector, name, lambda *_args: None)
+    result = collector.sample()
+    assert result["metric_scope"].startswith("Kafka topic real_estate_raw;")
 
 
 def test_docker_units_and_cpu_core_percent_are_not_host_percent():

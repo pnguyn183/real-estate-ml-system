@@ -495,6 +495,11 @@ class KafkaToMongoPipeline:
     def _ensure_indexes(self) -> None:
         self.raw_collection.create_index("url", unique=True)
         self.feature_collection.create_index("url", unique=True)
+        # Like features/raw, quarantine uses URL upserts and must remain
+        # idempotent when a result and a refreshed input arrive concurrently.
+        # MongoDB rejects existing duplicates; never discard them to make the
+        # constraint fit. Operators must resolve any historical conflict first.
+        self.invalid_collection.create_index("url", unique=True)
         # Lookup provenance without imposing a new uniqueness constraint on
         # historical data. URL remains the existing idempotent upsert key.
         self.raw_collection.create_index([("source", 1), ("source_listing_id", 1)])

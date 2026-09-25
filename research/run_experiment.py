@@ -30,6 +30,7 @@ from agents.resource_actuator import DockerResourceActuator, ResourceScalingConf
 from agents.stress import stress_topic
 from agents.traffic_control import ControlConfig, Observation, TrafficController
 from research.telemetry import TelemetryCollector
+from research.runtime import keep_system_awake
 
 
 @contextmanager
@@ -177,7 +178,7 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                                     "actions": []}}
     write_json(output / "manifest.json", {"run_id": run_id, "mode": mode, "config": config,
                "control": asdict(cfg), "identity": code_identity(),
-               "semantics": "requested demand is offered before a local admission gate; incoming_rate is broker-admitted; throughput is committed input handling; optional bounded Docker CPU/memory scaling is enabled by resource_scaling.enabled; no replica or broker autoscaling"})
+               "semantics": "requested demand is offered before a local admission gate; incoming_rate is broker-admitted; throughput is committed input handling; optional bounded CPU quota scaling uses equal initial allocations in both policies and verified restoration; memory and replica counts are not changed"})
     generator = ListingGenerator(run_id, "normal", config["seed"], duplicate_ratio=0, unstructured_ratio=0)
     producer = Producer({"bootstrap.servers": bootstrap, "client.id": run_id, "acks": "all",
                          "enable.idempotence": True, "linger.ms": 5, "delivery.timeout.ms": 10000,
@@ -207,6 +208,10 @@ def run_mode(mode, config, output, bootstrap, topic, group):
 
     try:
         report["topology"] = preflight(bootstrap, topic)
+        preparation = resource_actuator.prepare()
+        report["resource_scaling"]["prepare"] = preparation
+        if preparation["status"] == "failed":
+            raise RuntimeError(f"resource preparation failed: {preparation}")
         # No offset reset or backlog deletion. Each policy starts with a drained queue.
         initial = collector.sample()
         if initial.get("kafka_lag") != 0 or initial.get("errors") or not initial.get("instrumentation_ready"):
@@ -233,6 +238,7 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                        "current_limit": gate.limit, "offered_total": report["offered"],
                        "admitted_total": report["admitted"], "rejected_total": report["rejected"],
                        "acknowledged_total": report["acknowledged"],
+                       "resource_allocation_cpus_per_worker": resource_actuator.current_cpus if resource_actuator.config.enabled else None,
                        "accepted_rate": (report["admitted"] - previous_admitted) / dt,
                        "acknowledged_rate": (report["acknowledged"] - previous_ack) / dt}
                 previous_count_time, previous_admitted, previous_ack = now, report["admitted"], report["acknowledged"]
@@ -252,6 +258,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                     append_json(actions, {**asdict(decision), "applied_at": applied_at,
                                           "resource_scaling": resource_receipt,
                                           "elapsed_seconds": time.monotonic() - began, "mode": mode, "run_id": run_id})
+                    if resource_receipt["status"] == "failed":
+                        raise RuntimeError(f"resource actuation failed: {resource_receipt}")
                     next_decision = now + config["decision_seconds"]
                 for key, bound in (("kafka_lag", config["hard_lag"]), ("cpu_percent", config["hard_cpu_percent"]),
                                    ("ram_percent", config["hard_ram_percent"])):
@@ -337,6 +345,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
     finally:
         restore_receipt = resource_actuator.restore()
         report["resource_scaling"]["restore"] = restore_receipt
+        if restore_receipt["status"] == "failed":
+            report["status"] = "resource_restore_failed"
         producer.flush(12)
         executor.shutdown(wait=True)
         collector.close()
@@ -373,12 +383,12 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "config.json", config)
     summaries = []
-    with experiment_lock():
+    with experiment_lock(), keep_system_awake():
         for mode in args.modes:
             result = run_mode(mode, config, output / mode, args.bootstrap, args.topic, args.group)
             summaries.append(result)
             print(json.dumps({k: result.get(k) for k in ("mode", "status", "offered", "admitted", "rejected", "acknowledged", "final_lag", "error")}), flush=True)
-            if result["status"] in {"failed", "interrupted", "drain_timeout", "invalid_concurrent_traffic"}:
+            if result["status"] in {"failed", "interrupted", "drain_timeout", "invalid_concurrent_traffic", "resource_restore_failed"}:
                 break
     write_json(output / "runs.json", summaries)
     return int(any(r["status"] != "completed" for r in summaries))

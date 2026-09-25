@@ -246,7 +246,7 @@ services:
       - airflow_state:/opt/airflow/state
     working_dir: /opt/airflow/project
     command: >-
-      bash -c "airflow db migrate && airflow standalone"
+      bash -c "python /opt/airflow/project/airflow/startup.py && airflow db migrate && airflow standalone"
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
@@ -537,9 +537,10 @@ services:
       MONGO_STRESS_DB: real_estate_stress_db
       AI_ENABLED: ${AI_ENABLED:-false}
       AI_STRESS_ENABLED: ${AI_STRESS_ENABLED:-false}
+      AI_AUDIT_EVENT_IDS: ${AI_AUDIT_EVENT_IDS:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
-      LLM_MODEL: ${LLM_MODEL:-gemini-2.5-flash}
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.6-flash}
       LLM_API_KEY: ${LLM_API_KEY:-${GEMINI_API_KEY:-}}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
       LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}

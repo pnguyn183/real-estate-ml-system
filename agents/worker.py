@@ -22,6 +22,7 @@ from prometheus_client import Counter, Gauge
 
 from agents.extraction import ExtractionService, FIELD_TO_RAW, source_text
 from agents.provider_audit import capture, emit
+from agents.results import result_payload
 from agents.safety import is_synthetic_record, SYNTHETIC_URL_PREFIX
 from processing.kafka_to_mongo import (
     KafkaToMongoPipeline, agent_event_id, validate_normalized_record,
@@ -209,7 +210,11 @@ class AIWorker:
                 if result.get("status") == "success":
                     # Validate before Kafka delivery; result handler independently
                     # repeats validation before writing any training features.
-                    normalized = normalize_listing(result["record"])
+                    # Use the same trusted merge/context as the result consumer.
+                    # Schema-v2 sources retain immutable price_raw/area_raw;
+                    # their normalizer accepts extracted aliases only after this
+                    # boundary marks the record as a successful AI extraction.
+                    normalized = normalize_listing(result_payload(record, result, event_id))
                     valid, errors = validate_normalized_record(normalized)
                     errors += extraction_required_errors(normalized)
                     if not valid or errors:

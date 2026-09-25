@@ -12,6 +12,7 @@ worker autoscaler.  Missing/stale telemetry cannot justify a rate increase.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from collections import deque
 import math
 import time
 from typing import Any
@@ -38,13 +39,23 @@ class ControlConfig:
     latency_low_seconds: float = 1.0
     error_high: float = .01
     error_low: float = .001
+    # Optional measured-capacity drain policy. Only throughput samples taken
+    # while backlog exists estimate capacity; quiet/demand-limited throughput
+    # must not become a permanent ceiling on admission.
+    capacity_aware: bool = False
+    capacity_window_seconds: float = 30.0
+    capacity_min_samples: int = 3
+    capacity_drain_fraction: float = .8
 
     def __post_init__(self) -> None:
-        if not isinstance(self.enabled, bool):
-            raise ValueError("enabled must be a boolean")
+        if not isinstance(self.enabled, bool) or not isinstance(self.capacity_aware, bool):
+            raise ValueError("enabled and capacity_aware must be booleans")
         for name, value in asdict(self).items():
-            if name != "enabled" and not _finite_nonnegative(value):
+            if name not in {"enabled", "capacity_aware"} and not _finite_nonnegative(value):
                 raise ValueError(f"{name} must be a finite nonnegative number")
+        if (not isinstance(self.capacity_min_samples, int) or self.capacity_min_samples < 2
+                or self.capacity_window_seconds <= 0 or not 0 < self.capacity_drain_fraction < 1):
+            raise ValueError("capacity policy needs >=2 samples, a positive window, and a drain fraction in (0, 1)")
         if not 0 < self.min_rate <= self.initial_rate <= self.max_rate <= 10_000:
             raise ValueError("rates must satisfy 0 < min <= initial <= max <= 10000")
         if not 0 < self.decrease_factor < 1 or self.increase_step <= 0:
@@ -111,6 +122,8 @@ class Decision:
     decision_latency_seconds: float
     episode_id: int | None
     observation: dict[str, Any] | None
+    capacity_estimate_rate: float | None = None
+    capacity_sample_count: int = 0
 
     @property
     def changed(self) -> bool:
@@ -166,6 +179,14 @@ class TrafficController:
         self._pending: Decision | None = None
         self._episodes: list[_Episode] = []
         self._active: _Episode | None = None
+        self._capacity_samples: deque[tuple[float, float]] = deque()
+
+    def _capacity_estimate(self, timestamp: float) -> float | None:
+        while self._capacity_samples and timestamp - self._capacity_samples[0][0] > self.config.capacity_window_seconds:
+            self._capacity_samples.popleft()
+        if len(self._capacity_samples) < self.config.capacity_min_samples:
+            return None
+        return sum(rate for _, rate in self._capacity_samples) / len(self._capacity_samples)
 
     def _triggers(self, observation: Observation) -> list[str]:
         cfg = self.config
@@ -192,7 +213,13 @@ class TrafficController:
             raise ValueError("telemetry sample timestamps must increase strictly")
         if self.latest and observation.timestamp - self.latest.timestamp > self.config.telemetry_max_age_seconds:
             self._safe_since = None
+            self._capacity_samples.clear()
         self.latest = observation
+        if observation.invalid_fields():
+            self._capacity_samples.clear()
+        elif observation.kafka_lag > self.config.lag_low and observation.throughput > 0:
+            self._capacity_samples.append((observation.timestamp, observation.throughput))
+        self._capacity_estimate(observation.timestamp)
         triggers = self._triggers(observation)
         if triggers and self._active is None:
             self._active = _Episode(len(self._episodes) + 1, observation.timestamp, triggers)
@@ -225,6 +252,7 @@ class TrafficController:
         self._last_decision = timestamp
         self._decision_id += 1
         cfg, observation = self.config, self.latest
+        capacity = self._capacity_estimate(timestamp) if cfg.capacity_aware else None
         new_limit, reason = self.current_limit, "hysteresis_hold"
         triggers = self._triggers(observation) if observation else []
         if not cfg.enabled:
@@ -243,8 +271,17 @@ class TrafficController:
             elif self._last_change is not None and timestamp - self._last_change < cfg.cooldown_seconds:
                 reason = "cooldown"
             elif triggers:
-                new_limit = max(cfg.min_rate, self.current_limit * cfg.decrease_factor)
-                reason = "congestion:" + ",".join(triggers)
+                if capacity is not None and set(triggers) <= {"kafka_lag", "latency_p95_seconds"}:
+                    # Once a measured service rate is available, reserve drain
+                    # headroom without repeatedly shrinking admission because
+                    # old records still have high end-to-end latency. Never
+                    # increase a limit during congestion. CPU/RAM/errors retain
+                    # the conservative multiplicative fallback below.
+                    new_limit = max(cfg.min_rate, min(self.current_limit, capacity * cfg.capacity_drain_fraction))
+                    reason = "congestion:capacity_drain:" + ",".join(triggers)
+                else:
+                    new_limit = max(cfg.min_rate, self.current_limit * cfg.decrease_factor)
+                    reason = "congestion:" + ",".join(triggers)
             elif (self._safe_since is not None and
                   observation.timestamp - self._safe_since >= cfg.recovery_window_seconds):
                 if observation.incoming_rate > self.current_limit:
@@ -262,7 +299,7 @@ class TrafficController:
         decision = Decision(self._decision_id, timestamp, self.current_limit, new_limit, action, reason,
                             max(0.0, time.perf_counter() - started),
                             self._active.episode_id if self._active else None,
-                            snapshot)
+                            snapshot, capacity, len(self._capacity_samples) if cfg.capacity_aware else 0)
         if decision.changed:
             self._pending = decision
         return decision

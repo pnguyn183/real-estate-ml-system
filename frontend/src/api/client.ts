@@ -7,7 +7,7 @@ Errors are normalized via `handleApiError` to friendly strings for UI display.
 
 import axios, { AxiosInstance } from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -169,9 +169,8 @@ export async function predictPrice(property: PropertyFeatures): Promise<Predicti
   try {
     const response = await apiClient.post<PredictionResult>('/predict', property);
     return response.data;
-  } catch (error: any) {
-    const message = error.response?.data?.detail || error.message || 'Prediction failed';
-    throw new Error(message);
+  } catch (error: unknown) {
+    throw new Error(handleApiError(error));
   }
 }
 
@@ -180,7 +179,15 @@ export function handleApiError(error: unknown): string {
     if (error.response?.status === 401) return 'Please sign in again.';
     if (error.response?.status === 403) return 'Your role does not have permission for this action.';
     if (error.response?.status === 409) return String(error.response.data?.detail || 'This account already exists.');
-    if (error.response?.status === 422) return String(error.response.data?.detail || 'Please check the submitted fields.');
+    if (error.response?.status === 422) {
+      const detail: unknown = error.response.data?.detail;
+      if (Array.isArray(detail)) {
+        return detail.map((item: { loc?: unknown[]; msg?: string }) =>
+          `${item.loc?.filter((part) => part !== 'body').join('.') || 'Input'}: ${item.msg || 'Invalid value'}`,
+        ).join('; ');
+      }
+      return typeof detail === 'string' ? detail : 'Please check the submitted fields.';
+    }
     if (error.response?.status === 429) return 'Too many attempts. Please try again later.';
     if (error.response?.status === 503) return 'Model is not available yet.';
     if (error.response?.status === 400) return String(error.response.data?.detail || 'Invalid inputs.');

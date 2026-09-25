@@ -167,3 +167,60 @@ def test_telemetry_and_decision_clocks_cannot_move_backwards():
 def test_invalid_policy_configuration_is_rejected(changes):
     with pytest.raises(ValueError):
         replace(ControlConfig(), **changes)
+
+
+def test_capacity_drain_uses_busy_throughput_and_recovers_while_demand_continues():
+    agent = controller(capacity_aware=True, initial_rate=200, max_rate=200)
+    for stamp in (10, 11, 12):
+        agent.observe(sample(stamp, kafka_lag=2000))
+    first = agent.decide(12)
+    assert first.capacity_estimate_rate == 80 and first.capacity_sample_count == 3
+    assert first.new_limit == 64 and first.reason == "congestion:capacity_drain:kafka_lag"
+    agent.acknowledge(first, 12)
+    # High end-to-end latency of old records is not justification for endlessly
+    # reducing an already bounded drain rate. Offered demand stays 200/s.
+    for stamp in (15, 18, 21):
+        agent.observe(sample(stamp, kafka_lag=1000))
+        decision = agent.decide(stamp)
+        assert not decision.changed and agent.current_limit == 64
+    agent.observe(sample(24, kafka_lag=10))
+    agent.observe(sample(27, kafka_lag=10))
+    assert agent.episode_reports()[0]["t3"] == 27
+    assert agent.latest.incoming_rate == 200
+    assert agent.decide(27).reason == "safe_additive_increase"
+
+
+def test_capacity_estimate_excludes_demand_limited_intervals_and_expires():
+    agent = controller(capacity_aware=True, capacity_window_seconds=6)
+    for stamp in (10, 11, 12):
+        agent.observe(sample(stamp, kafka_lag=2000))
+    assert agent.decide(12).capacity_estimate_rate == 80
+    # Do not acknowledge yet; decisions merely describe pending real actuation.
+    for stamp in (13, 14, 15):
+        agent.observe(replace(sample(stamp), throughput=1))
+    assert agent.decide(15).capacity_estimate_rate == 80
+    agent.observe(sample(19))
+    assert agent.decide(19).capacity_estimate_rate is None
+
+
+def test_capacity_policy_keeps_resource_fail_safe_and_clears_invalid_estimates():
+    agent = controller(capacity_aware=True)
+    for stamp in (10, 11, 12):
+        agent.observe(sample(stamp, kafka_lag=2000))
+    agent.acknowledge(agent.decide(12), 12)
+    agent.observe(sample(15, kafka_lag=2000, cpu_percent=95))
+    decision = agent.decide(15)
+    assert decision.new_limit == pytest.approx(64 * .7)
+    assert decision.reason == "congestion:cpu_percent,kafka_lag"
+    agent.acknowledge(decision, 15)
+    agent.observe(sample(18, kafka_lag=2000, cpu_percent=None))
+    missing = agent.decide(18)
+    assert missing.new_limit == 1 and missing.capacity_estimate_rate is None
+
+
+@pytest.mark.parametrize("changes", [{"capacity_aware": "true"}, {"capacity_min_samples": 1},
+                                      {"capacity_min_samples": 2.5}, {"capacity_window_seconds": 0},
+                                      {"capacity_drain_fraction": 0}, {"capacity_drain_fraction": 1}])
+def test_capacity_policy_configuration_is_validated(changes):
+    with pytest.raises(ValueError):
+        ControlConfig(**changes)

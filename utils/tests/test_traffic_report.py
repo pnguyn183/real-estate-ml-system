@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from research.report import broker_summary, common_window_summary, comparison, generate_report, mode_summary, stage_summary
+from research.report import broker_summary, common_window_summary, comparison, generate_report, mode_summary, stage_summary, resource_summary
 
 
 CONFIG = json.loads((Path(__file__).resolve().parents[2] / "research/experiment.json").read_text())
@@ -168,3 +168,52 @@ def test_common_window_drops_partial_boundary_intervals_without_interpolating():
     result = common_window_summary(records, 6)
     assert result["samples"] == 1 and result["metrics"]["mean_cpu_percent"] == 20
     assert result["last_observed_endpoint_seconds"] == 4
+
+
+def test_explicitly_invalid_experiment_cannot_generate_charts_or_comparison(tmp_path):
+    write_pair(tmp_path)
+    (tmp_path / "adaptive/INVALID.json").write_text(json.dumps({"reason": "external traffic"}))
+    output = tmp_path / "analysis"
+    with pytest.raises(ValueError, match="invalid experiment evidence"):
+        generate_report(tmp_path, output)
+    assert not output.exists()
+
+
+def test_different_worker_sources_withhold_before_after_table(tmp_path):
+    write_pair(tmp_path)
+    for mode, digest in (("baseline", "a" * 64), ("adaptive", "b" * 64)):
+        path = tmp_path / mode / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["identity"] = {"worker_source_hashes": {
+            service: digest for service in ("processor", "processor-2", "processor-3")}}
+        path.write_text(json.dumps(manifest))
+    result = generate_report(tmp_path, tmp_path / "analysis")
+    assert result["paired_configuration_matches"]
+    assert result["paired_worker_sources_match"] is False
+    assert result["before_after"] == []
+
+
+def test_desired_cpu_allocation_without_inspected_receipts_is_not_evidence():
+    run = {"load_started_at": 100, "resource_scaling": {"enabled": True, "containers": ["worker"],
+           "restore": {"status": "restored"}}}
+    request_only = {"status": "applied", "action": "scale_up", "cpus": 2, "applied_at": 110}
+    result = resource_summary(run, [{"resource_scaling": request_only}])
+    assert result["unverified_applied_receipts"] == 1
+    assert result["verified_scaling_action_count"] == 0
+    actual = dict(request_only, verified_allocations={
+        "worker": {"id": "immutable-worker", "running": True, "NanoCpus": 2_000_000_000}})
+    result = resource_summary(run, [{"resource_scaling": actual}])
+    assert result["unverified_applied_receipts"] == 0
+    assert result["verified_scaling_action_count"] == 1
+    assert result["verified_cpu_allocations"][0]["total_cpu_quota"] == 2
+
+
+def test_recovery_during_load_requires_observations_covering_the_safe_window():
+    records = [{"timestamp": stamp, "phase": "load", "requested_rate": 100, "errors": []}
+               for stamp in (90, 95, 100, 105)]
+    run = {"load_ended_at": 120, "episodes": [{"t0": 80, "t3": 105}]}
+    result = mode_summary(run, records, [], CONFIG)
+    assert result["recovery"]["continued_load_recoveries_with_observations"] == 1
+    records[1]["errors"] = ["worker missing"]
+    result = mode_summary(run, records, [], CONFIG)
+    assert result["recovery"]["continued_load_recoveries_with_observations"] == 0

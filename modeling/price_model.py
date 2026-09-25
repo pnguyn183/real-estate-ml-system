@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterable
 import datetime
 import os
 import shutil
+import tempfile
+import logging
 
 import joblib
 import numpy as np
@@ -67,6 +69,23 @@ CATEGORICAL_FEATURES = BASE_CATEGORICAL_FEATURES + [
 TEXT_FEATURE = "text_features"
 TARGET = "price_vnd"
 DEFAULT_MIN_TRAINING_RECORDS = 200
+
+
+def publish_model(source: Path, destination: Path) -> None:
+    """Readers see the complete old or new artifact, never a partial copy."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{destination.name}.", suffix=".tmp", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            with source.open("rb") as original:
+                shutil.copyfileobj(original, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def flatten_text_column(values):
@@ -288,7 +307,7 @@ class RealEstatePriceModel:
         self.metadata = metadata
         model_bundle = {"model": self.model, "metadata": metadata}
         joblib.dump(model_bundle, versioned_path)
-        shutil.copyfile(versioned_path, requested_path)
+        publish_model(versioned_path, requested_path)
         if metrics_path:
             metrics_path_obj = Path(metrics_path)
             metrics_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -300,10 +319,9 @@ class RealEstatePriceModel:
         # Update current model pointer (copy to stable path)
         current_path = models_dir.parent / "price_model_current.joblib"
         try:
-            shutil.copyfile(versioned_path, current_path)
-        except Exception:
-            # best-effort; not fatal
-            pass
+            publish_model(versioned_path, current_path)
+        except OSError:
+            logging.getLogger(__name__).warning("Could not update optional current-model alias %s", current_path, exc_info=True)
 
         return TrainResult(model_path=str(requested_path), sample_count=len(frame), metrics=metrics)
 

@@ -1,0 +1,288 @@
+{
+  "profile": [
+    {
+      "rate": 15,
+      "seconds": 60
+    },
+    {
+      "rate": 40,
+      "seconds": 60
+    },
+    {
+      "rate": 60,
+      "seconds": 60
+    },
+    {
+      "rate": 85,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 115,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 90,
+      "seconds": 60
+    },
+    {
+      "rate": 65,
+      "seconds": 60
+    },
+    {
+      "rate": 35,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 10,
+      "seconds": 60
+    },
+    {
+      "rate": 15,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 35,
+      "seconds": 60
+    },
+    {
+      "rate": 55,
+      "seconds": 60
+    },
+    {
+      "rate": 80,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 115,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 80,
+      "seconds": 60
+    },
+    {
+      "rate": 60,
+      "seconds": 60
+    },
+    {
+      "rate": 35,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 5,
+      "seconds": 60
+    },
+    {
+      "rate": 10,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 35,
+      "seconds": 60
+    },
+    {
+      "rate": 50,
+      "seconds": 60
+    },
+    {
+      "rate": 80,
+      "seconds": 60
+    },
+    {
+      "rate": 105,
+      "seconds": 60
+    },
+    {
+      "rate": 115,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 90,
+      "seconds": 60
+    },
+    {
+      "rate": 60,
+      "seconds": 60
+    },
+    {
+      "rate": 40,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 10,
+      "seconds": 60
+    },
+    {
+      "rate": 15,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 20,
+      "seconds": 60
+    },
+    {
+      "rate": 25,
+      "seconds": 60
+    },
+    {
+      "rate": 30,
+      "seconds": 60
+    },
+    {
+      "rate": 60,
+      "seconds": 60
+    },
+    {
+      "rate": 80,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 125,
+      "seconds": 60
+    },
+    {
+      "rate": 110,
+      "seconds": 60
+    },
+    {
+      "rate": 85,
+      "seconds": 60
+    },
+    {
+      "rate": 55,
+      "seconds": 60
+    },
+    {
+      "rate": 45,
+      "seconds": 60
+    }
+  ],
+  "seed": 20260924,
+  "sample_seconds": 5,
+  "decision_seconds": 10,
+  "drain_seconds": 120,
+  "max_records": 400000,
+  "hard_lag": 10000,
+  "hard_cpu_percent": 95,
+  "hard_ram_percent": 88,
+  "resource_scaling": {
+    "enabled": false,
+    "containers": [
+      "real_estate_processor_1",
+      "real_estate_processor_2",
+      "real_estate_processor_3"
+    ],
+    "initial_cpus": 1.0,
+    "min_cpus": 0.5,
+    "max_cpus": 4.0,
+    "cpu_step": 0.5,
+    "initial_memory_mb": 1024,
+    "min_memory_mb": 512,
+    "max_memory_mb": 4096,
+    "memory_step_mb": 512
+  },
+  "control": {
+    "min_rate": 1,
+    "max_rate": 1000,
+    "initial_rate": 1000,
+    "lag_high": 200,
+    "lag_low": 30,
+    "cpu_high_percent": 80,
+    "cpu_low_percent": 65,
+    "ram_high_percent": 80,
+    "ram_low_percent": 65,
+    "latency_high_seconds": 2,
+    "latency_low_seconds": 1,
+    "error_high": 0.01,
+    "error_low": 0.001,
+    "decrease_factor": 0.7,
+    "increase_step": 20,
+    "cooldown_seconds": 10,
+    "telemetry_max_age_seconds": 15,
+    "recovery_window_seconds": 15
+  },
+  "stability": {
+    "tail_seconds": 25,
+    "minimum_samples": 4,
+    "minimum_served_fraction": 0.95,
+    "max_lag_slope": 1,
+    "max_lag": 200,
+    "max_latency_seconds": 2,
+    "max_cpu_percent": 80,
+    "max_ram_percent": 80,
+    "max_error_rate": 0.01
+  },
+  "protocol": {
+    "purpose": "Controlled offered-traffic history for 5/10-minute forecasting; not natural production traffic",
+    "duration_seconds": 3300,
+    "wave_period_seconds": 900,
+    "rate_jitter_seed": 20260924,
+    "selection": "Predeclared repeating low/moderate rates, independent of measured model scores",
+    "forecast_target": "requested_rate",
+    "limitation": "Synthetic workload sent through real Kafka/processing; generalization limited to this controlled family"
+  }
+}

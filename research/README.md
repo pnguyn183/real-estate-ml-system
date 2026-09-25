@@ -45,12 +45,38 @@ save passive measurements, but its `incoming_rate` is **admitted Kafka traffic**
 not pre-admission demand:
 
 ```powershell
-python -m research.telemetry --output runtime/research/passive.jsonl --samples 720 --interval 5
+python -m research.telemetry --output runtime/research/passive.jsonl --samples 720 --interval 5 --topic real_estate_raw
+python -m research.benchmark traffic --input runtime/research/passive.jsonl --target incoming_rate --output runtime/research/passive-forecast
+
+# Six hours of live crawl-topic history, one sample every five seconds.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/collect_traffic_history.ps1 -Hours 6 -IntervalSeconds 5
 ```
 
-Passive collection requires an existing instrumented stress workload for
-topic-specific latency/outcome data. The experiment runner supplies `run_id`,
-offered demand, and limits; the collector by itself cannot invent those fields.
+Passive collection requires an existing instrumented workload on the selected
+topic for latency/outcome data. The CLI assigns one stable `run_id` per invocation;
+`--topic` and `--group-id` select the measured Kafka stream and committed offsets.
+The history script defaults to the live crawl topic `real_estate_raw`; direct
+telemetry CLI calls retain the legacy stress-topic default when `--topic` is omitted.
+Only the experiment runner supplies offered demand and admission limits; passive
+collection cannot invent those fields. Use `--target incoming_rate` for passive
+forecasting. Idle intervals may have no latency/error samples, and six hours of
+sparse crawling does not guarantee enough traffic variation for a useful forecast.
+The collection aims for 4,320 samples; slow measurements can extend elapsed time.
+Keep Windows awake and Docker running until it completes. The PowerShell
+execution-policy override above applies only to that process.
+
+Audit collected history before forecasting:
+
+```powershell
+python -m research.history_audit --input runtime/research/passive.jsonl --output runtime/research/passive-audit
+```
+
+The history report separates run/topic/phase boundaries and collection outages.
+Empty or unusable timestamp files produce an `insufficient_data` report without
+an invented chart. Explicit collection errors or unavailable instrumentation
+break forecasting feature and label windows even when the offered rate is still
+numeric. Older logs without quality flags remain readable, but their measurement
+health cannot be inferred. Run provenance is still required by the benchmark.
 
 ## Policy and safety
 
@@ -63,6 +89,14 @@ The local token bucket applies the command before publishing; every rejection
 is recorded. A small bucket (20 ms of limit, at least two tokens) accommodates
 scheduler jitter. This is dynamic admission control, not replica autoscaling
 and not a trained forecast.
+
+The optional resource actuator increases processor CPU quotas only; it does not
+change memory limits, decrease CPU in response to admission increases, or scale
+replicas. Both policies prepare the same initial CPU budget. Enabled experiments
+require explicit, nonzero original Docker CPU quotas so the actuator can verify
+and restore those exact allocations. Unlimited originals are rejected before any
+mutation, because `docker update --cpus 0` cannot reliably restore that state.
+Keep this option disabled when that prerequisite has not been provisioned.
 
 `research/experiment.json` declares the workload and SLOs before execution:
 lag <200, interval p95 <=2 seconds, selected pipeline CPU/RAM <=80% of Docker
@@ -132,3 +166,12 @@ persistence, RF, Gradient Boosting and XGBoost. LSTM lacks a justified long
 sequence corpus; RL lacks safe repeated episodes and a validated simulator;
 clustering lacks a demonstrated workload-cost labeling scheme. Defer them
 until the simpler measured baseline establishes a need.
+
+The benchmark selects an experimental export candidate using a separate purged
+validation split. Export requires positive R² and the configured RMSE improvement
+over persistence on both validation and the untouched chronological test. The
+`research.forecast.TrafficForecaster` API loads only an eligible local artifact
+with its matching hash and returns unavailable on flagged telemetry or history
+discontinuities. It is an experimental inference component; the runner does not
+use its output for admission decisions. Predictive control and its causal benefit
+remain pending a suitable dataset and an independently evaluated control policy.

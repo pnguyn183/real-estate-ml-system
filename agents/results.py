@@ -33,10 +33,17 @@ def _snapshot_hash(snapshot: dict) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def write_cleaning_audit(pipeline, original: dict, result: dict, event_id: str, origin: str, cleaned: dict | None = None) -> None:
-    """Persist before/after evidence without replacing the immutable raw record."""
+def write_cleaning_audit(pipeline, original: dict, result: dict, event_id: str, origin: str,
+                         *, outcome: str, cleaned: dict | None = None) -> None:
+    """Record only applied changes, separately from provider extraction status.
+
+    A successful provider response may still be stale or fail validation. Those
+    attempts did not clean the current listing, so their after snapshot remains
+    the original source; detailed proposals remain in ai_extractions/Kafka.
+    """
     before = _audit_snapshot(original)
-    after = _audit_snapshot(cleaned if cleaned is not None else result.get("record") or {})
+    applied = outcome == "success"
+    after = _audit_snapshot(cleaned if applied and cleaned is not None else original)
     changed_fields = sorted(field for field in set(before) | set(after) if before.get(field) != after.get(field))
     audit = {
         "_id": event_id,
@@ -44,6 +51,10 @@ def write_cleaning_audit(pipeline, original: dict, result: dict, event_id: str, 
         "url": original.get("url"),
         "origin": origin,
         "status": result.get("status"),
+        "final_outcome": outcome,
+        "applied": applied,
+        "final_storage_collection": ("training_features" if applied else
+                                     "invalid_records" if outcome in {"failed", "invalid"} else None),
         "provider": result.get("provider"),
         "model": result.get("model"),
         "before": before,
@@ -152,8 +163,7 @@ def handle_ai_result(envelope, pipeline):
     if receipt and receipt.get("status") == "completed":
         return {"url": record["url"], "ai_status": receipt["outcome"], "processing_method": "ai_result_replay"}
 
-    write_cleaning_audit(pipeline, record, result, event_id, origin)
-
+    merged = None
     latest = pipeline.raw_collection.find_one({"url": record["url"]}, {"_agent_event_id": 1})
     if not latest or latest.get("_agent_event_id") != event_id:
         outcome = "stale"
@@ -161,9 +171,8 @@ def handle_ai_result(envelope, pipeline):
     else:
         try:
             merged = result_payload(record, result, event_id)
-            write_cleaning_audit(pipeline, record, result, event_id, origin, merged)
         except ValueError:
-            result = {"status": "failed", "error_code": "invalid_extracted_field_type", "attempts": result.get("attempts", 0)}
+            result = {**result, "status": "failed", "error_code": "invalid_extracted_field_type"}
             merged = result_payload(record, result, event_id)
         normalized = pipeline.process_payload(merged, skip_ai=True, raw_already_saved=True)
         invalid = bool(normalized.get("validation_errors") or normalized.get("listing_review_status") == "INVALID")
@@ -181,6 +190,7 @@ def handle_ai_result(envelope, pipeline):
             outcome = "invalid" if result["status"] == "success" else "failed"
         else:
             outcome = "success"
+    write_cleaning_audit(pipeline, record, result, event_id, origin, outcome=outcome, cleaned=merged)
     receipts.update_one({"_id": event_id}, {"$set": {
         "status": "completed", "outcome": outcome, "url": record["url"],
         "origin": origin, "completed_at": datetime.now(timezone.utc).isoformat(),

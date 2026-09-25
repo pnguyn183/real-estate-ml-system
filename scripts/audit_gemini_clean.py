@@ -1,7 +1,10 @@
 """Summarize auditable AI before/after records from MongoDB.
 
 Run after an AI extraction workload:
-    python scripts/audit_gemini_clean.py --output runtime/research/gemini-clean-audit.json
+    python scripts/audit_gemini_clean.py --output runtime/research/gemini-clean-summary.json
+
+This summary is not a substitute for the wire-level verify_gemini_pipeline
+artifact. Older cleaning audits without final_outcome remain unverified here.
 """
 from __future__ import annotations
 
@@ -18,6 +21,9 @@ from pymongo import MongoClient
 def summarize(records: list[dict], provider: str | None = None) -> dict:
     selected = [record for record in records if provider is None or record.get("provider") == provider]
     status_counts = Counter(record.get("status", "unknown") for record in selected)
+    outcome_counts = Counter(record.get("final_outcome", "unknown") for record in selected)
+    applied = [record for record in selected
+               if record.get("final_outcome") == "success" and record.get("applied") is True]
     changed_counts = Counter(field for record in selected for field in record.get("changed_fields", []))
     changed = sum(bool(record.get("changed_fields")) for record in selected)
     return {
@@ -25,6 +31,11 @@ def summarize(records: list[dict], provider: str | None = None) -> dict:
         "provider_filter": provider,
         "records": len(selected),
         "status_counts": dict(sorted(status_counts.items())),
+        "final_outcome_counts": dict(sorted(outcome_counts.items())),
+        "records_applied": len(applied),
+        "records_without_final_outcome": outcome_counts.get("unknown", 0),
+        "applied_changed_fields": dict(Counter(field for record in applied
+                                              for field in record.get("changed_fields", [])).most_common()),
         "records_with_changes": changed,
         "records_without_changes": len(selected) - changed,
         "changed_fields": dict(changed_counts.most_common()),
@@ -37,6 +48,9 @@ def summarize(records: list[dict], provider: str | None = None) -> dict:
                 "event_id": record.get("event_id"),
                 "url": record.get("url"),
                 "status": record.get("status"),
+                "final_outcome": record.get("final_outcome", "unknown"),
+                "applied": record.get("applied"),
+                "final_storage_collection": record.get("final_storage_collection"),
                 "provider": record.get("provider"),
                 "model": record.get("model"),
                 "changed_fields": record.get("changed_fields", []),

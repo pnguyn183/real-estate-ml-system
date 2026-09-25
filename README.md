@@ -53,10 +53,12 @@ For the complete implementation map and detailed Mermaid diagrams, see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [flow_diagram.md](flow_diagram.md).
 
-See [current verification evidence](docs/PROJECT_STATUS.md) before a demo:
-mixed-source fixture ingestion and mock AI integration are verified. Batdongsan
-is no longer selectable by the crawler. Real external LLM verification is still
-pending usable local provider credentials. A mock result is not a real API test.
+See the [completion audit](docs/PROJECT_COMPLETION_AUDIT.md) and
+[actual Gemini input/output evidence](docs/BAO_CAO_GIANG_VIEN.md) before a demo.
+One synthetic record was verified through the real Gemini API on 2026-09-24;
+this does not establish dataset-wide extraction accuracy. The earlier
+[verification history](docs/PROJECT_STATUS.md) remains dated historical evidence.
+Batdongsan is no longer selectable by the crawler.
 
 ## Repository structure
 
@@ -211,7 +213,7 @@ Example:
 ```bash
 curl -X POST http://localhost:8000/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"xample.com","password":"StrongPass1","full_name":"Admin"}'
+  -d '{"email":"admin@example.com","password":"StrongPass1","full_name":"Admin"}'
 
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
@@ -220,6 +222,13 @@ curl -X POST http://localhost:8000/auth/login \
 
 Use the returned token for prediction and model-info requests. Set a strong
 `AUTH_SECRET_KEY` outside local development.
+
+`GET /health` reports process liveness and model status. `GET /ready` returns
+200 only when the model can actually be loaded (503 otherwise); the legacy
+predictor exposes the same readiness route. The frontend uses the existing
+same-origin `/api` proxy by default. Run `python scripts/health_check.py
+--require-model` to check model readiness, all three processor endpoints,
+Kafka topology/ISR and MongoDB together.
 
 ## Data and model
 

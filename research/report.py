@@ -45,6 +45,102 @@ def maximum(records: list[dict], key: str) -> float | None:
     return max(values) if values else None
 
 
+def load_experiment(input_path: Path) -> dict:
+    """Reject explicitly invalid evidence before creating any report artifacts."""
+    for directory in (input_path, *(input_path / mode for mode in MODES)):
+        marker = directory / "INVALID.json"
+        if marker.exists():
+            raise ValueError(f"Refusing invalid experiment evidence: {marker}")
+    loaded = {}
+    for mode in MODES:
+        directory = input_path / mode
+        if not (directory / "report.json").exists() or not (directory / "manifest.json").exists():
+            continue
+        data = {"report": json.loads((directory / "report.json").read_text(encoding="utf-8")),
+                "manifest": json.loads((directory / "manifest.json").read_text(encoding="utf-8")),
+                "observations": rows(directory / "observations.jsonl"), "actions": rows(directory / "actions.jsonl")}
+        if str(data["report"].get("status", "")).startswith("invalid"):
+            raise ValueError(f"Refusing invalid experiment status: {directory}")
+        loaded[mode] = data
+    if not loaded:
+        raise ValueError(f"No experiment reports and manifests found: {input_path}")
+    return loaded
+
+
+def resource_summary(run: dict, actions: list[dict]) -> dict:
+    """Read actual Docker inspect receipts; desired CPU settings are not evidence."""
+    resource = run.get("resource_scaling", {})
+    names = resource.get("containers", [])
+    receipts = [a["resource_scaling"] for a in actions if isinstance(a.get("resource_scaling"), dict)]
+    if not receipts:
+        receipts = resource.get("actions", [])
+    prepare = resource.get("prepare")
+    events = ([prepare] if isinstance(prepare, dict) else []) + receipts
+    verified, unverified = [], 0
+    for receipt in events:
+        if receipt.get("status") != "applied":
+            continue
+        allocation = receipt.get("verified_allocations", {})
+        cpus = receipt.get("cpus")
+        timestamp = receipt.get("applied_at")
+        valid = (bool(names) and set(allocation) == set(names) and finite(cpus) and cpus > 0
+                 and finite(timestamp) and all(isinstance(v, dict) and v.get("id")
+                     and v.get("running") is True and finite(v.get("NanoCpus"))
+                     and v["NanoCpus"] == round(cpus * 1_000_000_000) for v in allocation.values()))
+        if not valid:
+            unverified += 1
+            continue
+        started = run.get("load_started_at")
+        verified.append({"timestamp": timestamp,
+                         "elapsed_seconds": timestamp - started if finite(started) else None,
+                         "action": receipt.get("action"), "cpu_per_container": cpus,
+                         "total_cpu_quota": sum(v["NanoCpus"] for v in allocation.values()) / 1_000_000_000,
+                         "actuation_latency_seconds": receipt.get("actuation_latency_seconds"),
+                         "verified_allocations": allocation})
+    verified.sort(key=lambda r: r["timestamp"])
+    restore = resource.get("restore", {})
+    return {"enabled": resource.get("enabled", False), "receipt_count": len(receipts),
+            "verified_prepare_count": sum(v["action"] == "prepare" for v in verified),
+            "verified_scaling_action_count": sum(v["action"] in {"scale_up", "scale_down"} for v in verified),
+            "unverified_applied_receipts": unverified,
+            "failed_receipts": sum(r.get("status") == "failed" for r in events),
+            "verified_cpu_allocations": verified, "restore_status": restore.get("status"),
+            "restore_receipt": restore or None,
+            "semantics": "CPU quotas from verified Docker inspect receipts, not measured CPU consumption; no memory or replica scaling inferred."}
+
+
+def recovery_summary(run: dict, episodes: list[dict], records: list[dict], config: dict) -> dict:
+    """Separate recovery while offering load from recovery after admission stops."""
+    end = run.get("load_ended_at")
+    for episode in episodes:
+        recovered = episode.get("t3")
+        if not finite(recovered):
+            episode["recovery_phase"] = None
+            episode["continued_load_observed"] = False
+            continue
+        episode["recovery_phase"] = ("unknown" if not finite(end) else "drain" if recovered >= end else "load")
+        start = recovered - config["control"].get("recovery_window_seconds", 0)
+        observations = [r for r in records if r.get("phase") == "load" and finite(r.get("timestamp"))
+                        and start <= r["timestamp"] <= recovered and finite(r.get("requested_rate"))]
+        step = config["sample_seconds"]
+        times = sorted(r["timestamp"] for r in observations)
+        covered = bool(len(times) >= 2 and times[0] <= start + step * 1.5 and times[-1] >= recovered - step * 1.5
+                       and times[-1] - times[0] >= max(0, recovered - start - step * 1.5)
+                       and all(b - a <= step * 1.5 for a, b in zip(times, times[1:])))
+        episode["continued_load_observed"] = (episode["recovery_phase"] == "load" and covered
+                                             and all(r["requested_rate"] > 0 and not r.get("errors") for r in observations))
+        episode["recovery_window_requested_rate_min"] = min((r["requested_rate"] for r in observations), default=None)
+        episode["recovery_window_requested_rate_max"] = max((r["requested_rate"] for r in observations), default=None)
+    return {"total_episodes": len(episodes),
+            "recovered_during_load": sum(e.get("recovery_phase") == "load" for e in episodes),
+            "continued_load_recoveries_with_observations": sum(e["continued_load_observed"] for e in episodes),
+            "recovered_during_drain": sum(e.get("recovery_phase") == "drain" for e in episodes),
+            "recovery_phase_unknown": sum(e.get("recovery_phase") == "unknown" for e in episodes),
+            "unresolved_episodes": sum(not finite(e.get("t3")) for e in episodes),
+            "sampling_resolution_seconds": config["sample_seconds"],
+            "semantics": "T0 is a sampled threshold crossing; continued offered load may still be rejected by the gate. Recovery does not prove all offered demand was served."}
+
+
 def slope(records: list[dict], key: str) -> float | None:
     pairs = [(r["elapsed_seconds"], r[key]) for r in records
              if finite(r.get("elapsed_seconds")) and finite(r.get(key))]
@@ -155,9 +251,8 @@ def mode_summary(run: dict, records: list[dict], actions: list[dict], config: di
                     if right["requested_rate"] > left["requested_rate"] * (1 + plateau_input)
                     and finite(left["mean_throughput"]) and finite(right["mean_throughput"])
                     and right["mean_throughput"] <= left["mean_throughput"] * (1 + plateau_output)), None)
-    episodes = [{**episode, "recovery_phase": (
-        "drain" if episode.get("t3") is not None and episode["t3"] > run.get("load_ended_at", math.inf)
-        else "load" if episode.get("t3") is not None else None)} for episode in run.get("episodes", [])]
+    episodes = [dict(episode) for episode in run.get("episodes", [])]
+    recovery = recovery_summary(run, episodes, records, config)
     seconds = run.get("load_seconds")
     metrics = {f"mean_{key}": average(load, key) for key in REQUIRED}
     metrics.update({f"peak_{key}": maximum(load, key) for key in ("cpu_percent", "ram_percent", "kafka_lag", "latency_p95_seconds")})
@@ -175,7 +270,8 @@ def mode_summary(run: dict, records: list[dict], actions: list[dict], config: di
             "plateau_heuristic": {"minimum_input_growth_fraction": plateau_input,
                                   "maximum_throughput_growth_fraction": plateau_output},
             "capacity_caveat": "Finite tested workload only; an admission ceiling or plateau alone does not establish infrastructure saturation.",
-            "broker_load": broker_summary(load), "episodes": episodes,
+            "broker_load": broker_summary(load), "episodes": episodes, "recovery": recovery,
+            "resource_scaling": resource_summary(run, actions),
             "changed_actions": sum(a.get("current_limit") != a.get("new_limit") for a in actions)}
 
 
@@ -341,28 +437,47 @@ def generate_charts(loaded: dict, output: Path) -> list[str]:
             fig.savefig(output / "broker_load.png", dpi=150)
             paths.append(str(output / "broker_load.png"))
         plt.close(fig)
+    fig, axis = plt.subplots(figsize=(10, 4))
+    has_data = False
+    for mode, data in loaded.items():
+        resources = resource_summary(data["report"], data["actions"])
+        points = [p for p in resources["verified_cpu_allocations"] if finite(p["elapsed_seconds"])]
+        # A failed/partially applied update makes the subsequent allocation unknown.
+        # Do not draw a persistent quota line from the last successful receipt.
+        if not points or resources["failed_receipts"] or resources["unverified_applied_receipts"]:
+            continue
+        endpoints = [(p["elapsed_seconds"], p["total_cpu_quota"]) for p in points]
+        last = maximum(data["observations"], "elapsed_seconds")
+        if last is not None and last > endpoints[-1][0]:
+            endpoints.append((last, endpoints[-1][1]))
+        axis.step([p[0] for p in endpoints], [p[1] for p in endpoints], where="post", label=mode, color=colors[mode])
+        load_boundary(axis, data, mode, colors[mode])
+        has_data = True
+    if has_data:
+        axis.set(xlabel="Elapsed from load start (s)", ylabel="Verified total worker CPU quota (cores)")
+        axis.legend()
+        axis.grid(alpha=.2)
+        fig.tight_layout()
+        fig.savefig(output / "cpu_allocation.png", dpi=150)
+        paths.append(str(output / "cpu_allocation.png"))
+    plt.close(fig)
     return paths
 
 
-def generate_report(input_path: Path, output: Path) -> dict:
-    output.mkdir(parents=True, exist_ok=True)
-    loaded, summaries = {}, {}
-    for mode in MODES:
-        directory = input_path / mode
-        if not (directory / "report.json").exists() or not (directory / "manifest.json").exists():
-            continue
-        data = {"report": json.loads((directory / "report.json").read_text(encoding="utf-8")),
-                "manifest": json.loads((directory / "manifest.json").read_text(encoding="utf-8")),
-                "observations": rows(directory / "observations.jsonl"), "actions": rows(directory / "actions.jsonl")}
-        loaded[mode] = data
-        summaries[mode] = mode_summary(data["report"], data["observations"], data["actions"], data["manifest"]["config"])
+def summarize_experiment(input_path: Path, loaded: dict) -> dict:
+    summaries = {mode: mode_summary(data["report"], data["observations"], data["actions"], data["manifest"]["config"])
+                 for mode, data in loaded.items()}
     paired = all(mode in loaded for mode in MODES)
-    matched = paired and all(loaded["baseline"]["manifest"]["config"].get(key) == loaded["adaptive"]["manifest"]["config"].get(key)
-                             for key in ("profile", "seed", "sample_seconds", "decision_seconds", "control", "stability"))
+    matched = paired and loaded["baseline"]["manifest"]["config"] == loaded["adaptive"]["manifest"]["config"]
+    worker_hashes = [loaded[m]["manifest"].get("identity", {}).get("worker_source_hashes", {}) for m in MODES] if paired else []
+    workers_verified = bool(worker_hashes and all(set(hashes) == {"processor", "processor-2", "processor-3"}
+                           and all(isinstance(v, str) and len(v) == 64 for v in hashes.values()) for hashes in worker_hashes))
+    worker_match = worker_hashes[0] == worker_hashes[1] if workers_verified else None
     durations = [loaded[m]["report"].get("load_seconds") for m in MODES] if paired else []
-    common_seconds = min(durations) if matched and all(finite(d) and d > 0 for d in durations) else None
+    common_seconds = min(durations) if matched and worker_match is not False and all(finite(d) and d > 0 for d in durations) else None
     common = {m: common_window_summary(loaded[m]["observations"], common_seconds) for m in MODES} if common_seconds is not None else {}
     result = {"source": str(input_path), "modes": summaries, "paired_configuration_matches": matched,
+              "paired_worker_sources_match": worker_match,
               "paired_runs_completed": paired and all(loaded[m]["report"].get("status") == "completed" for m in MODES),
               "common_load_seconds": common_seconds, "common_window": common,
               "before_after": comparison(common) if common else [],
@@ -374,10 +489,23 @@ def generate_report(input_path: Path, output: Path) -> dict:
                               "Mean interval p95 is not a global event p95. Collection intervals can cross stage boundaries.",
                               "T0 is a sampled crossing. Drain-phase recovery does not prove recovery under continued offered load.",
                               "No unobserved stage or missing measurement is filled or extrapolated."],
-              "charts": generate_charts(loaded, output)}
+              "charts": []}
+    if worker_match is None:
+        result["limitations"].append("Worker code provenance is incomplete; the numerical comparison is descriptive only.")
+    elif not worker_match:
+        result["limitations"].append("Worker source hashes differ between policies; the before/after table is withheld.")
+    return result
+
+
+def generate_report(input_path: Path, output: Path) -> dict:
+    loaded = load_experiment(input_path)
+    result = summarize_experiment(input_path, loaded)
+    output.mkdir(parents=True, exist_ok=True)
+    result["charts"] = generate_charts(loaded, output)
     (output / "summary.json").write_text(json.dumps(result, indent=2, allow_nan=False), encoding="utf-8")
-    lines = ["# Measured traffic experiment", "", f"Paired configuration matches: {matched}.",
-             f"Common load window: {common_seconds} seconds; complete observed intervals only.", "",
+    lines = ["# Measured traffic experiment", "", f"Paired configuration matches: {result['paired_configuration_matches']}.",
+             f"Worker sources match: {result['paired_worker_sources_match']}.",
+             f"Common load window: {result['common_load_seconds']} seconds; complete observed intervals only.", "",
              "| Metric | Before agent | After agent | Difference |", "|---|---:|---:|---:|"]
     lines += [f"| {r['metric']} | {r['before_agent']:.6g} | {r['after_agent']:.6g} | {r['difference']:.6g} |" for r in result["before_after"]]
     lines += ["", "Missing values are omitted from the comparison. See summary.json for coverage, stability checks, reaction episodes, and broker shares."]

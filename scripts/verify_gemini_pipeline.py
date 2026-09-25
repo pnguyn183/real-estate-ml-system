@@ -27,13 +27,11 @@ from confluent_kafka import Consumer, Producer, TopicPartition
 from pymongo import MongoClient
 
 from agents.safety import SYNTHETIC_URL_PREFIX, is_synthetic_record
+from processing.source_contract import make_record
 from processing.kafka_to_mongo import (
     agent_event_id, extraction_routing_errors, normalize_listing,
     validate_normalized_record,
 )
-
-
-MODEL = "gemini-2.5-flash"
 
 
 class VerificationBlocked(RuntimeError):
@@ -52,23 +50,29 @@ def validate_model(model: object) -> str:
     return model
 
 
-def build_case(model: str = MODEL) -> dict:
+def build_case(model: str) -> dict:
     model = validate_model(model)
     run_id = "gemini-live-" + uuid4().hex
-    record = {
-        "url": f"{SYNTHETIC_URL_PREFIX}{run_id}/explicit-facts",
+    # Exercise the same versioned contract emitted by the live source adapters.
+    # The source URL is a fabricated identity only: it is never fetched, and the
+    # actual Kafka/storage URL and provenance below remain strictly synthetic.
+    record = make_record("homedy", f"https://homedy.com/ban-can-ho/{run_id}-es000000", {
+        "listing_id": run_id,
         "title": "Synthetic Gemini pipeline verification",
         "description": "Căn hộ bán, diện tích 80 m2, tổng giá 8 tỷ đồng, 2 phòng ngủ và 2 phòng tắm.",
-        "property_type": "apartment", "listing_type": "sell",
+        "property_type": "apartment", "transaction_type": "sell",
         "province_slug": "ho-chi-minh", "district_slug": "quan-1",
+    })
+    record.update({
+        "url": f"{SYNTHETIC_URL_PREFIX}{run_id}/explicit-facts",
         "source_type": "synthetic", "is_synthetic": True,
         "generated_by": "gemini_pipeline_verification", "scenario": "gemini_live_audit",
         "run_id": run_id, "generated_at": now(), "verified": 0,
-    }
+    })
     return {
         "schema_version": 1, "run_id": run_id, "prepared_at": now(),
         "event_id": agent_event_id(record), "record": record,
-        "input_kind": "non-personal synthetic fixture; provider response must be real",
+        "input_kind": "non-personal synthetic schema-v2 source fixture; provider response must be real",
         "expected_model": model,
         "routing_errors_before": extraction_routing_errors(normalize_listing(record)),
     }
@@ -143,6 +147,17 @@ def verify_evidence(report: dict) -> None:
         raise VerificationBlocked("final_record_identity_or_status_mismatch")
     if not report.get("cleaning_audit") or not report.get("raw_record_preserved"):
         raise VerificationBlocked("before_after_archive_not_proven")
+    if (report.get("before") or {}).get("schema_version") == 2:
+        if (final.get("schema_version") != 2 or final.get("feature_status") != "current"
+                or final.get("validation_errors") or final.get("training_excluded")
+                or not all(isinstance(final.get(field), (int, float)) and final[field] > 0
+                           for field in ("price_vnd", "area_m2"))):
+            raise VerificationBlocked("canonical_source_extraction_not_applied")
+        if any(final.get(field) != report["before"].get(field)
+               for field in ("source_url", "source_listing_id", "raw_payload_hash")):
+            raise VerificationBlocked("canonical_source_provenance_not_preserved")
+        if report["cleaning_audit"].get("final_outcome") != "success" or not report["cleaning_audit"].get("applied"):
+            raise VerificationBlocked("final_cleaning_application_not_audited")
     counts = report.get("primary_matching_documents")
     if not counts or any(count != 0 for count in counts.values()):
         raise VerificationBlocked("primary_data_isolation_not_proven")
@@ -297,7 +312,7 @@ def main() -> int:
     mode.add_argument("--run", action="store_true")
     parser.add_argument("--case", type=Path, default=Path("runtime/research/gemini-case.json"))
     parser.add_argument("--output", type=Path, default=Path("runtime/research/gemini-clean-audit.json"))
-    parser.add_argument("--model", help=f"Expected model from provider listing (--prepare only; default: {MODEL})")
+    parser.add_argument("--model", help="Required with --prepare: model confirmed by the provider listing; no default/guess")
     parser.add_argument("--timeout-seconds", type=float, default=180)
     args = parser.parse_args()
     if not math.isfinite(args.timeout_seconds) or not 1 <= args.timeout_seconds <= 600:
@@ -305,10 +320,12 @@ def main() -> int:
     if args.run and args.model is not None:
         parser.error("--model is only accepted with --prepare; --run uses the prepared case")
     if args.prepare:
+        if args.model is None:
+            parser.error("--prepare requires --model confirmed by your provider's model listing")
         if args.case.exists():
             parser.error("case already exists; choose a new case path")
         try:
-            case = build_case(MODEL if args.model is None else args.model)
+            case = build_case(args.model)
         except VerificationBlocked as exc:
             parser.error(str(exc))
         validate_case(case)

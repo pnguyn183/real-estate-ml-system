@@ -162,7 +162,9 @@ def make_pipeline(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_STRESS_ENABLED", "false")
     monkeypatch.setenv("KAFKA_STRESS_TOPIC", "real_estate_stress_raw")
     monkeypatch.setenv("KAFKA_AI_TOPIC", "real_estate_ai_input")
-    monkeypatch.setenv("KAFKA_AI_DELIVERY_TIMEOUT_SECONDS", "0.01")
+    # Successful hand-off tests must not depend on a 10 ms OS scheduling slice.
+    # The timeout-specific test below selects its own deliberately short budget.
+    monkeypatch.setenv("KAFKA_AI_DELIVERY_TIMEOUT_SECONDS", "1")
     module._shutdown_event.clear()
 
     def create(**kwargs):
@@ -344,6 +346,8 @@ def test_ai_delivery_failure_leaves_offset_uncommitted(make_pipeline, mode):
     pipeline.ai_enabled = True
     pipeline.clean_producer.fail_delivery = mode == "failed"
     pipeline.clean_producer.never_deliver = mode == "timeout"
+    if mode == "timeout":
+        pipeline.ai_delivery_timeout = .01
     pipeline.consumer.messages = [Message(json.dumps(listing(price_text=None)).encode())]
     with pytest.raises((RuntimeError, TimeoutError)):
         pipeline.consume_forever(max_messages=1)

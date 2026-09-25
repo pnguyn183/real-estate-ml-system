@@ -22,6 +22,8 @@ import {
   setAuthToken,
 } from './api/client';
 
+const MODEL_REFRESH_INTERVAL_MS = 30_000;
+
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -48,31 +50,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    async function loadHealth() {
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    async function refreshModelStatus() {
       try {
         const healthResult = await checkHealth();
+        if (cancelled) return;
         setHealth(healthResult);
+        if (canViewModel && healthResult.model_exists) {
+          try {
+            const info = await getModelInfo();
+            if (!cancelled) setModelInfo(info);
+          } catch {
+            if (!cancelled) setModelInfo(null);
+          }
+        } else {
+          setModelInfo(null);
+        }
       } catch {
-        setHealth(null);
+        if (!cancelled) {
+          setHealth(null);
+          setModelInfo(null);
+        }
+      } finally {
+        // Schedule after completion so a slow request cannot overlap the next one.
+        if (!cancelled) {
+          refreshTimer = setTimeout(() => void refreshModelStatus(), MODEL_REFRESH_INTERVAL_MS);
+        }
       }
     }
-    void loadHealth();
-  }, []);
 
-  useEffect(() => {
-    async function loadModelInfo() {
-      if (!canViewModel || !health?.model_exists) {
-        setModelInfo(null);
-        return;
-      }
-      try {
-        setModelInfo(await getModelInfo());
-      } catch {
-        setModelInfo(null);
-      }
-    }
-    void loadModelInfo();
-  }, [canViewModel, health?.model_exists]);
+    void refreshModelStatus();
+    return () => {
+      cancelled = true;
+      clearTimeout(refreshTimer);
+    };
+  }, [canViewModel, user?.id]);
 
   function handleAuthenticated(auth: AuthResponse) {
     setUser(auth.user);

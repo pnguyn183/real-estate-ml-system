@@ -74,6 +74,12 @@ at image build time, not every container start. Source code is mounted read-only
 cache, metrics files and model artifacts survive. Airflow metadata/logs have
 their own persistent volume. The optional service needs no Docker socket.
 
+Startup runs `airflow/startup.py` before migration/standalone. It removes a stale
+webserver PID left in the persistent home after a container restart, including
+a PID recycled for an unrelated process. It refuses to remove a PID identifying
+a live webserver/Gunicorn process and never deletes Airflow metadata. The
+healthcheck requires both the web endpoint and scheduler heartbeat to be healthy.
+
 The operational dashboard remains Grafana at `http://localhost:3001`. Open the
 provisioned dashboard **Agent Operations — AI, Stress & Safety** to demonstrate
 AI throughput, confidence distribution, low-confidence rejections, validation

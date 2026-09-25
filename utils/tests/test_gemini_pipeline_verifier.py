@@ -4,29 +4,33 @@ import copy
 import pytest
 
 from scripts.verify_gemini_pipeline import (
-    MODEL, VerificationBlocked, build_case, validate_case, verify_evidence,
+    VerificationBlocked, build_case, validate_case, verify_evidence, main,
 )
+
+MODEL = "offline-model-for-validator-test"
 
 
 def test_prepared_case_meets_unmodified_fallback_and_is_isolated():
-    case = build_case()
+    case = build_case(MODEL)
     record = validate_case(case)
     assert record["is_synthetic"] is True
     assert record["url"].startswith("https://synthetic.invalid/")
-    assert "price_text" not in record and "area_text" not in record
+    assert record["schema_version"] == 2
+    assert record["price_text"] is None and record["area_text"] is None
+    assert record["price_raw"] is None and record["area_raw"] is None
     assert case["routing_errors_before"] == ["missing_or_invalid_price_vnd", "missing_or_invalid_area_m2"]
-    assert build_case()["event_id"] != case["event_id"]
+    assert build_case(MODEL)["event_id"] != case["event_id"]
 
 
 def test_case_cannot_be_relabelled_as_a_live_record():
-    case = build_case()
+    case = build_case(MODEL)
     case["record"]["url"] = "https://example.com/listing"
     with pytest.raises(VerificationBlocked, match="synthetic_domain"):
         validate_case(case)
 
 
 def test_case_detects_changes_after_event_filter_was_prepared():
-    case = build_case()
+    case = build_case(MODEL)
     case["record"]["description"] += " changed"
     with pytest.raises(VerificationBlocked, match="identity_mismatch"):
         validate_case(case)
@@ -39,11 +43,20 @@ def test_case_accepts_explicit_model_without_changing_fallback():
     assert case["routing_errors_before"] == ["missing_or_invalid_price_vnd", "missing_or_invalid_area_m2"]
 
 
+def test_cli_never_guesses_a_model_when_preparing_a_live_case(monkeypatch, tmp_path):
+    target = tmp_path / "case.json"
+    monkeypatch.setattr("sys.argv", ["verify_gemini_pipeline.py", "--prepare", "--case", str(target)])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 2
+    assert not target.exists()
+
+
 @pytest.mark.parametrize("model", [None, "", " ", "model\n", "../model", "model//name", "model?key=secret", "model#fragment", "x" * 201])
 def test_case_rejects_unsafe_or_empty_model(model):
     with pytest.raises(VerificationBlocked, match="expected_model_invalid"):
         build_case(model)
-    case = build_case()
+    case = build_case(MODEL)
     case["expected_model"] = model
     with pytest.raises(VerificationBlocked, match="expected_model_invalid"):
         validate_case(case)
@@ -78,6 +91,36 @@ def evidence():
 
 def test_full_correlated_evidence_is_accepted(evidence):
     verify_evidence(evidence)
+
+
+def canonical_evidence(evidence):
+    record = build_case(MODEL)["record"]
+    evidence["before"] = record
+    evidence["final_record"].update(
+        schema_version=2, feature_status="current", price_vnd=8e9, area_m2=80,
+        validation_errors=[], training_excluded=False,
+        **{field: record[field] for field in ("source_url", "source_listing_id", "raw_payload_hash")},
+    )
+    evidence["cleaning_audit"].update(final_outcome="success", applied=True)
+    return evidence
+
+
+def test_canonical_source_requires_applied_validated_fields(evidence):
+    verify_evidence(canonical_evidence(evidence))
+
+
+@pytest.mark.parametrize("change,reason", [
+    (lambda report: report["final_record"].update(price_vnd=None), "canonical_source_extraction"),
+    (lambda report: report["final_record"].update(training_excluded=True), "canonical_source_extraction"),
+    (lambda report: report["final_record"].update(schema_version=1), "canonical_source_extraction"),
+    (lambda report: report["final_record"].update(source_url="changed"), "canonical_source_provenance"),
+    (lambda report: report["cleaning_audit"].update(final_outcome="invalid", applied=False), "final_cleaning_application"),
+])
+def test_canonical_source_evidence_rejects_unapplied_or_changed_identity(evidence, change, reason):
+    report = canonical_evidence(evidence)
+    change(report)
+    with pytest.raises(VerificationBlocked, match=reason):
+        verify_evidence(report)
 
 
 def test_custom_model_requires_matching_request_and_result(evidence):

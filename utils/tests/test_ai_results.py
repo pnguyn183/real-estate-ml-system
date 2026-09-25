@@ -1,11 +1,15 @@
 """Result-topic integration through the real Processor with in-memory adapters."""
 import copy
 import json
+from unittest.mock import Mock
 
 import pytest
 
 from agents.results import handle_ai_result, validate_result_envelope
+from agents.extraction import ExtractionService
+from agents.worker import AIWorker, WorkerConfig
 from processing.kafka_to_mongo import agent_event_id
+from scripts.verify_gemini_pipeline import build_case
 from utils.tests.test_agent_pipeline import make_pipeline, listing, synthetic_listing, Message
 
 
@@ -153,6 +157,76 @@ def test_non_scalar_extraction_cannot_become_features(make_pipeline):
     consume_result(pipeline, envelope)
     assert not selected.feature_collection.documents
     assert selected.db["ai_failures"].documents[0]["error_code"] == "invalid_extracted_field_type"
+
+
+@pytest.mark.parametrize("kind,expected", [("success", "success"), ("invalid", "invalid"),
+                                          ("failed", "failed"), ("malformed", "failed"), ("stale", "stale")])
+def test_cleaning_audit_distinguishes_provider_status_from_applied_changes(make_pipeline, kind, expected):
+    pipeline = make_pipeline()
+    fields = {"price_text": "900 ty"} if kind == "invalid" else {"price_text": {"value": 8}} if kind == "malformed" else None
+    envelope, selected = result_envelope(pipeline, status="failed" if kind == "failed" else "success", fields=fields)
+    if kind == "stale":
+        selected.process_payload(listing(price_text="9 ty"))
+    handle_ai_result(envelope, selected)
+    audit = selected.db["ai_cleaning_audit"].documents[0]
+    assert audit["final_outcome"] == expected
+    assert audit["applied"] is (expected == "success")
+    assert audit["final_outcome"] == selected.db["ai_result_receipts"].documents[0]["outcome"]
+    if expected == "success":
+        assert audit["changed_fields"] == ["price_text"]
+        assert audit["after"]["price_text"] == "8 ty"
+        assert audit["final_storage_collection"] == "training_features"
+    else:
+        assert audit["before"] == audit["after"]
+        assert audit["changed_fields"] == []
+        assert audit["before_sha256"] == audit["after_sha256"]
+        assert audit["final_storage_collection"] == (None if expected == "stale" else "invalid_records")
+    if kind == "invalid":
+        assert audit["status"] == "success"  # Provider extraction succeeded; Processor rejected it.
+
+
+@pytest.mark.parametrize("price,area,expected", [(8_000_000_000, 80, "success"), (8_000_000_000, None, "failed")])
+def test_schema_v2_fallback_through_worker_and_result_consumer(make_pipeline, price, area, expected):
+    """Real pipeline logic with offline transport/storage adapters, not live-Gemini evidence."""
+    pipeline = make_pipeline()
+    selected = pipeline.stress_pipeline
+    selected.ai_enabled = True
+    case = build_case("offline-regression-model")
+    original = case["record"]
+    queued = selected.process_payload(original)
+    assert queued["ai_status"] == "queued"
+    envelope = next(value for topic, _, value in selected.clean_producer.sent if topic == selected.ai_topic)
+    provider = Mock(enabled=True, model="offline-regression-model")
+    provider.name = "offline_test_transport"
+    fields = {"price_vnd": price, "area_m2": area}
+    evidence = {"price_vnd": "tổng giá 8 tỷ đồng"}
+    if area is not None:
+        evidence["area_m2"] = "diện tích 80 m2"
+    provider.extract.return_value = json.dumps({"fields": fields, "confidence": 1.0, "evidence": evidence}, ensure_ascii=False)
+    worker = AIWorker(WorkerConfig(stress_enabled=True), ExtractionService(provider))
+    worker.pipelines = {"stress": selected}
+    worker.publish_result = Mock()
+    assert worker.handle(envelope) == expected
+    assert provider.extract.call_count == 1
+    _, result = worker.publish_result.call_args.args
+    output_envelope = {**envelope, "result": result}
+    output = handle_ai_result(output_envelope, selected)
+    assert selected.db["ai_result_receipts"].documents[0]["outcome"] == expected
+    assert selected.raw_collection.documents[0]["price_raw"] is None
+    assert selected.raw_collection.documents[0]["price_text"] is None
+    if expected == "success":
+        assert output["schema_version"] == 2
+        assert output["price_vnd"] == 8_000_000_000 and output["area_m2"] == 80
+        assert output["feature_status"] == "current"
+        assert output["is_synthetic"] and output["is_model_candidate"] is False
+        assert output["raw_payload_hash"] == original["raw_payload_hash"]
+        assert selected.db["ai_cleaning_audit"].documents[0]["applied"] is True
+        assert len(selected.feature_collection.documents) == 1
+    else:
+        assert result["error_code"] == "post_extraction_validation"
+        assert not selected.feature_collection.documents
+        assert selected.invalid_collection.documents[0]["training_excluded"] is True
+        assert selected.db["ai_cleaning_audit"].documents[0]["changed_fields"] == []
 
 
 def test_commit_failure_stops_before_polling_later_offset(make_pipeline):

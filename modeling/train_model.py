@@ -54,8 +54,8 @@ def main() -> None:
     parser.add_argument("--mongo-db", default=os.environ.get("MONGO_DB", "real_estate_db"))
     parser.add_argument("--collection", default=os.environ.get("MONGO_FEATURE_COLLECTION", "training_features"))
     parser.add_argument("--input-json", type=Path, default=None)
-    parser.add_argument("--model-path", default="artifacts/price_model.joblib")
-    parser.add_argument("--metrics-path", default="artifacts/price_model_metrics.json")
+    parser.add_argument("--model-path", default=os.environ.get("MODEL_PATH", "artifacts/models/price_model.joblib"))
+    parser.add_argument("--metrics-path", default=os.environ.get("METRICS_PATH", "artifacts/price_model_metrics.json"))
     parser.add_argument(
         "--evaluate-variants",
         action="store_true",

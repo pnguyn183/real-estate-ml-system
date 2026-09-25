@@ -2,7 +2,9 @@ param(
     [int]$Hours = 6,
     [int]$IntervalSeconds = 5,
     [string]$OutputRoot = "runtime/research/traffic-history",
-    [datetime]$Until = $null
+    [string]$Topic = "real_estate_raw",
+    [string]$GroupId = "real_estate_training_pipeline",
+    [Nullable[datetime]]$Until = $null
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,17 +71,28 @@ $output = Join-Path $OutputRoot $runName
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 
 Write-Host "Collecting $sampleCount telemetry samples every $IntervalSeconds seconds." -ForegroundColor Green
+Write-Host "Topic: $Topic; consumer group: $GroupId" -ForegroundColor Green
 Write-Host "Output: $output" -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop collection. The Docker stack will remain running." -ForegroundColor Yellow
+
+$durationSeconds = $Hours * 3600
+if ($null -ne $Until) {
+    $durationSeconds = ($Until - (Get-Date)).TotalSeconds
+    if ($durationSeconds -le 0) { throw "Until elapsed while starting services." }
+}
 
 python -m research.telemetry `
     --output "$output/observations.jsonl" `
     --samples $sampleCount `
-    --interval $IntervalSeconds
+    --interval $IntervalSeconds `
+    --duration-seconds $durationSeconds `
+    --topic $Topic `
+    --group-id $GroupId `
+    --run-id $runName
 
 if ($LASTEXITCODE -ne 0) {
     throw "Telemetry collection failed."
 }
 
 Write-Host "Collection completed: $output/observations.jsonl" -ForegroundColor Green
-Write-Host "Next step: run traffic forecasting against this observations.jsonl after enough history has been collected." -ForegroundColor Cyan
+Write-Host "Next step (after checking history coverage): python -m research.benchmark traffic --input $output/observations.jsonl --target incoming_rate --output $output/forecast" -ForegroundColor Cyan
