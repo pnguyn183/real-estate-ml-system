@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 from pymongo import MongoClient
 from processing.price_anomaly import add_anomaly_training_filter
+from agents.safety import real_data_query, real_records
 
 # Export training candidate documents from MongoDB into dataset files
 
@@ -25,8 +31,8 @@ def main() -> None:
     client = MongoClient(args.mongo_uri)
     try:
         query = {"is_model_candidate": True} if args.only_candidates else {}
-        query = add_anomaly_training_filter(query)
-        records = list(client[args.mongo_db][args.collection].find(query, {"_id": 0}))
+        query = real_data_query(add_anomaly_training_filter(query))
+        records = real_records(client[args.mongo_db][args.collection].find(query, {"_id": 0}))
     finally:
         client.close()
 

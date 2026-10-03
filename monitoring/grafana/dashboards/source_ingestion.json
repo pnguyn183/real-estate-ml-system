@@ -1,0 +1,200 @@
+{
+  "uid": "source-ingestion",
+  "title": "Source Ingestion — Quality & Access",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Readable source metric state",
+      "description": "0 means no successful state-file read; missing data is not a successful crawl.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "source_metrics_available",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Seconds since last acknowledged crawl",
+      "description": "Only a completed run with acknowledged records updates this timestamp. Crawler is disabled by default.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - (source_last_success_timestamp > 0)",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Crawl successes / failures",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(crawl_success_total[5m])",
+          "legendFormat": "{{source}} success"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(crawl_failure_total[5m])",
+          "legendFormat": "{{source}} failure"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Parsed / valid / invalid listings",
+      "description": "Valid means no contract errors; partial records can still be excluded from training.",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(listings_parsed_total[5m])",
+          "legendFormat": "{{source}} parsed"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(listings_valid_total[5m])",
+          "legendFormat": "{{source}} valid"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(listings_invalid_total[5m])",
+          "legendFormat": "{{source}} invalid"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Parsing failures and repeated URLs",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(parsing_errors_total[5m])",
+          "legendFormat": "{{source}} parsing error"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(duplicate_records_total[5m])",
+          "legendFormat": "{{source}} repeated URL"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Average HTTP response-header latency",
+      "description": "Includes robots and retries. Does not measure total body download time.",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(request_latency_seconds_sum[5m]) / rate(request_latency_seconds_count[5m])",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

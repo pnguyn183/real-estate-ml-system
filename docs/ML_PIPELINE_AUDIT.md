@@ -1,96 +1,128 @@
-# ML Pipeline Audit
+# ML pipeline audit
 
-**Audit date:** 2026-08-26  
-**Scope:** repository state before the geographic/text/LLM enhancement work in this change set.
+**Implementation reviewed:** 2026-09-08. Runtime/test evidence is recorded
+separately in [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
-## Current architecture
+This audit describes the code currently executed by Compose. It does not
+describe a planned Spark/data-lake architecture.
 
-The implemented system is a Python/Kafka/MongoDB/scikit-learn application with a React frontend. It is **not** a Spark application and it does not implement physical Bronze/Silver/Gold storage layers.
+## Implemented pipeline
 
-| Logical stage | Implemented component | Persistent/output boundary |
+| Stage | Implementation | Boundary |
 | --- | --- | --- |
-| Ingestion | `scraper/listing_feature_scraper.py`, `scraper/kafka_producer.py` | Kafka `real_estate_raw` |
-| Raw archive (Bronze equivalent) | `processing/kafka_to_mongo.py` | MongoDB `listings_raw` |
-| Normalization/features (Silver equivalent) | `normalize_listing()` in `processing/kafka_to_mongo.py` | MongoDB `training_features`, Kafka `real_estate_features` |
-| Quality/anomaly | `validate_normalized_record()` and `processing/price_anomaly.py` | MongoDB `invalid_records`, `price_anomaly_thresholds`, anomaly metadata on feature records |
-| Training (Gold/training view equivalent) | `scripts/auto_train.py`, `modeling/train_model.py`, `modeling/price_model.py` | versioned joblib artifacts and JSON metrics |
-| Serving | `modeling/api.py` (FastAPI); `modeling/predict_service.py` (legacy internal predictor) | HTTP API |
-| UI/monitoring | `frontend/`, Prometheus/Grafana configuration in `monitoring/` | browser, Prometheus |
+| Ingestion | `scraper/listing_feature_scraper.py`, `scraper/kafka_producer.py` | Three-partition Kafka `real_estate_raw` (RF3) |
+| Parallel processing | `processor`, `processor-2`, `processor-3` running `processing/kafka_to_mongo.py` | One `real_estate_training_pipeline` consumer group |
+| Optional difficult-data fallback | `agents/worker.py`, `agents/extraction.py`, `agents/providers.py`, `agents/results.py` | Processor → AI input topic → external API/cache → AI results topic → same Processor group |
+| Controlled synthetic load | `agents/stress.py`, `agents/generator.py` | Stress raw topic → same workers → `real_estate_stress_db`; never primary training |
+| Raw persistence | Processor workers | MongoDB `listings_raw` (latest document per URL) |
+| Normalization/review | `normalize_listing()`, validation, enrichment, IQR review | MongoDB `training_features`, `invalid_records`, `price_anomaly_thresholds`; best-effort clean topic |
+| Training | `scripts/auto_train.py`, `modeling/train_model.py`, `modeling/price_model.py` | Timestamped joblib and JSON metadata/metrics under `artifacts/` |
+| Serving | `modeling/api.py` and legacy `modeling/predict_service.py` | FastAPI port 8000 and host-published, unauthenticated legacy HTTP port 8002 |
 
-`docker-compose.yml` runs Kafka, Zookeeper, MongoDB, processor, scheduled scraper/trainer, FastAPI, the legacy predictor, frontend, Prometheus and Grafana. The database is MongoDB; no relational database, data lake, Spark job or Streamlit application exists.
+The trainer reads candidate records from MongoDB; it does not consume the clean
+Kafka topic. `real_estate_features` currently has no in-repository consumer.
+Neither does `real_estate_stress_features`. AI result handling, not the AI
+worker itself, writes validated features through the shared Processor routine.
 
-## Current data flow
+## Features and target
 
-```text
-Batdongsan HTML
-  -> scraper raw dictionary (price/area/room text, location slugs, title/description)
-  -> Kafka real_estate_raw
-  -> Mongo listings_raw (raw archive)
-  -> normalize + validation
-  -> historical IQR price-per-m² annotation
-  -> Mongo training_features + Kafka real_estate_features
-  -> Mongo query of model candidates
-  -> train/test split, sklearn pipeline, joblib artifact
-  -> FastAPI /predict or legacy /predict
-```
+`build_feature_frame()` applies deterministic geographic and text enrichment on
+both training and inference paths. The model uses numeric dimensions/counts,
+optional coordinates, extracted text counts and 32-dimensional local hashing
+embeddings; categorical property/location fields; and TF-IDF over
+`text_features`. The target is `price_vnd` through a `log1p` transformed target
+regressor.
 
-The Kafka `real_estate_features` topic is currently an audit/extension output: repository code contains no consumer for it. `training_features` is therefore the effective normalized and training source.
+The ensemble contains Ridge, HistGradientBoosting and SGD regressors in a
+VotingRegressor. Missing values use scikit-learn imputers. A fixed random 80/20
+split (`random_state=42`) is used; it is not time- or listing-group-aware.
 
-## Data and current features
+## Artifacts and inference
 
-The raw scraper records `title`, `description`, `price_text`, `area_text`, bedroom/bathroom/floor/frontage/road text, property metadata and `province_slug`/`district_slug`/`ward_slug`. It does **not** extract a normalized street address, latitude or longitude. Location slugs are parsed heuristically from the listing URL.
+Each training run writes a timestamped model and metadata, copies the requested
+stable model path and best-effort updates `artifacts/price_model_current.joblib`.
+Metrics include MAE, RMSE, R2, median absolute percentage error, sample count,
+residual quantiles and feature-schema metadata. FastAPI reloads the model when
+the configured file changes. Prediction intervals/confidence are heuristics
+based on residuals and input completeness, not calibrated probabilities.
 
-`normalize_listing()` parses numeric values, derives `price_vnd`, `price_per_m2_vnd`, `feature_coverage_score`, `has_target_price`, `is_model_candidate`, and `text_features`. It sends hard-invalid records to `invalid_records` but retains raw data for audit.
+## Historical artifact result
 
-The current model (`modeling/price_model.py`) uses:
+The earlier audit recorded an artifact using 4,943 samples and approximately R2
+0.596, MAE 4.56B VND, RMSE 12.87B VND and median absolute percentage error
+27.5%. These are historical observations, not a fresh benchmark of the Agent
+extension or a claim about the currently loaded container model. Inspect the
+actual artifact metadata for current measurements. No automatic quality gate
+blocks deployment.
 
-- Numeric: area, bedroom/bathroom/floor counts, frontage and road width.
-- Categorical: property type, direction, legal status, listing type and province/district/ward/project.
-- Text: TF-IDF of the constructed `text_features` field.
-- Target: `price_vnd`, transformed with `log1p` during model fitting.
+## Leakage and data-quality review
 
-Training currently uses a fixed random 80/20 split (`random_state=42`). The preprocessing is fit only on the training partition through the sklearn pipeline, which is correct for its numeric/categorical/TF-IDF transformations.
+- `price_vnd` is the target only; price-derived anomaly metadata is excluded
+  from model features.
+- IQR thresholds are built from historical feature records while excluding the
+  incoming URL.
+- Text and geographic features use listing inputs only.
+- Preprocessing is fitted inside the sklearn pipeline after the split.
+- Raw records are retained, invalid records are separately recorded, and
+  normalized records are URL upserts with a content-comparison fingerprint.
+  The fingerprint includes URL; cross-URL near duplicates are not merged.
 
-## Current model pipeline
+## Synthetic training safety
 
-`RealEstatePriceModel` combines Ridge, HistGradientBoosting and SGD in a voting regressor. It records MAE, RMSE, R² and median absolute percentage error, versioned artifact metadata, and residual quantiles used for a heuristic prediction range. The FastAPI service validates input with Pydantic and loads the model artifact lazily.
+The primary model must never learn from stress-test records. The implemented
+protection is layered, not just a single trainer query:
 
-The README's claim of "94%+ accuracy" is unsupported by an artifact or an explicitly defined regression metric in this checkout. Regression should be reported using MAE/RMSE/R² (and optionally median absolute error/MAPE), not a generic accuracy percentage.
+1. Stress generation uses a dedicated topic and reserved URL/metadata.
+2. The live Processor branch rejects synthetic markers before raw/feature
+   writes. The stress branch accepts marked synthetic URLs only and writes
+   `real_estate_stress_db`, distinct from the trainer's `real_estate_db`.
+3. `normalize_listing()` always sets synthetic `is_model_candidate=false`.
+   AI request/result validation preserves origin and original synthetic
+   provenance; a model response cannot opt into the real database.
+4. `auto_train.training_query()` applies `real_data_query()` to both candidate
+   counting and data loading from the configured feature collection. The
+   manual Mongo trainer and manual export utility also filter synthetic data.
+5. `RealEstatePriceModel.train()` and `evaluate_feature_variants()` call
+   `real_records()` before feature construction, so direct calls and the manual
+   JSON training path cannot bypass the marker filter merely by setting
+   `is_model_candidate=true`.
 
-## Existing anomaly detection
+Markers recognized include boolean/string/numeric synthetic flags, synthetic
+source types, `generated_by=stress_agent` and the reserved URL prefix. These
+checks are independent of `PRICE_ANOMALY_TRAINING_POLICY`; setting `KEEP` or
+`FLAG` never permits synthetic training. They cannot identify deliberately
+untagged third-party synthetic data whose provenance has been removed.
 
-`processing/price_anomaly.py` already implements contextual, historical IQR detection on price per m². The primary segment is `province_slug + district_slug + property_type`; it falls back to `province_slug + property_type` if the primary group is too small. A new listing is intentionally excluded from its own baseline and thresholds are refreshed/cached and persisted for audit. Flagged listings are retained, not deleted. The default training policy is `FLAG`; `EXCLUDE` is opt-in.
+Regression evidence is maintained in `utils/tests/test_synthetic_safety.py`,
+`test_agent_pipeline.py` and `test_ai_results.py`; current execution results
+belong in the verification report, not inferred from test-file existence.
 
-This is a sound statistical price-anomaly baseline, but it does not yet represent all anomaly categories under one explicit status schema (data quality, duplicate, business rule, statistical price anomaly) and it has no LLM-assisted reviewer.
+## AI-derived real features
 
-## Weaknesses and compatibility concerns
+Normal structured records do not require an LLM. Enabled fallback applies only
+to required-field parsing gaps with usable source text. The external provider
+returns strict nullable JSON fields, quoted evidence and confidence. The
+worker checks schema/evidence and shared business rules; the result handler
+checks source version, provenance and business rules again before storing.
+`processing_method=ai_extraction` and bounded `ai_*` metadata retain lineage.
+Accepted real AI-derived records can become candidates under the same feature
+coverage policy; no human-approval gate is implemented.
 
-1. There are no usable coordinates or normalized address fields in the current source schema. Distance, geohash, spatial cluster, density and coordinate-based local target statistics would be fabricated or mostly missing today.
-2. The current text model is TF-IDF only. It has no offline embedding cache, provider abstraction, structured-text extraction or LLM fallback design.
-3. The raw and feature upserts use URL uniqueness, but no explicit duplicate-review metadata exists for changed/repeated listings. The raw archive is also an upsert rather than immutable event history.
-4. Price anomaly is contextual but only available when a historical segment has sufficient data. `UNAVAILABLE` must remain a normal, auditable outcome.
-5. The current train/test split is random and can overstate performance for repeated/newer listings. It is not time-aware or group-aware.
-6. Historical local price aggregates must never become model features unless fitted from the training fold only. The existing anomaly metadata is correctly not included in the model feature list.
-7. Documentation is partly stale: it describes unimplemented TTL/indexes and reports historical/example performance values as if current. The README's generic accuracy claim is especially misleading.
-8. `real_estate_features` has no consumer; keeping it is compatible but its purpose needs documentation. The legacy predictor has no RBAC and must remain private if deployed.
-9. Model artifacts currently have no recorded feature-schema version or experiment-comparison results. Existing callers rely on the API's current request fields, so additions must stay optional.
+API failures/invalid extraction are routed through the results topic to
+invalid/review storage and acknowledged Kafka DLQ, not training features.
+Successful same-URL/same-content extraction may be reused from Mongo cache.
+This is not semantic duplicate detection or a guarantee that extracted facts
+are true; evidence presence and confidence alone do not establish accuracy.
 
-## Files planned for change
+## Known limitations
 
-- `processing/kafka_to_mongo.py`: normalize optional coordinates and deterministic text enrichment; add explicit ingestion-review fields while preserving records.
-- `processing/feature_engineering.py` (new): coordinate validation and deterministic geographic features shared by normalization and inference.
-- `processing/text_enrichment.py` (new): cached, batchable deterministic text extraction plus an optional embedding-provider boundary; no secrets or network calls by default.
-- `processing/llm_review.py` (new): typed provider/reviewer abstraction with strict JSON schema validation and fail-open fallback.
-- `processing/price_anomaly.py`: integrate the existing detector into a unified review result without replacing its historical-IQR safeguards.
-- `modeling/price_model.py`, `modeling/train_model.py`, `scripts/auto_train.py`: feature-schema metadata and reproducible ablation evaluation that does not fabricate results.
-- `modeling/api.py`: optional coordinate/structured input fields and same deterministic preprocessing, without remote embedding/LLM calls in requests.
-- `processing/export_training_dataset.py`, `.env.example`, `docs/DATA_SCHEMA.md`, `docs/PRICE_ANOMALY_DETECTION.md`, `README.md`: schema/configuration/documentation alignment.
-- `utils/tests/`: focused tests for geo, text cache/extraction, LLM JSON parsing, review statuses and train/inference feature consistency.
-
-## Risk and migration strategy
-
-- All new fields will be optional. Existing raw messages, historical Mongo documents, API requests and model artifacts remain readable.
-- No external embedding/LLM provider will be enabled by default. If configured later, keys are read only from environment variables and failures return deterministic results.
-- Coordinate features will be null/unknown for the present scraper dataset. They will not manufacture points from location slugs.
-- No price-derived geographic feature will be added to the prediction model. This avoids validation/test leakage.
-- Benchmarks will run only against supplied real records. If no real dataset is available in the checkout, the implementation will save the evaluation method and report that no comparison result is available.
+The scraper currently supplies URL-derived location slugs but no trusted street
+address or coordinates, so coordinate coverage is generally missing. The raw
+collection is a latest-state upsert rather than immutable event history. The
+legacy predictor has no authentication. There is no remote embedding or LLM
+provider enabled by default, no automatic model rollback, and no temporal/group
+evaluation. External extraction is implemented but gated off by default;
+the older anomaly-review provider hook remains unconfigured. Current runtime
+and external-provider testing limitations must be read in the verification
+report. A stronger model or changed serving policy still requires a benchmark
+using real, reviewed data.

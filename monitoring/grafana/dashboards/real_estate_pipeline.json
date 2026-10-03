@@ -147,7 +147,7 @@
           "refId": "A"
         },
         {
-          "expr": "rate(model_train_duration_seconds_sum[1h]) / rate(model_train_duration_seconds_count[1h])",
+          "expr": "rate(model_train_duration_seconds_sum{job=\"trainer\"}[1h]) / rate(model_train_duration_seconds_count{job=\"trainer\"}[1h])",
           "legendFormat": "avg training time",
           "refId": "B"
         }
@@ -185,17 +185,18 @@
       },
       "targets": [
         {
-          "expr": "model_mae_vnd",
+          "expr": "model_mae_vnd{job=\"trainer\"} and on(job, instance) (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
           "legendFormat": "MAE",
           "refId": "A"
         },
         {
-          "expr": "model_rmse_vnd",
+          "expr": "model_rmse_vnd{job=\"trainer\"} and on(job, instance) (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
           "legendFormat": "RMSE",
           "refId": "B"
         }
       ],
-      "title": "Model Error",
+      "title": "Price Model Error (lower is better)",
+      "description": "Latest property-price holdout MAE/RMSE in VND from the trainer. Hidden until this trainer has completed a successful training run; processor default zeros are excluded.",
       "type": "timeseries"
     },
     {
@@ -232,12 +233,14 @@
       },
       "targets": [
         {
-          "expr": "model_sample_count",
+          "expr": "model_sample_count{job=\"trainer\"} and on(job, instance) (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
+          "instant": true,
           "legendFormat": "samples",
           "refId": "A"
         }
       ],
-      "title": "Training Samples",
+      "title": "Price Model Training Samples",
+      "description": "Sample count from the trainer's latest successful property-price training run.",
       "type": "stat"
     },
     {
@@ -274,12 +277,14 @@
       },
       "targets": [
         {
-          "expr": "model_r2",
+          "expr": "model_r2{job=\"trainer\"} and on(job, instance) (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
+          "instant": true,
           "legendFormat": "R2",
           "refId": "A"
         }
       ],
-      "title": "Model R2",
+      "title": "Price Model R2 (higher is better)",
+      "description": "Property-price holdout R2. Values may be negative and are not percent accuracy. Only successful trainer runs are shown.",
       "type": "stat"
     },
     {
@@ -316,7 +321,8 @@
       },
       "targets": [
         {
-          "expr": "time() - trainer_last_success_timestamp_seconds",
+          "expr": "time() - (trainer_last_success_timestamp_seconds{job=\"trainer\"} > 0)",
+          "instant": true,
           "legendFormat": "seconds since success",
           "refId": "A"
         }
@@ -342,6 +348,6 @@
   "timezone": "browser",
   "title": "Real Estate Pipeline",
   "uid": "real-estate-pipeline",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

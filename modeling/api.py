@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Global model cache
 _model: RealEstatePriceModel | None = None
-_model_mtime: float | None = None
+_model_mtime: tuple[int, int, int] | None = None
 _model_metadata: Dict[str, Any] | None = None
 _auth_service: AuthService = build_auth_service()
 _login_attempts: dict[str, list[float]] = {}
@@ -56,6 +56,7 @@ LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get("LOGIN_ATTEMPT_WINDOW_SECONDS"
 
 class PropertyFeatures(BaseModel):
     """Property features for prediction"""
+    model_config = ConfigDict(allow_inf_nan=False)
     
     area_m2: Optional[float] = Field(None, description="Property area in square meters")
     bedroom_count: Optional[int] = Field(None, description="Number of bedrooms")
@@ -107,12 +108,13 @@ class PropertyFeatures(BaseModel):
 
 class PredictionRequest(BaseModel):
     """Single or batch prediction request"""
-    properties: List[PropertyFeatures] = Field(..., description="List of properties to predict")
+    properties: List[PropertyFeatures] = Field(..., min_length=1, description="List of properties to predict")
     include_confidence: bool = Field(False, description="Include confidence interval in response")
 
 
 class PredictionResponse(BaseModel):
     """Single prediction response"""
+    input_index: Optional[int] = Field(None, description="Zero-based original position in a batch")
     predicted_price_vnd: float = Field(..., description="Predicted price in VND")
     predicted_price_billion_vnd: float = Field(..., description="Predicted price in billion VND")
     price_per_m2_vnd: Optional[float] = Field(None, description="Predicted price per square meter")
@@ -125,12 +127,18 @@ class PredictionResponse(BaseModel):
     latency_ms: float = Field(..., description="Prediction latency in milliseconds")
 
 
+class BatchPredictionFailure(BaseModel):
+    input_index: int
+    error: str
+
+
 class BatchPredictionResponse(BaseModel):
     """Batch prediction response"""
     predictions: List[PredictionResponse] = Field(..., description="List of predictions")
     total_count: int = Field(..., description="Total predictions made")
     successful_count: int = Field(..., description="Successful predictions")
     failed_count: int = Field(..., description="Failed predictions")
+    failures: List[BatchPredictionFailure] = Field(default_factory=list)
     total_latency_ms: float = Field(..., description="Total latency in milliseconds")
 
 
@@ -201,8 +209,8 @@ def get_model() -> RealEstatePriceModel:
     """Load model with caching and reload on file change.
 
     Caches an in-memory `RealEstatePriceModel` instance and reloads it when the
-    underlying joblib file's modification time changes. Also attempts to load
-    the most recent metadata JSON next to the model file.
+    underlying joblib file's identity, size or modification time changes.
+    Metadata belongs to this artifact; never attach a different run's metrics.
     Raises FileNotFoundError if the model artifact is missing.
     """
     global _model, _model_mtime, _model_metadata
@@ -210,26 +218,24 @@ def get_model() -> RealEstatePriceModel:
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
     
-    mtime = MODEL_PATH.stat().st_mtime
+    model_stat = MODEL_PATH.stat()
+    mtime = (model_stat.st_mtime_ns, model_stat.st_size, model_stat.st_ino)
     if _model is None or _model_mtime != mtime:
         logger.info("Loading model from %s", MODEL_PATH)
-        _model = RealEstatePriceModel.load(str(MODEL_PATH))
+        loaded = RealEstatePriceModel.load(str(MODEL_PATH))
+        metadata = dict(getattr(loaded, "metadata", None) or {})
+        # Older plain estimators can have metadata matching their versioned name.
+        # Stable legacy artifacts without embedded lineage have unknown metadata.
+        if not metadata and MODEL_PATH.stem.startswith("price_model_v"):
+            metadata_path = MODEL_PATH.with_name(MODEL_PATH.stem.replace("price_model_v", "metadata_v", 1) + ".json")
+            if metadata_path.exists():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    logger.warning("Could not read metadata for the loaded model")
+        _model = loaded
         _model_mtime = mtime
-        
-        # Try to load metadata
-        metadata_path = MODEL_PATH.parent / f"metadata_v{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        existing_metadata = sorted(
-            MODEL_PATH.parent.glob("metadata_v*.json"),
-            reverse=True
-        )
-        if existing_metadata:
-            try:
-                _model_metadata = json.loads(existing_metadata[0].read_text(encoding="utf-8"))
-            except Exception as e:
-                logger.warning("Failed to load metadata: %s", e)
-                _model_metadata = None
-        if getattr(_model, "metadata", None):
-            _model_metadata = {**(_model_metadata or {}), **_model.metadata}
+        _model_metadata = metadata or None
     
     return _model
 
@@ -416,7 +422,7 @@ async def update_user_status(
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """Check service health and model availability"""
+    """Process liveness plus model status; use /ready for prediction readiness."""
     try:
         model_exists = MODEL_PATH.exists()
         status = "ready" if model_exists else "initializing"
@@ -432,12 +438,21 @@ async def health_check():
             status=status,
             model_path=str(MODEL_PATH),
             model_exists=model_exists,
-            model_metadata=_model_metadata,
+            model_metadata=_model_metadata if status == "ready" else None,
             timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error("Health check failed: %s", e)
         raise HTTPException(status_code=500, detail="Health check failed")
+
+
+@app.get("/ready", response_model=HealthResponse, tags=["Health"])
+async def readiness_check():
+    """Return 200 only when the current artifact can actually be loaded."""
+    health = await health_check()
+    if health.status != "ready":
+        raise HTTPException(status_code=503, detail="Prediction model is not ready")
+    return health
 
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])
@@ -524,23 +539,25 @@ async def predict_batch(
         model = get_model()
         
         predictions = []
-        failed_count = 0
+        failures = []
         
         for i, property in enumerate(request.properties):
+            item_start_time = time.perf_counter()
             try:
                 record = property.model_dump(exclude_none=False)
                 prediction_result = model.predict(record)
                 
-                latency_ms = (time.time() - start_time) * 1000
+                latency_ms = (time.perf_counter() - item_start_time) * 1000
                 
                 predictions.append(
                     PredictionResponse(
+                        input_index=i,
                         predicted_price_vnd=prediction_result["predicted_price_vnd"],
                         predicted_price_billion_vnd=prediction_result["predicted_price_billion_vnd"],
                         price_per_m2_vnd=prediction_result.get("price_per_m2_vnd"),
-                        confidence_low_vnd=prediction_result.get("confidence_low_vnd"),
-                        confidence_high_vnd=prediction_result.get("confidence_high_vnd"),
-                        confidence_score=prediction_result.get("confidence_score"),
+                        confidence_low_vnd=prediction_result.get("confidence_low_vnd") if request.include_confidence else None,
+                        confidence_high_vnd=prediction_result.get("confidence_high_vnd") if request.include_confidence else None,
+                        confidence_score=prediction_result.get("confidence_score") if request.include_confidence else None,
                         feature_quality_score=prediction_result.get("feature_quality_score"),
                         explanations=prediction_result.get("explanations", []),
                         prediction_date=datetime.now(timezone.utc).isoformat(),
@@ -549,7 +566,7 @@ async def predict_batch(
                 )
             except Exception as e:
                 logger.warning("Batch prediction failed for item %d: %s", i, e)
-                failed_count += 1
+                failures.append(BatchPredictionFailure(input_index=i, error="Prediction failed"))
         
         total_latency_ms = (time.time() - start_time) * 1000
         
@@ -557,7 +574,8 @@ async def predict_batch(
             predictions=predictions,
             total_count=len(request.properties),
             successful_count=len(predictions),
-            failed_count=failed_count,
+            failed_count=len(failures),
+            failures=failures,
             total_latency_ms=total_latency_ms
         )
     except HTTPException:

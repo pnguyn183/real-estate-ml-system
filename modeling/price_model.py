@@ -8,6 +8,8 @@ from typing import Any, Dict, Iterable
 import datetime
 import os
 import shutil
+import tempfile
+import logging
 
 import joblib
 import numpy as np
@@ -24,6 +26,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 from processing.price_anomaly import get_anomaly_training_policy
+from agents.safety import real_records
 from processing.feature_engineering import GEO_CATEGORICAL_FEATURES, GEO_NUMERIC_FEATURES, enrich_geographic_features
 from processing.text_enrichment import TEXT_EMBEDDING_DIMENSIONS, enrich_text_record
 
@@ -66,6 +69,23 @@ CATEGORICAL_FEATURES = BASE_CATEGORICAL_FEATURES + [
 TEXT_FEATURE = "text_features"
 TARGET = "price_vnd"
 DEFAULT_MIN_TRAINING_RECORDS = 200
+
+
+def publish_model(source: Path, destination: Path) -> None:
+    """Readers see the complete old or new artifact, never a partial copy."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{destination.name}.", suffix=".tmp", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            with source.open("rb") as original:
+                shutil.copyfileobj(original, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def flatten_text_column(values):
@@ -212,7 +232,7 @@ class RealEstatePriceModel:
 
     def train(self, records: Iterable[Dict[str, Any]], model_path: str, metrics_path: str | None = None) -> TrainResult:
         # Train model pipeline, compute metrics, and save versioned artifacts
-        frame = build_feature_frame(records)
+        frame = build_feature_frame(real_records(records))
         if frame.empty or TARGET not in frame.columns:
             raise ValueError("Training data must include records with price_vnd.")
         if "is_model_candidate" in frame.columns:
@@ -287,7 +307,7 @@ class RealEstatePriceModel:
         self.metadata = metadata
         model_bundle = {"model": self.model, "metadata": metadata}
         joblib.dump(model_bundle, versioned_path)
-        shutil.copyfile(versioned_path, requested_path)
+        publish_model(versioned_path, requested_path)
         if metrics_path:
             metrics_path_obj = Path(metrics_path)
             metrics_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -299,10 +319,9 @@ class RealEstatePriceModel:
         # Update current model pointer (copy to stable path)
         current_path = models_dir.parent / "price_model_current.joblib"
         try:
-            shutil.copyfile(versioned_path, current_path)
-        except Exception:
-            # best-effort; not fatal
-            pass
+            publish_model(versioned_path, current_path)
+        except OSError:
+            logging.getLogger(__name__).warning("Could not update optional current-model alias %s", current_path, exc_info=True)
 
         return TrainResult(model_path=str(requested_path), sample_count=len(frame), metrics=metrics)
 
@@ -379,7 +398,7 @@ def evaluate_feature_variants(records: Iterable[Dict[str, Any]]) -> dict[str, di
     winner. It exists to produce real ablation results only when a caller supplies
     sufficient real training records.
     """
-    frame = build_feature_frame(records)
+    frame = build_feature_frame(real_records(records))
     if TARGET not in frame.columns:
         raise ValueError("Feature evaluation data must include price_vnd.")
     if "is_model_candidate" in frame.columns:

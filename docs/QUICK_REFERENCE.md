@@ -1,97 +1,58 @@
-# Quick Reference Guide
+# Quick reference
 
-## Getting Started in 5 Minutes
+For the implementation map, read [ARCHITECTURE.md](ARCHITECTURE.md). The
+commands below use the current Compose service names and ports.
 
-### Option 1: Docker
-
-```bash
-docker-compose up -d
-# Open http://localhost:3000
-```
-
-### Option 2: Local Development
+## Start
 
 ```bash
-# Terminal 1: Backend API
-python -m uvicorn modeling.api:app --reload
-
-# Terminal 2: Frontend
-cd frontend
-npm run dev
+docker compose config --quiet
+docker compose up -d
+docker compose ps
 ```
 
-## Service Endpoints
+## Service endpoints
 
-| Service | URL | Purpose |
+| Service | URL | Notes |
 | --- | --- | --- |
-| Frontend | http://localhost:3000 | Web UI |
-| API | http://localhost:8000 | REST API |
-| API Docs | http://localhost:8000/docs | Swagger UI |
-| MongoDB UI | http://localhost:8081 | Database browser |
-| Prometheus | http://localhost:9090 | Metrics |
-| Grafana | http://localhost:3001 | Dashboards |
+| Frontend | `http://localhost:3000` | React/Nginx UI |
+| FastAPI | `http://localhost:8000` | Authenticated API |
+| OpenAPI docs | `http://localhost:8000/docs` | Swagger UI |
+| Legacy predictor | `http://localhost:8002` | Host-published, unauthenticated; restrict network access |
+| Processor 1 metrics | `http://localhost:8003/metrics` | Prometheus endpoint |
+| Processor 2 metrics | `http://localhost:8004/metrics` | Same consumer group |
+| Processor 3 metrics | `http://localhost:8005/metrics` | Same consumer group |
+| Trainer metrics | `http://localhost:8001/metrics` | Prometheus endpoint |
+| AI health/metrics | `ai-agent:8006/health`, `/metrics` | Compose network only; disabled by default |
+| Stress health/metrics | `stress-agent:8007/health`, `/metrics` | Compose network only; disabled by default |
+| Mongo Express | `http://localhost:8081` | Basic auth UI |
+| Prometheus | `http://localhost:9090` | Targets/alerts/PromQL |
+| Grafana | `http://localhost:3001` | Provisioned dashboard |
 
-## Authentication Quick Reference
+## Authentication
 
-The API is protected with bearer-token authentication. `/health` is public; prediction and model endpoints require a signed-in account.
-
-Register the first admin:
+`GET /health` is public. Register/login returns a bearer token; users are stored
+in `artifacts/auth/users.json`.
 
 ```bash
 curl -X POST http://localhost:8000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"StrongPass1","full_name":"Admin"}'
-```
 
-Sign in:
-
-```bash
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"StrongPass1"}'
 ```
 
-Store the token for later examples:
-
-```bash
-TOKEN="<access_token>"
-```
-
 Role access:
 
-| Role | Access |
+| Role | Endpoints |
 | --- | --- |
 | `user` | `POST /predict` |
-| `manager` | User access, `GET /model/info`, `POST /predict/batch` |
-| `admin` | Full access, including user role and account status management |
+| `manager` | user access + `GET /model/info` + `POST /predict/batch` |
+| `admin` | all above + `/auth/users*` administration |
 
-## API Quick Reference
-
-### Health Check
-
-```bash
-curl http://localhost:8000/health
-```
-
-### Current User
-
-```bash
-curl http://localhost:8000/auth/me \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Model Info
-
-Requires `manager` or `admin`.
-
-```bash
-curl http://localhost:8000/model/info \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Predict Single Property
-
-Requires `user`, `manager`, or `admin`.
+## Prediction payload
 
 ```bash
 curl -X POST http://localhost:8000/predict \
@@ -101,173 +62,87 @@ curl -X POST http://localhost:8000/predict \
     "area_m2": 100,
     "bedroom_count": 2,
     "bathroom_count": 1,
+    "floor_count": 1,
     "property_type": "apartment",
-    "province_slug": "hanoi",
-    "district_slug": "dongda"
+    "province_slug": "ha-noi",
+    "district_slug": "dong-da"
   }'
 ```
 
-### Batch Prediction
+## Environment
 
-Requires `manager` or `admin`.
-
-```bash
-curl -X POST http://localhost:8000/predict/batch \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{
-    "properties": [
-      {
-        "area_m2": 100,
-        "bedroom_count": 2,
-        "property_type": "apartment",
-        "province_slug": "hanoi"
-      }
-    ]
-  }'
-```
-
-## Important Files
-
-| File | Purpose |
+| Area | Variables |
 | --- | --- |
-| `modeling/api.py` | REST API service and endpoint policies |
-| `modeling/auth.py` | Authentication, password hashing, token handling, RBAC |
-| `modeling/price_model.py` | ML model implementation |
-| `modeling/train_model.py` | Model training script |
-| `processing/kafka_to_mongo.py` | Data processor |
-| `scraper/kafka_producer.py` | Web scraper |
-| `frontend/src/App.tsx` | React main component |
-| `frontend/src/api/client.ts` | API client and auth token handling |
-| `DEPLOYMENT.md` | Full deployment guide |
-| `README.md` | Project overview |
+| API | `API_HOST`, `API_PORT`, `CORS_ORIGINS`, `AUTH_SECRET_KEY`, `AUTH_USERS_PATH`, `AUTH_TOKEN_EXPIRE_MINUTES`, `MODEL_PATH` |
+| MongoDB | `MONGO_URI`, `MONGO_DB` |
+| Kafka | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_RAW_TOPIC`, `KAFKA_CLEAN_TOPIC`, `KAFKA_GROUP_ID` |
+| Scraper | `SCRAPE_*` and `SCRAPE_INITIAL_*` limits, pages, timeout, delays and state files |
+| Trainer | `TRAIN_INTERVAL`, `TRAIN_RETRY_INTERVAL`, `MIN_RECORDS_FOR_TRAINING`, `PRICE_ANOMALY_TRAINING_POLICY` |
+| AI enablement | `AI_ENABLED`, `AI_FALLBACK_ENABLED`, `AI_STRESS_ENABLED` (all default `false`) |
+| External provider | `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES` |
+| AI budgets | `AI_RATE_LIMIT_PER_MINUTE`, `AI_MAX_CONCURRENT_REQUESTS`, `AI_TOTAL_BUDGET_SECONDS`, `AI_MIN_CONFIDENCE`, `AI_CIRCUIT_*` |
+| Agent routing | `KAFKA_AI_TOPIC`, `KAFKA_AI_RESULT_TOPIC`, `KAFKA_AI_DLQ_TOPIC`, `KAFKA_AI_GROUP_ID`, `KAFKA_STRESS_TOPIC`, `MONGO_STRESS_DB` |
+| Stress generation | `STRESS_ENABLED`, `STRESS_SCENARIO`, `STRESS_RUN_ID`, `STRESS_RATE_PER_SECOND`, `STRESS_MULTIPLIER`, `STRESS_DURATION_SECONDS`, `STRESS_MAX_RECORDS`, `STRESS_UNSTRUCTURED_RATIO`, `STRESS_DUPLICATE_RATIO` |
 
-## Common Commands
+Inside Compose, use `kafka:29092,kafka2:29093,kafka3:29094` and
+`mongodb:27017`; from the host use `localhost:9092,localhost:9093,localhost:9094`
+and `localhost:27017`.
 
-### Backend
+The table names application settings; Compose passes fixed values for some
+settings and interpolates others. Changing a fixed topic/database in `.env`
+alone does not change its Compose value. Keep credentials only in ignored
+`.env`, never publish resolved Compose output with secrets, and use
+`docker compose config --quiet` for a secret-safe syntax check. See
+[deployment configuration](../DEPLOYMENT.md#optional-agent-configuration).
 
-```bash
-python -m uvicorn modeling.api:app --reload
-python modeling/train_model.py
-pytest utils/tests/
-```
+## Kafka operations
 
-### Frontend
+`kafka-init` provisions seven application topics, each with three partitions,
+replication factor three and minimum ISR two:
 
-```bash
-cd frontend
-npm install
-npm run dev
-npm run build
-npm run type-check
-```
+| Topic | Producer | Consumer |
+| --- | --- | --- |
+| `real_estate_raw` | Website scraper | Three Processors |
+| `real_estate_features` | Real Processor branch | None; best-effort audit |
+| `real_estate_stress_raw` | Stress generator | Same three Processors |
+| `real_estate_stress_features` | Stress Processor branch | None; best-effort audit |
+| `real_estate_ai_input` | Processor fallback | AI worker |
+| `real_estate_ai_results` | AI worker | Same three Processors/result handler |
+| `real_estate_ai_dlq` | AI worker or result handler | No automatic replay consumer |
 
-`npm run lint` requires an ESLint config file before it can run.
-
-### Docker
-
-```bash
-docker-compose up -d
-docker-compose down
-docker-compose logs -f api
-docker-compose build --no-cache
-```
-
-## Environment Configuration
-
-### API
+Inspect the live topology and group assignment with:
 
 ```bash
-API_HOST=0.0.0.0
-API_PORT=8000
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-AUTH_SECRET_KEY=replace-with-a-long-random-secret
-AUTH_USERS_PATH=artifacts/auth/users.json
-AUTH_TOKEN_EXPIRE_MINUTES=60
+docker compose exec kafka kafka-topics --bootstrap-server kafka:29092 --describe --topic real_estate_raw
+docker compose exec kafka kafka-topics --bootstrap-server kafka:29092 --describe --topic real_estate_features
+docker compose exec kafka kafka-topics --bootstrap-server kafka:29092 --describe --topic 'real_estate_.*'
+docker compose exec kafka kafka-consumer-groups --bootstrap-server kafka:29092 --describe --group real_estate_training_pipeline --members --verbose
+docker compose exec kafka kafka-consumer-groups --bootstrap-server kafka:29092 --describe --group real_estate_ai_extraction
 ```
 
-### Database
+The three `processor*` services deliberately share `real_estate_training_pipeline`
+and subscribe to raw, stress raw and AI results: nine partitions in total.
+The typical three-member assignment is one partition per topic per worker;
+ownership is dynamic and changes on a rebalance. The separate AI group consumes
+only the three AI-input partitions. With AI disabled there are no active AI
+members (the group may be absent or retain offsets from an earlier run).
+
+Normal structured records never need the LLM. Stress records remain tagged and
+go to `real_estate_stress_db`; primary Mongo queries and model/JSON training
+also reject synthetic markers. Read [the runbook](RUNBOOK.md) before enabling
+AI routing or running the bounded mock integration test.
+
+## Validation and troubleshooting
 
 ```bash
-MONGO_URI=mongodb://localhost:27017/
-MONGO_DB=real_estate_db
+python -m compileall -q .
+pytest -q
+cd frontend && npm.cmd run build
+docker compose logs --tail=200 <service>
 ```
 
-### Kafka
-
-```bash
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_RAW_TOPIC=real_estate_raw
-KAFKA_CLEAN_TOPIC=real_estate_features
-```
-
-### Model
-
-```bash
-MODEL_PATH=artifacts/models/price_model.joblib
-```
-
-## Property Fields
-
-Useful prediction fields:
-
-- `area_m2`
-- `bedroom_count`
-- `bathroom_count`
-- `floor_count`
-- `front_width_m`
-- `road_width_m`
-- `property_type`
-- `listing_type`
-- `province_slug`
-- `district_slug`
-- `ward_slug`
-- `direction`
-- `legal`
-- `description`
-
-## Troubleshooting
-
-### API Will Not Start
-
-```bash
-docker-compose logs api
-lsof -i :8000
-```
-
-On Windows, use:
-
-```powershell
-Get-NetTCPConnection -LocalPort 8000 -State Listen
-```
-
-### Frontend Will Not Connect
-
-```bash
-curl http://localhost:8000/health
-cat frontend/.env
-```
-
-### API Returns 401 or 403
-
-- `401`: token is missing, invalid, or expired. Sign in again.
-- `403`: account is active but does not have the required role.
-
-### Docker Issues
-
-```bash
-docker-compose down -v
-docker-compose build --no-cache
-docker-compose up -d
-docker-compose ps
-```
-
-## Documentation
-
-- [README.md](../README.md) - Project overview
-- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
-- [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current implementation status
-- [API Docs](http://localhost:8000/docs) - Interactive API documentation
-
-**Last Updated**: May 31, 2026  
-**Version**: 1.0.0
+`401` means missing/invalid/expired token; `403` means insufficient role; `503`
+from prediction generally means the model artifact is missing or cannot load.
+Use `docker compose ps`, `/health`, `/metrics` and Prometheus `/targets` before
+restarting services. Use `docker compose down -v` only when intentionally
+deleting the Mongo volume.

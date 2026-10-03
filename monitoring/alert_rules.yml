@@ -55,3 +55,42 @@ groups:
         annotations:
           summary: "Database write failures detected"
           description: "Rate: {{ $value }} failures/sec"
+
+  - name: crawl_sources
+    interval: 30s
+    rules:
+      - alert: CrawlSourceMetricsUnavailable
+        expr: (source_metrics_available == 0) and on(source) (source_crawl_enabled == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Crawl metrics unavailable for {{ $labels.source }}"
+          description: "Check runtime metrics state and scheduler before relying on freshness counters."
+
+      - alert: CrawlSourceRepeatedFailures
+        expr: (increase(crawl_failure_total[2h]) >= 2) and on(source) (source_crawl_enabled == 1)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Repeated crawl failures for {{ $labels.source }}"
+          description: "Check source access, HTTP errors, parser shape, and Kafka acknowledgements."
+
+      - alert: CrawlSourceNotChecked
+        expr: (time() - source_last_checked_timestamp > 7200) and on(source) (source_crawl_enabled == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful source check for {{ $labels.source }} in two hours"
+          description: "The source has not supplied a parseable category page; check scheduler and access errors."
+
+      - alert: CrawlSourceDataStale
+        expr: (time() - source_last_success_timestamp > 172800) and on(source) (source_crawl_enabled == 1)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No valid acknowledged listing from {{ $labels.source }} in two days"
+          description: "This is data freshness, separate from successful no-change source checks."

@@ -10,14 +10,19 @@ Note: The service intentionally performs no authentication and is intended for i
 import json
 import logging
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-try:
-    from modeling.price_model import RealEstatePriceModel
-except ImportError:
-    from price_model import RealEstatePriceModel
+# When this file is launched directly (``python modeling/predict_service.py``),
+# Python only adds ``/app/modeling`` to ``sys.path``.  Add the repository root
+# so sibling packages such as ``processing`` remain importable as well.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from modeling.price_model import RealEstatePriceModel
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -28,7 +33,7 @@ HOST = os.environ.get("PREDICTOR_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PREDICTOR_PORT", "8002"))
 
 _model: RealEstatePriceModel | None = None
-_model_mtime: float | None = None
+_model_mtime: tuple[int, int, int] | None = None
 
 
 def get_model() -> RealEstatePriceModel:
@@ -36,7 +41,8 @@ def get_model() -> RealEstatePriceModel:
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
-    mtime = MODEL_PATH.stat().st_mtime
+    model_stat = MODEL_PATH.stat()
+    mtime = (model_stat.st_mtime_ns, model_stat.st_size, model_stat.st_ino)
     if _model is None or _model_mtime != mtime:
         logger.info("Loading model from %s", MODEL_PATH)
         _model = RealEstatePriceModel.load(str(MODEL_PATH))
@@ -54,9 +60,17 @@ class PredictorHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if self.path == "/health":
-            status = "ready" if MODEL_PATH.exists() else "waiting_for_model"
-            self._write_json(200, {"status": status, "model_path": str(MODEL_PATH)})
+        if self.path in {"/health", "/ready"}:
+            model_status = "waiting_for_model"
+            if MODEL_PATH.exists():
+                try:
+                    get_model()
+                    model_status = "ready"
+                except Exception:
+                    logger.exception("Model readiness check failed")
+                    model_status = "error"
+            http_status = 503 if self.path == "/ready" and model_status != "ready" else 200
+            self._write_json(http_status, {"status": model_status, "model_path": str(MODEL_PATH)})
             return
         self._write_json(404, {"error": "not_found"})
 

@@ -1,300 +1,310 @@
-# Data Schema & Validation Rules
+# Data schema and validation (implemented)
 
-## 1. KAFKA TOPIC SCHEMAS
+This is the schema implemented by `processing/kafka_to_mongo.py`, the `agents/`
+modules, `modeling/price_model.py` and the scraper. Kafka topic provisioning is explicit
+in `scripts/init_kafka_cluster.sh`; retention remains the broker default. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the full runtime flow.
 
-### Topic: `real_estate_raw` (Input from Scraper)
-**Purpose**: Raw scraped listings  
-**Retention**: 7 days  
-**Partitions**: 3 (by URL hash)  
-**Replication Factor**: 1
+## Kafka topics
+
+New crawlers emit **listing schema version 2**, defined in
+`processing/source_contract.py`. This is separate from version 1 of the AI
+request/result *envelope*. The inner AI record retains its listing version.
+
+Required identity: `source`, `source_listing_id`, `source_url`, `canonical_url`,
+`url`, `schema_version`, timezone-aware `crawl_timestamp`, `raw_payload_hash`.
+Original `price_raw`, `area_raw`, `address_raw` and extracted `raw_data` are
+preserved. Numeric values use VND/m²; unknown values are null. Canonical fields
+and source metadata survive Processor persistence and AI result handling.
+See [full mapping and parsing rules](SOURCE_MIGRATION.md).
+
+Malformed fields go to `invalid_records`. Safe partial records are excluded
+with `training_excluded=true`; schema-v2 candidates must pass required-field,
+sale, source and strict numeric checks. New invalid/pending versions invalidate
+old training eligibility by URL. Historical unversioned records are retained;
+there is no destructive database migration.
+
+### `real_estate_raw`
+
+Producer: `scraper/kafka_producer.py`. One UTF-8 JSON object per listing, keyed
+by `url`. `kafka-init` creates/migrates this topic to three partitions with
+replication factor three and minimum in-sync replicas two. Retention is broker
+default.
+
+Historical unversioned fields (still readable, no longer the crawler contract):
 
 ```json
 {
-  "url": "https://batdongsan.com.vn/....",
+  "url": "https://batdongsan.com.vn/...",
   "listing_id": "123456789",
-  "title": "Nhà đẹp tại Hà Nội",
-  "price_text": "1.5 tỷ",
-  "area_text": "100 m²",
+  "title": "...",
+  "price_text": "1.5 ty",
+  "area_text": "100 m2",
   "bedroom_text": "3",
   "bathroom_text": "2",
   "floor_text": "4",
   "front_width_text": "5m",
   "road_width_text": "10m",
-  "legal_text": "Sổ đỏ",
-  "direction_text": "Hướng Đông",
   "property_type": "apartment",
-  "listing_type": "Bán",
+  "listing_type": "Ban",
   "province_slug": "ha-noi",
   "district_slug": "dong-da",
   "ward_slug": "bach-khoa",
-  "furniture_text": "Có nội thất",
-  "project_hint": "Project ABC",
-  "description": "Mô tả chi tiết...",
-  "posted_date_text": "10 ngày trước",
+  "direction_text": "...",
+  "legal_text": "...",
+  "furniture_text": "...",
+  "project_hint": "...",
+  "description": "...",
+  "posted_date_text": "...",
   "verified": 1,
   "source": "batdongsan",
-  "location_slug": "...-tai-ha-noi",
-  "latitude": 21.0285,
-  "longitude": 105.8542,
-  "scraped_at": "2024-04-29T10:30:00Z"
+  "scraped_at": "2026-08-27T10:30:00+00:00"
 }
 ```
 
-**Validation Rules**:
-| Field | Type | Required | Validation |
-|-------|------|----------|-----------|
-| url | string | ✅ YES | Must start with https://batdongsan.com.vn |
-| listing_id | string | ✅ YES | Alphanumeric, unique |
-| title | string | ❌ NO | Max 500 chars |
-| price_text | string | ❌ NO | Contains digit + unit (tỷ/triệu) |
-| area_text | string | ❌ NO | Contains digit + "m²" |
-| property_type | string | ✅ YES | One of: house, apartment, land, villa_townhouse, shophouse, warehouse |
-| province_slug | string | ✅ YES | Valid province code |
-| verified | int | ❌ NO | 0 or 1 |
-| scraped_at | string | ✅ YES | ISO 8601 format |
+The scraper may omit optional text fields. `url` is required for useful
+processing; the processor stores the raw payload before validation.
 
----
+### `real_estate_features`
 
-### Topic: `real_estate_features` (Output from Processor)
-**Purpose**: Normalized listings ready for modeling  
-**Retention**: 30 days  
-**Partitions**: 3  
-**Replication Factor**: 1
+Producer: processor, best-effort. There is no consumer in this repository. The
+message is the normalized/audited record described below and is an extension or
+audit feed, not the trainer input. The trainer reads MongoDB `training_features`.
+The configured topic has three partitions and replication factor three
+(minimum ISR two), with broker-default retention. Actual broker state must be
+verified separately; see [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+### Agent topics
+
+All five additional topics are explicitly provisioned with three partitions,
+replication factor three and `min.insync.replicas=2`; no retention override is
+configured. They use the existing cluster, not another broker deployment.
+
+| Topic | Producer | Consumer/group | Contract |
+| --- | --- | --- | --- |
+| `real_estate_stress_raw` | Stress agent | Same three Processors / `real_estate_training_pipeline` | Tagged raw synthetic JSON; key is a reserved synthetic URL |
+| `real_estate_stress_features` | Processor stress branch | None | Best-effort normalized/invalid audit JSON; not training input |
+| `real_estate_ai_input` | Processor fallback branch | AI worker / `real_estate_ai_extraction` | Request envelope below; key is original URL |
+| `real_estate_ai_results` | AI worker | Same three Processors / `real_estate_training_pipeline` | Original envelope plus success/failure extraction result; key is URL |
+| `real_estate_ai_dlq` | AI worker or Processor result handler | No automatic consumer | Failure envelope with `schema_version`, `event_id`, `error_code`, `failed_at`, `input`; malformed bytes are base64 |
+
+The Processor group subscribes to raw, stress raw and AI results (nine
+partitions total). The separate AI group consumes only AI input (three).
+
+### AI request and result envelopes
+
+Requests contain the untouched raw `record`, a source-version digest and an
+explicit database origin. The following is illustrative, not a publishable
+event: the actual ID must equal `agent_event_id(record)`.
 
 ```json
 {
-  "url": "https://...",
-  "listing_id": "123456789",
-  "title": "Nhà đẹp tại Hà Nội",
-  "property_type": "apartment",
-  "listing_type": "Bán",
-  "province_slug": "ha-noi",
-  "district_slug": "dong-da",
-  "ward_slug": "bach-khoa",
-  "location_slug": "...",
-  "direction": "Hướng Đông",
-  "legal": "Sổ đỏ",
-  "furniture": "Có nội thất",
-  "project_hint": "Project ABC",
-  "description": "...",
-  "verified": 1,
-  "posted_date_text": "10 ngày trước",
-  "raw_price_text": "1.5 tỷ",
-  "raw_area_text": "100 m²",
-  "raw_bedroom_text": "3",
-  "raw_bathroom_text": "2",
-  "raw_floor_text": "4",
-  "raw_front_width_text": "5m",
-  "raw_road_width_text": "10m",
-  "area_m2": 100.0,
-  "bedroom_count": 3,
-  "bathroom_count": 2,
-  "floor_count": 4,
-  "front_width_m": 5.0,
-  "road_width_m": 10.0,
-  "price_vnd": 1500000000,
-  "price_per_m2_vnd": 15000000,
-  "latitude": 21.0285,
-  "longitude": 105.8542,
-  "geo_grid_2dp": "21.03:105.85",
-  "geo_coordinate_status": "VALID",
-  "has_target_price": true,
-  "text_features": "Nhà đẹp | apartment | ha-noi | ...",
-  "text_embedding": [0.0, 0.12],
-  "text_embedding_provider": "local_hashing_v1",
-  "text_embedding_dimension": 32,
-  "text_content_hash": "sha256...",
-  "extracted_bedrooms": 3,
-  "extracted_bathrooms": null,
-  "extracted_direction": null,
-  "extracted_furnishing": null,
-  "extracted_legal_status": "redbook",
-  "extracted_amenity_count": 0,
-  "listing_review_status": "NORMAL",
-  "is_anomaly": false,
-  "anomaly_type": null,
-  "anomaly_types": [],
-  "anomaly_score": null,
-  "anomaly_reason": null,
-  "detection_method": "none",
-  "detected_at": "2024-04-29T10:35:00Z",
-  "llm_review_status": "SKIPPED",
-  "source": "batdongsan_verified",
-  "scraped_at": "2024-04-29T10:30:00Z",
-  "updated_at": "2024-04-29T10:35:00Z",
-  "feature_coverage_score": 9,
-  "is_model_candidate": true
+  "schema_version": 1,
+  "origin": "real",
+  "event_id": "<sha256-of-source-record>",
+  "requested_at": "<UTC ISO timestamp>",
+  "record": {
+    "url": "https://batdongsan.com.vn/...",
+    "description": "Bán căn hộ 70 mét vuông, giá năm tỷ đồng."
+  }
 }
 ```
 
----
+`origin` is `real` or `stress`. Stress envelopes must retain synthetic markers
+and a URL beginning `https://synthetic.invalid/`; real envelopes reject
+synthetic markers. `event_id` hashes the source object excluding Mongo `_id`
+and `_agent_event_id`. Timestamp changes may change the event ID; a separate
+content cache permits reuse without another provider call.
 
-## 2. MONGODB COLLECTIONS
+Results retain `schema_version`, `origin`, `event_id` and the original
+`record`, adding `result`:
 
-### Collection: `listings_raw`
-**Database**: real_estate_db  
-**Purpose**: Archive of all raw scraped data  
-**TTL**: 90 days  
-**Indexes**: 
-- `url` (unique)
-- `scraped_at` (for retention)
-
-```
-Document structure: Same as real_estate_raw Kafka topic
-```
-
-### Collection: `training_features`
-**Database**: real_estate_db  
-**Purpose**: Normalized data for model training  
-**TTL**: 365 days  
-**Indexes**:
-- `url` (unique)
-- `price_vnd`
-- `price_per_m2_vnd`
-- `property_type`
-- `province_slug`
-- `district_slug`
-- `is_model_candidate`
-- `feature_coverage_score`
-- `updated_at` (for time-based queries)
-
-```
-Document structure: Same as real_estate_features Kafka topic
+```json
+{
+  "status": "success",
+  "record": {
+    "url": "https://batdongsan.com.vn/...",
+    "description": "Bán căn hộ 70 mét vuông, giá năm tỷ đồng.",
+    "price_text": "5.0 tỷ",
+    "area_text": "70.0 m2",
+    "property_type": "apartment"
+  },
+  "confidence": 0.9,
+  "provider": "openai_compatible",
+  "model": "<configured-model>",
+  "error_code": null,
+  "attempts": 1,
+  "duration_seconds": 1.2
+}
 ```
 
----
+Terminal result status is `success`, `failed` or `disabled`; failures may omit
+`record`/provider metadata and contain a bounded machine-readable error code.
+The result handler accepts only extraction fields and preserves source URL,
+existing parseable structured values and synthetic provenance. It normalizes
+and validates again before Mongo feature writes. Stale source versions are
+recorded as stale receipts without intentionally overwriting newer data.
 
-## 3. MODEL INPUT FEATURES
+### External extraction schema
 
-### Numeric Features (6)
-| Feature | Type | Range | Unit | Validation |
-|---------|------|-------|------|-----------|
-| area_m2 | float | 5 - 10,000 | m² | Must be > 0 |
-| bedroom_count | int | 0 - 10 | count | >= 0 |
-| bathroom_count | int | 0 - 10 | count | >= 0 |
-| floor_count | int | 0 - 50 | count | >= 0 |
-| front_width_m | float | 0 - 100 | meter | >= 0 |
-| road_width_m | float | 0 - 100 | meter | >= 0 |
+The model returns one JSON object with `fields`, `confidence` and `evidence`;
+it does not return the Kafka envelope. `agents/extraction.py` validates it with
+strict Pydantic schemas (`extra="forbid"`). Nullable `fields` are:
 
-### Categorical Features (8)
-| Feature | Type | Valid Values | Notes |
-|---------|------|-------|-------|
-| property_type | string | house, apartment, land, villa_townhouse, shophouse, warehouse | Required |
-| direction | string | hướng_đông, hướng_tây, ... | 9 directions total |
-| legal | string | sổ_đỏ, sổ_hồng, ... | 5 types |
-| listing_type | string | Bán, Cho thuê | 2 types |
-| province_slug | string | ha-noi, ho-chi-minh, ... | 63 provinces |
-| district_slug | string | dong-da, thanh-xuan, ... | Variable per province |
-| ward_slug | string | bach-khoa, ngoc-khanh, ... | Variable per district |
-| project_hint | string | Project name | Max 200 chars, optional |
+- `price_vnd` (positive, at most 500 billion), `area_m2` (positive, at most
+  10,000), `front_width_m`, `road_width_m` (positive finite numbers);
+- `bedroom_count`, `bathroom_count`, `floor_count` (integers from 0 to 100);
+- `property_type` (`apartment`, `house`, `land`, `villa_townhouse`, `shophouse`,
+  `office`, `warehouse`, `other`), `listing_type` (`sell`, `rent`, `other`);
+- `direction`, `legal`, `furniture`, `province`, `district`, `address`.
 
-### Text Feature (1)
-| Feature | Type | Example |
-|---------|------|---------|
-| text_features | string | "Nhà đẹp \| apartment \| ha-noi \| ... " (pipe-separated) |
+Confidence must be finite, between zero and one, and meet `AI_MIN_CONFIDENCE`
+(default 0.75). Each newly applied value needs a literal quotation from the
+allowed source text. Locations also need a matching location phrase; the
+model must not infer a province from a district. Missing values stay absent or
+null. These checks do not prove a model's numeric interpretation is correct.
+URL, title, source text and provenance are not generated by the model. There
+is no LLM-generated coordinate/currency schema separate from the existing VND
+pipeline. Numeric fields are adapted to the existing raw `*_text` fields, then
+the existing parser remains authoritative.
 
-### Optional geographic and enriched-text features
+## Normalized feature document
 
-- `latitude`/`longitude` are accepted only when supplied by an upstream source and within WGS84 bounds. The current scraper does not produce them; missing coordinates remain null with `geo_coordinate_status=MISSING`.
-- `geo_grid_2dp` is a non-target-derived, two-decimal-degree grid key. It is null without valid coordinates. No distance, geocoding, spatial cluster or local target-price statistic is fabricated from location slugs.
-- `text_embedding` is a deterministic 32-dimensional local hashing vector built from listing text. Ingestion caches it by SHA-256 text hash in a local SQLite cache. It makes no API request and no secret is required.
-- Structured text fields are populated only when their pattern is explicitly present in title/description/metadata. They do not overwrite scraper-provided structural fields.
-- `listing_review_status` is `NORMAL`, `SUSPICIOUS`, or `INVALID`. Raw listings are retained in all cases; `llm_review_status` is `DISABLED` unless an optional provider is explicitly configured.
+The processor writes real normalized documents to `real_estate_db` and tagged
+synthetic documents to `real_estate_stress_db`, never mixing their feature
+collections or anomaly baselines.
+Raw text is retained in `raw_*` fields; parsed fields are numeric where possible.
 
-### Target Variable
-| Feature | Type | Range | Unit |
-|---------|------|-------|------|
-| price_vnd | float | 100M - 100B | Vietnamese Đồng |
+| Group | Fields |
+| --- | --- |
+| Identity/source | `url`, `listing_id`, `source`, `scraped_at`, `updated_at` |
+| Location/property text | `title`, `description`, `property_type`, `listing_type`, `province_slug`, `district_slug`, `ward_slug`, `location_slug`, `direction`, `legal`, `furniture`, `project_hint`, `posted_date_text`, `verified` |
+| Raw values | `raw_price_text`, `raw_area_text`, `raw_bedroom_text`, `raw_bathroom_text`, `raw_floor_text`, `raw_front_width_text`, `raw_road_width_text` |
+| Parsed values | `price_vnd`, `area_m2`, `bedroom_count`, `bathroom_count`, `floor_count`, `front_width_m`, `road_width_m`, `price_per_m2_vnd`, `has_target_price` |
+| Enrichment | `text_features`, `text_embedding` (32-dimensional local hash), `text_embedding_provider`, `text_embedding_dimension`, `text_content_hash`, structured `extracted_*` fields, `latitude`, `longitude`, `geo_grid_2dp`, `geo_coordinate_status` |
+| Review/candidate | `feature_coverage_score`, `listing_fingerprint`, `listing_review_status`, `validation_errors`, `is_model_candidate`, anomaly metadata and `llm_review_status` |
+| Synthetic provenance | `source_type`, `is_synthetic`, `generated_by`, `scenario`, `run_id`, `original_record_id` |
+| AI lineage | `_agent_event_id`, `processing_method`, `ai_status`, `ai_attempted`, `ai_event_id`, `ai_provider`, `ai_model`, `ai_confidence`, `ai_error_code`, `ai_attempts`, `ai_duration_seconds`, `ai_completed_at`; request return metadata can include `ai_requested_at` |
 
----
+Coordinates are accepted only when supplied and within WGS84 bounds. The
+current scraper normally provides no coordinates, so geographic status is
+usually `MISSING`; no geocoding is performed.
 
-## 4. MODEL CANDIDATE CRITERIA
+## Validation and candidate rule
 
-A listing is marked as `is_model_candidate = true` if:
-1. ✅ `has_target_price` = true (price_vnd > 0)
-2. ✅ `area_m2` > 0
-3. ✅ `property_type` is not null
-4. ✅ `feature_coverage_score` >= 5 (at least 5 out of 10 key fields populated)
+`validate_normalized_record()` rejects a record only for a missing URL, invalid
+or non-finite numeric values, non-positive price/area, price above 500 billion
+VND, area above 10,000 m2, or a price-per-m2 inconsistency greater than 5%.
+Invalid records are upserted into `invalid_records`; raw records are retained.
 
-**Current distribution** (from quality reports):
-- ~60% of scraped listings are candidates
-- ~25% lack price
-- ~15% lack area or property type
+`is_model_candidate` is true when:
 
----
+1. `price_vnd > 0` (`has_target_price`),
+2. `area_m2 > 0`,
+3. `property_type` is present,
+4. `feature_coverage_score >= 5` across area, price, rooms, dimensions and
+   location/property fields, and
+5. the record is not synthetic.
 
-## 5. DATA QUALITY RULES
+Ordinary validation allows absent price/area fields, which makes a record
+non-candidate rather than necessarily invalid. When fallback is enabled, or a
+record is an AI result, extraction additionally requires usable price, area
+and property type. Missing only optional bedroom/bathroom/location fields does
+not automatically trigger AI. Parser type exceptions become invalid records;
+they are not automatically delegated to the LLM.
 
-### Outlier Detection
-| Rule | Threshold | Action |
-|------|-----------|--------|
-| Price too low | < 100M VND | Flag as outlier, exclude from training |
-| Price too high | > 500B VND | Flag as outlier, exclude from training |
-| Area too small | < 5 m² | Flag as outlier, exclude |
-| Area too large | > 10,000 m² | Flag as outlier, exclude |
-| Price per m² too low | < 1M VND/m² | Flag as outlier |
-| Price per m² too high | > 1B VND/m² | Flag as outlier |
+`agents/safety.py` recognizes `is_synthetic` values `true`, `"true"`, `"True"`
+or `1`; `source_type` values `synthetic`, `stress_agent`, `stress`, `test`;
+`generated_by=stress_agent`; and reserved synthetic URL prefixes. Automatic
+and manual Mongo queries apply `real_data_query()`. The model's `train()` and
+feature-variant evaluator apply `real_records()` before building features,
+protecting manual JSON as well. This remains enforced under every anomaly
+training policy.
 
-### Missing Data Rules
-| Field | Missing Rate | Action |
-|-------|-------|--------|
-| price_vnd | > 30% | ALERT, may affect model |
-| area_m2 | > 30% | ALERT, may affect model |
-| property_type | > 10% | ALERT, training data invalid |
-| description | > 50% | OK (text features optional) |
+The implemented generator uses `source_type="stress_agent"`,
+`is_synthetic=true`, `generated_by="stress_agent"` and
+`https://synthetic.invalid/<run_id>/...` URLs. Raw events also contain
+`generated_at`; normalized lineage uses the explicit allowlist above and does
+not copy every raw key. Ground-truth expected values live in the ignored
+stress run files, not as fields for the AI to read.
 
-### Freshness Rules
-| Check | Threshold | Alert Level |
-|-------|-----------|-------------|
-| Data age | > 30 days | WARNING |
-| Last update | > 24 hours | WARNING |
-| Model age | > 7 days | CRITICAL |
-| Training data freshness | > 30 days | CRITICAL |
+Price anomaly metadata comes from contextual IQR over `price_per_m2_vnd`; it
+does not automatically delete or exclude the record. Trainer inclusion also
+honors `PRICE_ANOMALY_TRAINING_POLICY`.
 
----
+## MongoDB collections and indexes
 
-## 6. DATA LINEAGE
+Collections created by the processor are:
 
+- `listings_raw`: latest raw payload per URL (unique `url` index; not immutable
+  event history and no TTL index).
+- `training_features`: latest normalized feature per URL (unique `url` plus
+  indexes on price, location, candidate, coverage and fingerprint fields).
+- `invalid_records`: normalized records that fail validation.
+- `dlq_raw`: payloads whose processing/database path failed.
+- `price_anomaly_thresholds`: persisted IQR baselines.
+- `offset_checkpoint`: committed Kafka group/topic/partition checkpoints.
+
+The same collection names are used in the isolated stress database. Agent
+state is written in the database chosen by validated origin:
+
+- `ai_extractions`: `_id=event_id`, original URL, extraction result,
+  `extracted`/`published` state and outcome. Source-version checks may also
+  record `completed`/`stale` state.
+- `ai_response_cache`: `_id` hashes origin, URL, allowed text/raw fields,
+  provider, model, minimum confidence and schema version; stores reusable
+  successful extraction results. It is not a fuzzy duplicate index.
+- `ai_result_receipts`: `_id=event_id`, completed outcome/origin/URL/timestamp,
+  suppressing repeated completed result application.
+- `ai_failures`: `_id=event_id`, source record, origin, error and non-candidate
+  marker for result failures.
+
+Mongo's built-in unique `_id` index backs those agent keys. No TTL index or
+automatic cache/DLQ cleanup is configured. `invalid_records` is URL-upserted
+but has no explicit unique URL index; it should not be described as an
+immutable or transactionally deduplicated log. The feature fingerprint index
+is non-unique, and its digest includes URL, so cross-URL near duplicates are
+not automatically merged.
+
+Mongo data persists in the Compose named volume `mongo_data`.
+
+## Model feature schema
+
+Target: `price_vnd`, transformed with `log1p` during training and converted
+back with `expm1` for predictions.
+
+Base numeric fields: `area_m2`, `bedroom_count`, `bathroom_count`,
+`floor_count`, `front_width_m`, `road_width_m`.
+
+Base categorical fields: `property_type`, `direction`, `legal`, `listing_type`,
+`province_slug`, `district_slug`, `ward_slug`, `project_hint`.
+
+When enabled (the current default), the model also uses deterministic geographic
+fields, `extracted_bedrooms`, `extracted_bathrooms`,
+`extracted_amenity_count`, 32 local text-embedding columns,
+`extracted_direction`, `extracted_furnishing`, `extracted_legal_status`, and
+the `text_features` TF-IDF column. Missing numeric/categorical values are
+imputed by the sklearn pipeline; unknown categories are ignored.
+
+## Storage lineage
+
+```text
+batdongsan HTML -> real_estate_raw -> existing Processors
+  -> real_estate_db.listings_raw -> normalize/enrich/validate
+  -> real_estate_db.training_features -> real-only candidate query
+  -> model-level synthetic exclusion -> trained artifact -> FastAPI/frontend
+
+difficult source + enabled routing -> real_estate_ai_input
+  -> ai-agent -> external HTTPS API or successful response cache
+  -> schema/evidence/business validation -> real_estate_ai_results
+  -> existing Processors/result handler -> correct origin database
+  -> valid features OR invalid_records + ai_failures + acknowledged ai_dlq
+
+stress-agent -> real_estate_stress_raw -> same Processors
+  -> real_estate_stress_db (AI branch separately opt-in)
+  -> synthetic non-candidates; NO primary training path
 ```
-batdongsan.com.vn
-    ↓ [Scraper + Kafka]
-real_estate_raw (Kafka topic + MongoDB collection)
-    ↓ [Processor + Kafka → MongoDB]
-training_features (Kafka topic + MongoDB collection)
-    ↓ [Model Training]
-price_model.joblib + metrics.json
-    ↓ [Serving]
-Predictions (CLI + API)
-```
 
----
-
-## 7. VERSIONING STRATEGY
-
-### Data Versioning
-```
-Version Format: YYYYMMDD_HHmmss_commit_hash
-
-Example:
-- listings_raw_v20240429_103000_abc123f.parquet
-- training_features_v20240429_153000_def456g.parquet
-```
-
-### Model Versioning
-```
-Naming: price_model_v{version}_{date}_{status}.joblib
-
-Example:
-- price_model_v1_20240429_production.joblib
-- price_model_v2_20240430_staging.joblib
-- price_model_v2_20240430_dev.joblib
-```
-
----
-
-## 8. ENCODING STANDARDS
-
-- **Text Encoding**: UTF-8 (for Vietnamese characters)
-- **Date Format**: ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)
-- **Number Format**: Float64 for prices, Int32 for counts
-- **String Case**: snake_case for field names, lowercase for enum values
+There are no Parquet datasets, physical Bronze/Silver/Gold directories or
+Spark jobs in the current runtime. `processing/export_training_dataset.py` is a
+manual export utility, not a pipeline stage.
