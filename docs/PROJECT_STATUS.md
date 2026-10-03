@@ -1,9 +1,8 @@
 # Project status and verification evidence
 
-For the 2026-10-03 main-branch stress/extraction baseline and verification, see
-[BAO_CAO_GIANG_VIEN.md](BAO_CAO_GIANG_VIEN.md). Real Gemini
-request/response and final-storage evidence from 2026-09-24 is documented in
-[BAO_CAO_GIANG_VIEN.md](BAO_CAO_GIANG_VIEN.md). The credentials/blocker statements
+For the current main-branch stress/extraction baseline, see
+[README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+The credentials/blocker statements
 below describe the dated September 9–10 experiments, not today's configuration.
 
 Agent-pipeline verification: 2026-09-09. Source-trial follow-up: 2026-09-10.

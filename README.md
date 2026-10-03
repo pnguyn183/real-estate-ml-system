@@ -2,7 +2,7 @@
 
 The `main` branch is the reporting baseline for the property-price pipeline and
 its two optional agents: **stress generation** and **AI extraction**. See the
-[lecturer report](docs/BAO_CAO_GIANG_VIEN.md) for their scope and verification.
+[architecture](docs/ARCHITECTURE.md) for their scope and integration.
 Traffic regulation and Docker resource-control development belong on `dev` and
 are not included in this baseline.
 
@@ -53,8 +53,8 @@ For the complete implementation map and detailed Mermaid diagrams, see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [flow_diagram.md](flow_diagram.md).
 
-See the [actual Gemini input/output evidence](docs/BAO_CAO_GIANG_VIEN.md)
-before a demo.
+Use the [Gemini pipeline verifier](scripts/verify_gemini_pipeline.py) to record
+actual provider input/output and final-storage evidence before a demo.
 One synthetic record was verified through the real Gemini API on 2026-09-24;
 this does not establish dataset-wide extraction accuracy. The earlier
 [verification history](docs/PROJECT_STATUS.md) remains dated historical evidence.

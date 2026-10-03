@@ -37,7 +37,7 @@ measured history.
 
 These are **property-price** metrics. Extraction outcomes and stress delivery
 are shown separately in Agent Operations; price R² does not measure either
-agent's effectiveness. See [the two-agent report](BAO_CAO_GIANG_VIEN.md).
+agent's effectiveness.
 
 The agent operations dashboard contains AI/stress panels, and the source
 ingestion dashboard contains crawl quality, access and freshness metrics. API

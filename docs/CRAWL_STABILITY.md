@@ -158,7 +158,3 @@ lý độc lập; không dùng số liệu giả hay giảm chuẩn kiểm tra �
 | `DEPLOYMENT.md` | Cập nhật mặc định 10 tin/một trang mỗi nguồn và giữ checkpoint |
 | `docs/ERROR_HANDLING_STRATEGY.md` | Cập nhật ACK, timeout từng nguồn, lịch retry và metrics |
 | `docs/CRAWL_STABILITY.md` | Bằng chứng kiểm tra, giới hạn kết luận và cách kiểm chứng lại |
-
-Báo cáo hai agent và bằng chứng extraction được trình bày tại
-[BAO_CAO_GIANG_VIEN.md](BAO_CAO_GIANG_VIEN.md), với phạm vi kiểm chứng và giới hạn
-kết luận được ghi riêng cho từng lần chạy.

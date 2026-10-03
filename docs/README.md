@@ -8,7 +8,6 @@ or product targets; target values are not reported as achieved runtime results.
 
 ## Start here
 
-- [`BAO_CAO_GIANG_VIEN.md`](BAO_CAO_GIANG_VIEN.md) - main-branch report for the stress/extraction baseline, evidence and checks.
 - [`../flow_diagram.md`](../flow_diagram.md) - normal, AI fallback and synthetic-isolation visual flows.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) - implementation/configuration map and technical details.
 - [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md) - repository map and component entry points.
