@@ -599,7 +599,7 @@ Stress controller hiện tại không dùng model ML để dự đoán traffic. 
 
 | Hướng đề xuất | Trạng thái | Bằng chứng hiện có | Phần còn thiếu và lý do |
 |---|---|---|---|
-| Time-series forecasting bằng Random Forest/XGBoost/LSTM | **Một phần** | `research/benchmark.py` đã có horizon 300/600 giây, lag, rolling và đặc trưng thời gian; Random Forest và XGBoost đã có trong benchmark | Dữ liệu hiện chỉ khoảng 285 giây/60 observations, nên cả horizon 5 phút và 10 phút đều `insufficient_data`. Forecast chưa nối vào `research/run_experiment.py`, chưa đưa `predicted_traffic` vào quyết định limit và chưa có R²/MAE/RMSE traffic hợp lệ. LSTM chưa triển khai vì chưa có chuỗi lịch sử đủ dài. |
+| Time-series forecasting bằng Random Forest/XGBoost/LSTM | **Một phần** | `research/benchmark.py` đã có horizon 300/600 giây, lag, rolling và đặc trưng thời gian; Random Forest và XGBoost đã có trong benchmark. Đã có công cụ thu theo phiên `research/collect_session.py`; xem cập nhật bên dưới | Kết quả `insufficient_data` trước đây áp dụng cho tập khoảng 285 giây/60 observations, không phải tổng dữ liệu hiện có. Các phiên mới cần audit và đánh giá chronological riêng; chưa có kết quả forecast mới trong lần khắc phục này. Forecast chưa nối vào `research/run_experiment.py`, chưa đưa `predicted_traffic` vào quyết định limit. LSTM chưa được triển khai. |
 | Q-Learning/DQN | **Chưa triển khai** | Chưa có Q-table, reward, policy, replay buffer, epsilon-greedy hoặc training episodes | Cần nhiều stress episodes, reward ổn định và môi trường an toàn để thử action. DQN hiện là quá phức tạp so với lượng dữ liệu hiện có; chưa thể chứng minh agent đã tự học chiến lược. |
 | Clustering/phân loại tải nhẹ-trung bình-nặng | **Chưa triển khai dưới dạng clustering** | Stress profile có các mức `normal/medium/high`, nhưng đây chỉ là hệ số sinh tải, không phải cluster học từ telemetry | Chưa có K-Means/cluster model, cluster ID hoặc state light/medium/heavy được dùng trong quyết định runtime. Có thể bổ sung rule-based load classification trước, nhưng chưa được tính là clustering. |
 | Reactive rate limiting | **Đã triển khai** | `agents/traffic_control.py`, `research/run_experiment.py`, `actions.jsonl` và v4 report | Cơ chế phản ứng sau khi quan sát lag/CPU/RAM/latency vượt ngưỡng; chưa phải predictive control. |
@@ -607,6 +607,29 @@ Stress controller hiện tại không dùng model ML để dự đoán traffic. 
 Vì vậy, trạng thái hiện tại là **reactive traffic control đã hoạt động; forecasting mới dừng ở benchmark; Q-Learning/DQN và clustering chưa có**. Prototype forecasting local chưa được tính là tính năng hoàn tất vì chưa được nối vào runner, chưa có dữ liệu đủ dài và chưa có test thực nghiệm end-to-end.
 
 Để hoàn tất hướng forecasting, cần thu thập telemetry liên tục nhiều giờ hoặc nhiều ngày, tạo đủ cặp nhãn 5/10 phút, đánh giá XGBoost/Random Forest theo chronological holdout, rồi nối `predicted_traffic` vào controller với log lý do `predictive_congestion`. Q-Learning chỉ nên xem xét sau khi có nhiều episode và baseline predictive ổn định; clustering có thể bổ sung như lớp phân loại trạng thái, nhưng không thay thế forecasting.
+
+Cập nhật kiểm tra ngày 01/10/2026: phiên
+`session-20260928T072430.833035Z-08e08828` đã lưu 435 observations,
+69.476 record được Kafka xác nhận; history audit ghi đoạn khỏe liên tục dài
+2.130 giây (khoảng 35,5 phút). Phiên đặt 3 giờ nhưng kết thúc `safety_stopped`;
+không được tính là đã thu đủ 3 giờ hoặc đã hoàn thành hướng forecasting.
+Bằng chứng: [session.json](../runtime/research/traffic-sessions/session-20260928T072430.833035Z-08e08828/session.json)
+và [history_audit.json](../runtime/research/traffic-sessions/session-20260928T072430.833035Z-08e08828/history_audit.json).
+
+Các phiên lỗi sau đó có bằng chứng áp lực bộ nhớ VM Docker/WSL: log kernel ghi
+lỗi cấp phát 512 KiB, khoảng 61,6 MiB trang nhớ trống và swap 2 GiB đã dùng hết,
+trùng khoảng thời gian Kafka/Docker/HTTP timeout. RAM 58–60% trong collector cũ
+chỉ đo nhóm container được chọn, không phản ánh toàn VM. Chi tiết và hash log
+nằm trong [telemetry-diagnosis-20261001.json](../runtime/research/telemetry-diagnosis-20261001.json).
+Chưa xác định riêng service nào gây áp lực, và đây không phải chẩn đoán lỗi phần cứng.
+
+Bản sửa bổ sung đo bộ nhớ/swap toàn VM, tạm ngừng phát tải khi telemetry gặp lỗi
+transport có thể phục hồi, retry có giới hạn trước khi phát tải, và `--lean` để
+người dùng chủ động tạm dừng dịch vụ phụ trong phiên rồi khôi phục. Mẫu lỗi vẫn
+được lưu và loại khỏi cửa sổ train. Hướng dẫn tại [TRAFFIC_SESSIONS.md](TRAFFIC_SESSIONS.md).
+Docker Engine chưa hoạt động khi kiểm tra ngày 01/10 nên bản sửa mới **chưa được
+xác minh bằng phiên Kafka thực tế dài giờ**; không suy ra độ ổn định hoặc cải thiện
+forecast chỉ từ kiểm thử phần mềm.
 
 ## 12. Thiết lập và tái lập kiểm chứng Gemini
 

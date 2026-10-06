@@ -6,6 +6,14 @@ admission control**. The price API below remains the legacy application. See
 [reproducible research commands](research/README.md), and
 [measured findings and remaining gaps](docs/LECTURER_RESEARCH_REPORT.md).
 
+On `dev`, the [LLM feedback agent](docs/LLM_FEEDBACK_CONTROL.md) now chooses
+ingress rate, training permission and bounded CPU/RAM changes from observed
+metrics. It can persist verified allocations in `docker-compose.yml` and use a
+configured fallback model. Start with
+`python -m agents.control_agent --observe-only --once`; live execution requires
+the documented control-aware deployment.
+The two-agent reporting baseline on `main` is maintained separately.
+
 Python/Kafka/MongoDB/scikit-learn pipeline with an authenticated FastAPI API and
 React frontend. The supported deployment is a single-host Docker Compose stack
 for local development and validation. Kafka runs as three ZooKeeper-mode
@@ -243,6 +251,37 @@ and a train/test split with
 an sklearn preprocessing pipeline and Ridge, HistGradientBoosting and SGD voting
 regressors over a log-transformed target. It writes versioned joblib/metadata and
 the stable model copy under `artifacts/models/`.
+
+## Collect traffic history when your laptop is available
+
+Run a controlled session for a duration you choose. Docker/Kafka/processors must
+already be running. Each session records a variable synthetic workload through
+the real pipeline; it does not claim to measure natural crawling demand.
+
+```powershell
+# First validate the memory-saving mode for 20 minutes.
+python -m research.collect_session start --minutes 20 --lean
+# After checking that session's quality, choose a longer session.
+python -m research.collect_session start --hours 2 --lean
+# From a second terminal:
+python -m research.collect_session status
+python -m research.collect_session stop
+```
+
+Use `--minutes 90` for a different duration or `--dry-run` to preview. The
+PowerShell equivalent is `.\scripts\traffic_session.ps1 -Hours 2 -Lean`; Python
+does not require changing PowerShell execution policy. Ctrl+C requests a graceful
+stop. Duration covers offered load; preflight and draining take additional time.
+Results stay in `runtime/research/traffic-sessions/`.
+
+`--lean` temporarily stops optional services, including UI/API, crawling/training
+and agents, and restores the same previously-running containers when the session
+exits. The core measured pipeline stays running. Omit this opt-in flag to preserve
+all service states. Sessions now monitor VM RAM/swap as well as selected-container
+RAM, and pause admission during bounded transport recovery. The October 1 fixes
+still need a new Kafka runtime trial because Docker Engine was unavailable during
+validation; earlier short successful sessions do not prove long-run stability.
+See [session controls, quality checks and multi-session export](docs/TRAFFIC_SESSIONS.md).
 
 ## Development checks
 

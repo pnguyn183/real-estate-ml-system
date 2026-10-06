@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping
 
 from agents.generator import ListingGenerator, SCENARIOS, SEEDS
 from agents.stress_metrics import StressMetrics
+from agents.runtime_policy import RateGate, RuntimePolicy
 
 LOG = logging.getLogger(__name__)
 
@@ -180,12 +181,23 @@ def run_once(config: StressConfig, metrics: StressMetrics, stop: Event,
                                      config.unstructured_ratio, load_templates(config))
         started = time.monotonic()
         next_due = started
+        control = RuntimePolicy.from_env()
+        gate = RateGate(control, config.topic)
+
+        def requested_rate():
+            burst = config.scenario == "burst" and time.monotonic() - started < config.burst_duration
+            return config.burst_rate * config.multiplier if burst else config.effective_rate
+
         with (run_dir / "ground_truth.jsonl").open("x", encoding="utf-8") as truth:
             for index in range(config.max_records):
                 now = time.monotonic()
                 if stop.is_set() or now - started >= config.duration:
                     break
-                if now < next_due and stop.wait(min(next_due - now, max(config.duration - (now - started), 0))):
+                if control.applies(config.topic):
+                    if not gate.wait(stop, deadline=started + config.duration,
+                                     requested_rate=requested_rate, poll=producer.poll):
+                        break
+                elif now < next_due and stop.wait(min(next_due - now, max(config.duration - (now - started), 0))):
                     break
                 now = time.monotonic()
                 if now - started >= config.duration:
@@ -205,8 +217,12 @@ def run_once(config: StressConfig, metrics: StressMetrics, stop: Event,
                     metrics.unstructured.inc()
                     report["unstructured"] += 1
                 try:
+                    # Transport timing belongs to this send, not the generated
+                    # fixture/ground truth (which may represent a duplicate).
+                    payload = dict(generated.payload, pipeline_sent_at=time.time())
                     producer.produce(config.topic, key=generated.payload["url"],
-                                     value=json.dumps(generated.payload, ensure_ascii=False).encode("utf-8"), callback=delivered)
+                                     value=json.dumps(payload, ensure_ascii=False).encode("utf-8"), callback=delivered)
+                    gate.published()
                 except BufferError:
                     report["failed"] += 1
                     metrics.failed.labels("backpressure").inc()
@@ -223,7 +239,8 @@ def run_once(config: StressConfig, metrics: StressMetrics, stop: Event,
                 elapsed = max(time.monotonic() - started, 1e-6)
                 metrics.duration.set(elapsed)
                 metrics.rate.set(report["delivered"] / elapsed)
-                next_due = max(next_due + 1 / rate, time.monotonic())
+                # Slow generation/delivery must not accumulate catch-up slots.
+                next_due = time.monotonic() + 1 / rate
         if report["status"] == "running":
             report["status"] = "interrupted" if stop.is_set() else "completed"
     except Exception as exc:

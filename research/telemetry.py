@@ -92,6 +92,47 @@ def _command(argv: list[str], timeout: float = 15) -> str:
     return completed.stdout
 
 
+def transport_error_detail(source: str, exc: Exception, worker_urls=()) -> dict | None:
+    """Classify known transport failures, never infer retryability from message text."""
+    detail = {"source": source, "error_type": type(exc).__name__}
+    if source in worker_urls and isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+        return detail
+    if source == "docker" and isinstance(exc, subprocess.TimeoutExpired):
+        return detail
+    if source == "kafka":
+        from confluent_kafka import KafkaException, KafkaError
+        if isinstance(exc, KafkaException) and exc.args and isinstance(exc.args[0], KafkaError):
+            code = exc.args[0].code()
+            if code in (KafkaError._TIMED_OUT, KafkaError._TRANSPORT, KafkaError._ALL_BROKERS_DOWN):
+                return {**detail, "error_code": code}
+    return None
+
+
+def parse_vm_memory(text: str) -> dict:
+    """Linux /proc/meminfo inside a container describes the Docker Linux VM/host.
+
+    This is distinct from the selected containers' working sets. Read-only; no
+    cache drop, swap manipulation or global WSL configuration changes.
+    """
+    wanted = {"MemTotal", "MemAvailable", "MemFree", "SwapTotal", "SwapFree"}
+    values = {}
+    for line in text.splitlines():
+        key, _, remainder = line.partition(":")
+        if key in wanted:
+            number, unit = remainder.split()
+            value = int(number)
+            if unit != "kB" or value < 0:
+                raise ValueError("invalid VM memory measurement")
+            values[key] = value * 1024
+    if values.keys() != wanted or values["MemTotal"] <= 0 or any(not 0 <= values[key] <= values["MemTotal"] for key in ("MemFree", "MemAvailable")) or values["SwapFree"] > values["SwapTotal"]:
+        raise ValueError("incomplete or inconsistent VM memory measurement")
+    return {"total_bytes": values["MemTotal"], "available_bytes": values["MemAvailable"],
+            "free_bytes": values["MemFree"], "swap_total_bytes": values["SwapTotal"], "swap_free_bytes": values["SwapFree"],
+            "available_percent": 100 * values["MemAvailable"] / values["MemTotal"],
+            "free_percent": 100 * values["MemFree"] / values["MemTotal"],
+            "swap_used_percent": 100 * (values["SwapTotal"] - values["SwapFree"]) / values["SwapTotal"] if values["SwapTotal"] else None}
+
+
 class TelemetryCollector:
     def __init__(self, bootstrap_servers: str = "localhost:9092,localhost:9093,localhost:9094",
                  topic: str = "real_estate_stress_raw", group_id: str = "real_estate_training_pipeline",
@@ -120,7 +161,8 @@ class TelemetryCollector:
         missing = set(self.container_names) - set(containers)
         if missing:
             raise RuntimeError(f"Missing Docker measurements: {sorted(missing)}")
-        return {"timestamp": time.time(), "engine": self._engine, "containers": containers}
+        vm_memory = parse_vm_memory(_command(["docker", "exec", "real_estate_processor_1", "cat", "/proc/meminfo"], self.timeout))
+        return {"timestamp": time.time(), "engine": self._engine, "containers": containers, "vm_memory": vm_memory}
 
     def _kafka(self) -> dict:
         from confluent_kafka import TopicPartition
@@ -135,11 +177,14 @@ class TelemetryCollector:
             details = topic.partitions[partition.partition]
             low, high = self.consumer.get_watermark_offsets(partition, timeout=self.timeout, cached=False)
             offset = committed[partition.partition]
-            # No committed position is an observation gap, not proof of zero lag.
+            # An uncommitted nonempty/retained log is an observation gap. Only
+            # a new log with both watermarks at zero proves there is no backlog;
+            # this allows a controlled producer to publish its first record.
             partitions[str(partition.partition)] = {
                 "leader": details.leader, "replicas": list(details.replicas), "isr": list(details.isrs),
                 "low_offset": low, "high_offset": high, "committed_offset": offset if offset >= 0 else None,
-                "lag": max(high - offset, 0) if low <= offset <= high else None,
+                "lag": max(high - offset, 0) if low <= offset <= high else
+                       0 if offset < 0 and low == high == 0 else None,
             }
         return {"timestamp": time.time(), "partitions": partitions, "broker_ids": sorted(metadata.brokers)}
 
@@ -168,6 +213,8 @@ class TelemetryCollector:
         """Collect one observation; first observation has no counter-derived rates."""
         started = time.time()
         errors, raw = [], {"workers": {}}
+        worker_transport_errors = []
+        collection_transport_errors = []
         with ThreadPoolExecutor(max_workers=2 + len(self.processor_urls)) as pool:
             jobs = {"docker": pool.submit(self._docker), "kafka": pool.submit(self._kafka)}
             for url in self.processor_urls:
@@ -181,6 +228,11 @@ class TelemetryCollector:
                         raw["workers"][source] = result
                 except Exception as exc:
                     errors.append(f"{source}: {type(exc).__name__}: {exc}")
+                    detail = transport_error_detail(source, exc, self.processor_urls)
+                    if detail:
+                        collection_transport_errors.append(detail)
+                        if source in self.processor_urls:
+                            worker_transport_errors.append(detail)
         now = time.time()
         raw["timestamp"] = now
         previous = self._previous or {}
@@ -190,6 +242,9 @@ class TelemetryCollector:
                   "cpu_percent": None, "ram_percent": None, "memory_bytes": None, "kafka_lag": None,
                   "latency_p95_seconds": None, "processing_mean_seconds": None, "error_rate": None,
                   "brokers": {str(i): {} for i in (1, 2, 3)}, "errors": errors,
+                  "worker_transport_errors": worker_transport_errors,
+                  "collection_transport_errors": collection_transport_errors,
+                  "vm_memory_available_percent": None, "vm_memory_free_percent": None, "vm_swap_used_percent": None,
                   "instrumentation_ready": len(raw["workers"]) == len(self.processor_urls),
                   "collection_started_at": started, "collection_ended_at": now,
                   "collection_duration_seconds": now - started,
@@ -226,10 +281,19 @@ class TelemetryCollector:
             return
         result["kafka_interval_seconds"] = interval
         rates, consumed, attribution_valid = [], [], True
+
+        def measured_position(partition):
+            position = partition["committed_offset"]
+            # Keep raw committed_offset=None; zero here is derived from an
+            # independently observed, demonstrably new and empty partition.
+            if position is None and partition["low_offset"] == partition["high_offset"] == 0:
+                return 0
+            return position
+
         for key, partition in partitions.items():
             prev = old["partitions"][key]
             high_delta = counter_delta(partition["high_offset"], prev["high_offset"])
-            commit_delta = counter_delta(partition["committed_offset"], prev["committed_offset"])
+            commit_delta = counter_delta(measured_position(partition), measured_position(prev))
             rates.append(high_delta / interval if high_delta is not None else None)
             consumed.append(commit_delta / interval if commit_delta is not None else None)
             if partition["leader"] != prev["leader"] or high_delta is None:
@@ -260,6 +324,11 @@ class TelemetryCollector:
         result["memory_bytes"] = sum(item["memory_bytes"] for item in containers.values())
         result["cpu_percent"] = sum(item["cpu_core_percent"] for item in containers.values()) / engine["cpu_count"]
         result["ram_percent"] = 100 * result["memory_bytes"] / engine["memory_bytes"]
+        if "vm_memory" in current:
+            result["vm_memory"] = current["vm_memory"]
+            result.update(vm_memory_available_percent=current["vm_memory"]["available_percent"],
+                          vm_memory_free_percent=current["vm_memory"]["free_percent"],
+                          vm_swap_used_percent=current["vm_memory"]["swap_used_percent"])
         for name, item in containers.items():
             prior = old["containers"].get(name) if old else None
             for counter in ("network_rx_bytes", "network_tx_bytes", "disk_read_bytes", "disk_write_bytes"):

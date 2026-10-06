@@ -12,3 +12,5 @@ dist/
 coverage/
 *.log
 .DS_Store
+.resource-agent-*
+*.resource-agent.lock

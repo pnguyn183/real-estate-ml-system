@@ -24,7 +24,7 @@ def run_application(arguments):
     if result.returncode == 20:
         raise AirflowFailException("Source access denied; task retries are disabled for this failure")
     if result.returncode == 99:
-        raise AirflowSkipException("Insufficient eligible real training data")
+        raise AirflowSkipException("Training skipped: insufficient data or delegated to the controlled trainer")
     if result.returncode:
         raise AirflowException(f"Application task exited with code {result.returncode}")
 

@@ -77,6 +77,15 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.action == "train":
+        from agents.runtime_policy import RuntimePolicy
+
+        # Controlled fits belong to the dedicated trainer container, whose
+        # CPU/RAM limits are managed independently of the stream and Airflow.
+        # A valid permission lease must not enable a second fit in this worker.
+        if RuntimePolicy.from_env().enabled:
+            logger.info("Training skipped in Airflow: the dedicated trainer owns controlled fits")
+            return 99
+
         from pymongo import MongoClient
         from scripts.auto_train import (
             MIN_RECORDS, MONGO_DB, MONGO_FEATURE_COLLECTION, MONGO_URI,
@@ -90,7 +99,8 @@ def main():
         if count < MIN_RECORDS:
             logger.info("Training skipped: %s eligible real records; need %s", count, MIN_RECORDS)
             return 99
-        return 0 if run_trainer() else 1
+        result = run_trainer()
+        return 99 if result is None else (0 if result else 1)
 
     from confluent_kafka import Consumer
 

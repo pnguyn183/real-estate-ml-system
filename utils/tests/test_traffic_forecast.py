@@ -26,7 +26,7 @@ def test_missing_target_breaks_feature_and_label_windows():
     assert not ((frame.requested_rate >= 15) & (frame.requested_rate <= 24)).any()
 
 
-@pytest.mark.parametrize("failure", [{"errors": ["docker: unavailable"]}, {"instrumentation_ready": False}])
+@pytest.mark.parametrize("failure", [{"errors": ["docker: unavailable"]}, {"instrumentation_ready": False}, {"telemetry_usable": False}])
 def test_failed_telemetry_breaks_feature_and_label_windows_with_numeric_target(failure):
     rows = observations(40)
     rows[20].update(failure)
@@ -110,7 +110,7 @@ def test_export_requires_measured_eligibility(tmp_path):
         save_forecast_artifact(None, tmp_path, {"eligible": False})
 
 
-@pytest.mark.parametrize("failure", [{"errors": ["worker: unavailable"]}, {"instrumentation_ready": False}])
+@pytest.mark.parametrize("failure", [{"errors": ["worker: unavailable"]}, {"instrumentation_ready": False}, {"telemetry_usable": False}])
 def test_inference_rejects_failed_measurement_and_requires_fresh_warmup(tmp_path, monkeypatch, failure):
     monkeypatch.setattr("research.benchmark.estimators", lambda **kwargs: {"fixture_linear": LinearRegression()})
     rows = observations()

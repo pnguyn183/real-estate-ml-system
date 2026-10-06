@@ -11,8 +11,11 @@ import argparse
 import json
 import logging
 import os
+import signal
 import sys
+import time
 from pathlib import Path
+from threading import Event
 
 from confluent_kafka import KafkaException, Producer
 
@@ -22,6 +25,7 @@ if str(ROOT) not in sys.path:
 from scraper.listing_feature_scraper import ScrapeConfig
 from scraper.http_policy import ScraperFetchError, ScraperPolicyError
 from scraper.multi_source import iter_source_records, selected_sources
+from agents.runtime_policy import RateGate, RuntimePolicy
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -32,26 +36,36 @@ class KafkaDeliveryError(RuntimeError):
     """Delivery is unconfirmed; leave the current URL replayable on the next run."""
 
 
-def publish_records(producer, records, topic: str, delivery_timeout: float) -> int:
+def publish_records(producer, records, topic: str, delivery_timeout: float, *, stop=None, gate=None) -> int:
     """At-least-once handoff: never checkpoint an unacknowledged message.
 
     A crash between acknowledgement and checkpoint may replay a URL; the
     downstream URL upsert remains the idempotency boundary.
     """
     published_count = 0
+    stop = stop if stop is not None else Event()
+    gate = gate if gate is not None else RateGate(RuntimePolicy.from_env(), topic)
     iterator = iter(records)
     try:
         for record in iterator:
+            # HTTP politeness remains the source adapter's separate concern.
+            # Stop closes this generator before its next checkpoint advancement.
+            if not gate.wait(stop, poll=getattr(producer, "poll", None)):
+                break
             delivered = []
 
             def on_delivery(error, message):
                 delivered.append(error)
 
+            # Stamp the actual Kafka handoff, after any controller wait. Keep
+            # the source record unchanged for checkpointing and future retries.
+            payload = dict(record, pipeline_sent_at=time.time())
             producer.produce(
                 topic, key=record["url"],
-                value=json.dumps(record, ensure_ascii=False).encode("utf-8"),
+                value=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                 callback=on_delivery,
             )
+            gate.published()
             pending = producer.flush(delivery_timeout)
             if pending or not delivered or delivered[0] is not None:
                 raise KafkaDeliveryError("Kafka delivery not acknowledged; scrape checkpoint was not advanced")
@@ -133,19 +147,28 @@ def main(argv=None) -> int:
         "linger.ms": 0,
     })
     status = 0
-    for source in sources:
-        try:
-            published_count = publish_records(producer, iter_source_records(source, config, fresh_start=args.fresh_start,
-                                                                           revisit_seconds=args.revisit_seconds,
-                                                                           max_consecutive_failures=args.max_consecutive_failures),
-                                              args.topic, args.delivery_timeout)
-            logger.info("source=%s acknowledged=%s topic=%s", source, published_count, args.topic)
-        except ScraperPolicyError as error:
-            logger.error("source=%s policy_stop=%s", source, error)
-            status = 20
-        except (ScraperFetchError, KafkaDeliveryError, KafkaException, BufferError, OSError, ValueError) as error:
-            logger.error("source=%s run_failed=%s: %s", source, type(error).__name__, error)
-            status = status or 1
+    stop = Event()
+    # Kafka waits and policy pauses must terminate on Docker's SIGTERM.
+    previous_sigterm = signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    gate = RateGate(RuntimePolicy.from_env(), args.topic)
+    try:
+        for source in sources:
+            if stop.is_set():
+                break
+            try:
+                published_count = publish_records(producer, iter_source_records(source, config, fresh_start=args.fresh_start,
+                                                                               revisit_seconds=args.revisit_seconds,
+                                                                               max_consecutive_failures=args.max_consecutive_failures),
+                                                  args.topic, args.delivery_timeout, stop=stop, gate=gate)
+                logger.info("source=%s acknowledged=%s topic=%s", source, published_count, args.topic)
+            except ScraperPolicyError as error:
+                logger.error("source=%s policy_stop=%s", source, error)
+                status = 20
+            except (ScraperFetchError, KafkaDeliveryError, KafkaException, BufferError, OSError, ValueError) as error:
+                logger.error("source=%s run_failed=%s: %s", source, type(error).__name__, error)
+                status = status or 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
     return status
 
 

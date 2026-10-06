@@ -28,6 +28,7 @@ except ImportError:
 from utils.metrics import start_prometheus_server, update_metrics_from_result, model_train_duration
 from processing.price_anomaly import add_anomaly_training_filter
 from agents.safety import real_data_query
+from agents.runtime_policy import RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -48,7 +49,7 @@ def load_records_from_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Train the property price model from MongoDB feature records.")
     parser.add_argument("--mongo-uri", default=os.environ.get("MONGO_URI", "mongodb://localhost:27017/"))
     parser.add_argument("--mongo-db", default=os.environ.get("MONGO_DB", "real_estate_db"))
@@ -64,6 +65,21 @@ def main() -> None:
     parser.add_argument("--variant-metrics-path", default="artifacts/feature_variant_metrics.json")
     args = parser.parse_args()
 
+    policy = RuntimePolicy.from_env()
+    try:
+        with training_lease(policy) as allowed:
+            if not allowed:
+                logger.info("Training deferred by control lease or another active trainer")
+                return 99
+            _train(args, policy)
+    except TrainingDeferred:
+        logger.info("Training deferred: control lease was revoked before fit")
+        return 99
+    return 0
+
+
+def _train(args, policy):
+
     # Start Prometheus metrics server
     prometheus_port = int(os.environ.get("PROMETHEUS_METRICS_PORT", 8001))
     start_prometheus_server(prometheus_port)
@@ -76,6 +92,7 @@ def main() -> None:
         logger.info("Loaded %s records from MongoDB %s.%s", len(records), args.mongo_db, args.collection)
 
     if args.evaluate_variants:
+        require_training_permission(policy)
         variant_metrics = evaluate_feature_variants(records)
         variant_path = Path(args.variant_metrics_path)
         variant_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +100,7 @@ def main() -> None:
         logger.info("Feature-variant metrics written to %s: %s", variant_path, variant_metrics)
 
     start_time = time.time()
+    require_training_permission(policy)
     trainer = RealEstatePriceModel()
     result = trainer.train(records, model_path=args.model_path, metrics_path=args.metrics_path)
     train_duration = time.time() - start_time
@@ -97,4 +115,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

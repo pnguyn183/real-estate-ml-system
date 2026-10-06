@@ -22,8 +22,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agents.metrics import AIExtractionMetrics
+from agents.model_router import ModelRouter, build_router_from_env
 from agents.provider_audit import emit
-from agents.providers import AIExtractionProvider, DisabledProvider, OpenAICompatibleProvider, ProviderError
+from agents.providers import AIExtractionProvider, DisabledProvider, ProviderError
 
 
 Number = Annotated[float, Field(strict=True, allow_inf_nan=False, gt=0)]
@@ -264,13 +265,12 @@ class ExtractionService:
         if enabled_value not in {"1", "true", "yes", "0", "false", "no"}:
             raise ValueError("Invalid extraction configuration: AI_ENABLED")
         enabled = enabled_value in {"1", "true", "yes"}
-        name = os.environ.get("LLM_PROVIDER", "disabled").lower()
         provider: AIExtractionProvider = DisabledProvider()
-        if enabled and name in {"openai_compatible", "openai-compatible", "openai", "groq"}:
-            provider = OpenAICompatibleProvider(
-                os.environ.get("LLM_BASE_URL", ""), os.environ.get("LLM_MODEL", ""),
-                os.environ.get("LLM_API_KEY", ""),
-            )
+        if enabled:
+            try:
+                provider = build_router_from_env()
+            except ValueError:
+                raise ValueError("AI_ENABLED requires valid LLM_PROVIDER/BASE_URL/MODEL/API_KEY and model router settings") from None
         if enabled and not provider.enabled:
             raise ValueError("AI_ENABLED requires a supported external LLM_PROVIDER, HTTPS LLM_BASE_URL, LLM_MODEL and LLM_API_KEY")
         return cls(provider, ExtractionConfig.from_env())
@@ -356,24 +356,39 @@ class ExtractionService:
                     "known_fields": known_raw_fields(record),
                 }, ensure_ascii=False)},
             ]
-            for attempt in range(self.config.max_retries + 1):
+            routed = isinstance(self.provider, ModelRouter)
+
+            def take_provider_call():
+                nonlocal attempts
+                self._take_call()
+                if attempts:
+                    self.metrics.retries.inc()
+                attempts += 1
+                self.metrics.calls.inc()
+
+            # A router already visits each available model and maintains its
+            # own circuits. Retrying it here can starve a recovered fallback.
+            for attempt in range(1 if routed else self.config.max_retries + 1):
                 remaining = self.config.total_budget_seconds - (time.monotonic() - started)
                 if remaining <= .1:
                     raise ProviderError("time_budget_exceeded")
-                self._take_call()
-                attempts += 1
-                self.metrics.calls.inc()
-                if attempt:
-                    self.metrics.retries.inc()
                 try:
-                    raw_output = self.provider.extract(messages, min(self.config.timeout_seconds, remaining))
+                    if routed:
+                        response = self.provider.extract_result(
+                            messages, min(self.config.timeout_seconds, remaining), before_attempt=take_provider_call)
+                        raw_output = response.content
+                        result.update(provider=response.provider, model=response.model)
+                    else:
+                        take_provider_call()
+                        raw_output = self.provider.extract(messages, min(self.config.timeout_seconds, remaining))
                     self._provider_result(False)
                     break
                 except ProviderError as exc:
-                    self._provider_result(True)
-                    if exc.code == "provider_rate_limited":
+                    if not routed:
+                        self._provider_result(True)
+                    if exc.code in {"provider_rate_limited", "provider_quota_exhausted"}:
                         self.metrics.rate_limits.labels(source="provider").inc()
-                    if not exc.retryable or attempt >= self.config.max_retries:
+                    if routed or not exc.retryable or attempt >= self.config.max_retries:
                         raise
                     backoff = .5 * (2 ** attempt)
                     if time.monotonic() - started + backoff >= self.config.total_budget_seconds:
@@ -393,6 +408,8 @@ class ExtractionService:
             self.metrics.success.inc()
         except ProviderError as exc:
             result["error_code"] = exc.code
+            if exc.provider is not None:
+                result.update(provider=exc.provider, model=exc.model)
             self.metrics.failure.labels(reason=exc.code).inc()
             self.metrics.fallback.labels(reason=exc.code).inc()
             if exc.code in {"invalid_schema", "low_confidence", "invalid_evidence", "no_extracted_fields"}:

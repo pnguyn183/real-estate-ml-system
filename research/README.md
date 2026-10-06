@@ -1,5 +1,10 @@
 # Traffic prediction and adaptive admission research
 
+The separate [LLM feedback agent](../docs/LLM_FEEDBACK_CONTROL.md) on `dev`
+controls the real stress/crawl publishers and dedicated trainer. This directory
+retains the reproducible rule-based comparison and history-collection workflow;
+its historical results are not measurements of the new LLM policy.
+
 The research target is incoming data traffic and sustainable Kafka processing.
 The existing property-price API remains a separate legacy application. Read
 [`docs/LECTURER_AUDIT_BEFORE.md`](../docs/LECTURER_AUDIT_BEFORE.md) for the
@@ -78,6 +83,82 @@ break forecasting feature and label windows even when the offered rate is still
 numeric. Older logs without quality flags remain readable, but their measurement
 health cannot be inferred. Run provenance is still required by the benchmark.
 
+## User-controlled history sessions
+
+`python -m research.collect_session start --hours 2` creates a seeded variable
+workload and collects telemetry in one foreground process. `--minutes 90` sets
+a different length; `--dry-run` previews the plan without touching Kafka or
+creating session files. Use `status`/`stop` from another terminal, or Ctrl+C for
+a graceful stop and drain. Windows users can use `scripts/traffic_session.ps1`.
+
+Sessions reuse the runner's exclusive lock, three-broker preflight, synthetic
+storage isolation and safety thresholds. They use fixed-limit baseline only,
+disable resource actuation, and never change `.env`. Service state is unchanged
+unless the user explicitly selects `--lean`. The default
+paired experiment keeps its one-hour-per-mode guard; the session entry point
+explicitly permits up to eight hours with the existing one-million-record cap.
+This cap and successful collection do not establish sufficient forecast data.
+
+History sessions pause admission for classified worker HTTP, Docker timeout and
+Kafka transport errors and resample within a bounded budget (five consecutive
+failed samples or 60 seconds). Two consecutive healthy samples resume admission.
+Missing core measurements qualify only with a matching classified source failure;
+resource thresholds, unexplained missing data and non-transport errors still stop
+immediately. Error
+rows remain intact; `telemetry_usable=false` excludes recovery warmup from feature
+and label windows. Paused demand is counted as rejected/withheld without a catch-up
+burst. Recovery events and the initiating stop observation are saved in the report.
+The paired runner retains fail-fast defaults unless explicitly configured otherwise.
+
+Session preflight retries only classified transport failures for up to 60 seconds,
+requiring two healthy idle observations before publication. Occupied queues, wrong
+topology and memory pressure fail immediately. Attempts are retained in
+`baseline/report.json.preflight_attempts`. Deadlines are checked between calls;
+in-flight operations have their own timeouts and draining adds time. CLI options
+`--recovery-seconds`, `--recovery-errors` and `--preflight-seconds` expose the budgets.
+
+VM memory is sampled from `/proc/meminfo` through a processor. Session guards stop
+when MemAvailable is at most 10%, or swap use is at least 95% while MemFree is at
+most 5%. The thresholds are stored in `config.json.vm_memory_safety`. They cover
+memory pressure missed by the selected-container `ram_percent` metric.
+
+On the reviewed laptop, Docker/WSL kernel evidence from September 28 showed a
+512 KiB allocation failure, about 61.6 MiB free RAM and all 2 GiB of swap consumed
+during later failed sessions. The local sanitized evidence is
+`runtime/research/telemetry-diagnosis-20261001.json`. This identifies VM memory
+pressure, not a physical hardware fault or the individual memory-consuming service.
+
+For a memory-constrained laptop, explicitly opt into a shorter validation first:
+
+```powershell
+python -m research.collect_session start --minutes 20 --lean
+# After inspecting the completed session's quality and memory measurements:
+python -m research.collect_session start --hours 2 --lean
+```
+
+Lean mode stops running optional services (Airflow, scraper/trainer, API/predictor,
+frontend, Grafana/Mongo Express and both agents) while retaining the measured
+Kafka/processor/Mongo pipeline and Prometheus. These optional features are offline
+during the session. `environment.json` records exact container IDs before stopping;
+normal completion, cooperative stop and exceptions restore only the previously
+running containers, after identity/configuration checks. Initially stopped/paused
+containers remain untouched. Kill/power loss can prevent restoration; inspect the
+receipt if interrupted or `restore_failed`. No container is recreated or volume
+deleted. The PowerShell wrapper supports `-Lean`; direct Python commands avoid
+PowerShell execution-policy restrictions for start, status and stop.
+
+As of this reliability update, Docker Engine is unavailable for a new runtime
+trial. Tests exercise the recovery logic and service restoration; the earlier
+September 28 short Kafka sessions do not verify the new guard/preflight/lean code
+or prove that multi-hour collection succeeds.
+
+Each session saves its exact profile, seed, progress, raw observations and quality
+audit. `export --sessions <dir> <dir> --output <new.jsonl>` combines finalized
+sessions without bridging gaps, removing error rows or rewriting run IDs. The
+manifest records provenance and input hashes. Train on `requested_rate` for this
+controlled offered-demand dataset; do not mix it with passive `incoming_rate`.
+See [the session guide](../docs/TRAFFIC_SESSIONS.md) for commands and limitations.
+
 ## Policy and safety
 
 `agents/traffic_control.py` is an interpretable reactive baseline. On independently
@@ -126,6 +207,9 @@ of the workload. AI/stress background producers should remain disabled.
 - `cpu_percent` / `ram_percent`: selected Kafka, worker and Mongo containers
   divided by Docker engine CPU/memory. This is not Windows host-wide usage.
   Per-container CPU uses Docker core-percent (100% means one core).
+- `vm_memory_available_percent`, `vm_memory_free_percent`, `vm_swap_used_percent`:
+  Linux VM-wide memory from `/proc/meminfo`, distinct from selected-container RAM
+  and Windows host memory. Zero configured swap produces no swap-use percentage.
 - Per-broker leader ingress is stress-partition log-offset growth attributed
   using observed leadership. It is not a JMX broker message counter. Actual
   Docker network rates include replication, clients and unrelated traffic;

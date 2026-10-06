@@ -28,6 +28,13 @@ An acknowledged AI handoff can complete a raw offset, so this barrier **does not
 wait for in-flight AI results** and does not guarantee that every raw record was
 valid. Training retains the existing real-data/candidate/anomaly filters.
 
+With `CONTROL_ENABLED=true`, Airflow skips its training task before reading
+training data. The dedicated `trainer` container starts fits according to the
+control agent's lease, independently of this DAG's offset barrier. In this mode,
+stop only `scraper` when handing crawling to Airflow and keep `trainer` running.
+Airflow and trainer must share the controller's policy directory and topic.
+See [LLM feedback control](../docs/LLM_FEEDBACK_CONTROL.md).
+
 ## Local demo
 
 Build/start the optional orchestration profile after the normal stack is
@@ -47,7 +54,7 @@ is hourly with one active run and `catchup=False`. The single-container
 `airflow standalone` / SQLite / SequentialExecutor setup is for a local demo,
 not a production Airflow deployment.
 
-Before deliberately enabling Airflow scheduling, stop the existing automatic
+With `CONTROL_ENABLED=false`, before enabling Airflow scheduling, stop the automatic
 scraper and trainer so two schedulers do not crawl or overwrite model artifacts
 concurrently:
 

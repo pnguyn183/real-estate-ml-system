@@ -31,6 +31,8 @@ from agents.stress import stress_topic
 from agents.traffic_control import ControlConfig, Observation, TrafficController
 from research.telemetry import TelemetryCollector
 from research.runtime import keep_system_awake
+from research.telemetry_guard import TelemetryRecoveryConfig, TelemetryRecoveryGuard
+from research.preflight import PreflightCancelled, wait_for_ready
 
 
 @contextmanager
@@ -92,12 +94,14 @@ def append_json(stream, value):
     stream.flush()
 
 
-def validate_config(config):
+def validate_config(config, *, max_duration_seconds=3600):
     profile = config["profile"]
     if not profile or any(not math.isfinite(float(s[k])) or s[k] <= 0 for s in profile for k in ("rate", "seconds")):
         raise ValueError("positive finite rates and durations required")
-    if max(s["rate"] for s in profile) > 10000 or sum(s["seconds"] for s in profile) > 3600:
-        raise ValueError("hard maximum is 10K records/s and 1 hour per mode")
+    if not math.isfinite(max_duration_seconds) or not 0 < max_duration_seconds <= 8 * 3600:
+        raise ValueError("duration budget must be positive and at most 8 hours")
+    if max(s["rate"] for s in profile) > 10000 or sum(s["seconds"] for s in profile) > max_duration_seconds:
+        raise ValueError(f"hard maximum is 10K records/s and {max_duration_seconds / 3600:g} hour(s) per mode")
     if not 1 <= config["max_records"] <= 1_000_000:
         raise ValueError("max_records must be in 1..1,000,000")
     if sum(math.ceil(s["rate"] * s["seconds"]) for s in profile) > config["max_records"]:
@@ -108,11 +112,23 @@ def validate_config(config):
         raise ValueError("drain_seconds must be in 1..600")
     ControlConfig(**config["control"])
     ResourceScalingConfig.from_mapping(config.get("resource_scaling"))
+    TelemetryRecoveryConfig(**config.get("telemetry_recovery", {}))
+    wait_seconds = config.get("preflight_seconds", 0)
+    if not isinstance(wait_seconds, (int, float)) or not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 120:
+        raise ValueError("preflight_seconds must be in 0..120")
+    memory_safety = config.get("vm_memory_safety")
+    if memory_safety is not None:
+        if set(memory_safety) != {"min_available_percent", "min_free_percent_when_swap_full", "max_swap_used_percent"} or any(
+            not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 < value <= 100 for value in memory_safety.values()
+        ):
+            raise ValueError("VM memory safety needs three positive percentage thresholds")
 
 
 def code_identity():
     paths = [Path("agents/traffic_control.py"), Path("agents/generator.py"),
              Path("research/run_experiment.py"), Path("research/telemetry.py"),
+             Path("research/telemetry_guard.py"),
+             Path("research/preflight.py"),
              Path("agents/resource_actuator.py"),
              Path("processing/kafka_to_mongo.py"), Path("utils/metrics.py")]
     result = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
@@ -159,11 +175,36 @@ def observation(sample, requested_rate):
                                        "kafka_lag", "latency_p95_seconds", "error_rate")})
 
 
-def run_mode(mode, config, output, bootstrap, topic, group):
+def vm_memory_stop_reason(sample, config):
+    limits = config.get("vm_memory_safety")
+    if limits is None:
+        return None
+    available = sample.get("vm_memory_available_percent")
+    free = sample.get("vm_memory_free_percent")
+    swap = sample.get("vm_swap_used_percent")
+    if available is None or free is None:
+        # A classified transport failure may temporarily hide all Docker data;
+        # the recovery guard pauses admission. Successful but incomplete data
+        # must not pass preflight or allow new traffic.
+        if any(item.get("source") == "docker" for item in sample.get("collection_transport_errors", [])):
+            return None
+        return "Docker VM memory measurement unavailable"
+    if any(not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100 for value in (available, free)):
+        return "invalid Docker VM memory measurement"
+    if available <= limits["min_available_percent"]:
+        return f"Docker VM memory pressure: available={available:.2f}% <= {limits['min_available_percent']}%"
+    if swap is not None and swap >= limits["max_swap_used_percent"] and free <= limits["min_free_percent_when_swap_full"]:
+        return f"Docker VM memory pressure: swap used={swap:.2f}%, free={free:.2f}%"
+    return None
+
+
+def run_mode(mode, config, output, bootstrap, topic, group, *, stop_requested=None, on_observation=None):
     run_id = f"traffic-{mode}-{uuid4().hex[:12]}"
     output.mkdir(parents=True, exist_ok=False)
     cfg = ControlConfig(**config["control"], enabled=mode == "adaptive")
     controller = TrafficController(cfg)
+    recovery_cfg = TelemetryRecoveryConfig(**config.get("telemetry_recovery", {}))
+    recovery = TelemetryRecoveryGuard(recovery_cfg)
     resource_actuator = DockerResourceActuator(
         ResourceScalingConfig.from_mapping(config.get("resource_scaling"))
     )
@@ -171,6 +212,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
     report = {"run_id": run_id, "mode": mode, "status": "running", "offered": 0, "admitted": 0,
               "rejected": 0, "acknowledged": 0, "delivery_failed": 0, "enqueue_failed": 0,
               "partitions": {}, "stages": [], "started_at": time.time(),
+              "telemetry_recovery": {"config": asdict(recovery_cfg), "events": [], "withheld_total": 0},
+              "preflight_attempts": [], "final_lag": None,
               "resource_scaling": {"enabled": resource_actuator.config.enabled,
                                     "containers": list(resource_actuator.config.containers),
                                     "initial_cpus": resource_actuator.config.initial_cpus,
@@ -205,20 +248,18 @@ def run_mode(mode, config, output, bootstrap, topic, group):
     requested_rate = 0.0
     last_offer = None
     hard_stop = None
+    manual_stop = False
 
     try:
-        report["topology"] = preflight(bootstrap, topic)
         preparation = resource_actuator.prepare()
         report["resource_scaling"]["prepare"] = preparation
         if preparation["status"] == "failed":
             raise RuntimeError(f"resource preparation failed: {preparation}")
-        # No offset reset or backlog deletion. Each policy starts with a drained queue.
-        initial = collector.sample()
-        if initial.get("kafka_lag") != 0 or initial.get("errors") or not initial.get("instrumentation_ready"):
-            raise RuntimeError(f"preflight needs drained queue and healthy telemetry: lag={initial.get('kafka_lag')}, errors={initial.get('errors')}")
-        idle = collector.sample()
-        if idle.get("incoming_rate") != 0 or idle.get("kafka_lag") != 0 or idle.get("errors"):
-            raise RuntimeError("preflight detected concurrent traffic or missing telemetry; finish other stress producers first")
+        # Transport startup delays may be retried without publishing any record.
+        report["topology"], idle = wait_for_ready(
+            collector, lambda: preflight(bootstrap, topic), timeout_seconds=config.get("preflight_seconds", 0),
+            stop_requested=stop_requested, attempts=report["preflight_attempts"],
+            memory_check=lambda sample: vm_memory_stop_reason(sample, config))
         report["initial_partitions"] = idle.get("partitions", {})
         began = time.monotonic()
         report["load_started_at"] = time.time()
@@ -233,7 +274,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                 nonlocal last_sample, next_decision, previous_count_time, previous_admitted, previous_ack, observation_count, hard_stop
                 now = time.monotonic()
                 dt = max(now - previous_count_time, 1e-9)
-                row = {**sample, "run_id": run_id, "mode": mode, "elapsed_seconds": now - began,
+                row = {**sample, "run_id": run_id, "mode": mode, "topic": topic, "group_id": group,
+                       "elapsed_seconds": now - began,
                        "phase": phase, "stage": stage_index, "requested_rate": requested_rate if phase == "load" else 0,
                        "current_limit": gate.limit, "offered_total": report["offered"],
                        "admitted_total": report["admitted"], "rejected_total": report["rejected"],
@@ -241,12 +283,39 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                        "resource_allocation_cpus_per_worker": resource_actuator.current_cpus if resource_actuator.config.enabled else None,
                        "accepted_rate": (report["admitted"] - previous_admitted) / dt,
                        "acknowledged_rate": (report["acknowledged"] - previous_ack) / dt}
+                # Resource limits and permanent measurement errors still fail closed.
+                # Preserve the initiating reason: later drain errors must not replace it.
+                previous_stop = hard_stop
+                if hard_stop is None:
+                    hard_stop = vm_memory_stop_reason(sample, config)
+                for key, bound in (("kafka_lag", config["hard_lag"]), ("cpu_percent", config["hard_cpu_percent"]),
+                                   ("ram_percent", config["hard_ram_percent"])):
+                    if row.get(key) is not None and row[key] >= bound and hard_stop is None:
+                        hard_stop = f"hard safety threshold: {key} >= {bound}"
+                was_paused = recovery.paused
+                health = recovery.observe(sample, now)
+                row.update(telemetry_recovery_state=health["state"], telemetry_usable=health["telemetry_usable"],
+                           admission_paused=health["admission_paused"],
+                           effective_admission_limit=0 if health["admission_paused"] or hard_stop else gate.limit,
+                           telemetry_withheld_total=report["telemetry_recovery"]["withheld_total"])
+                if health["state"] == "stopped" and hard_stop is None:
+                    hard_stop = health["reason"]
+                if previous_stop is None and hard_stop is not None:
+                    report["stop_observation"] = {key: row.get(key) for key in (
+                        "timestamp", "timestamp_iso", "phase", "errors", "cpu_percent", "ram_percent", "kafka_lag",
+                        "vm_memory_available_percent", "vm_memory_free_percent", "vm_swap_used_percent")}
+                if health["state"] in {"resumed", "stopped"} or (health["state"] == "paused" and not was_paused):
+                    event = {"timestamp": time.time(), "phase": phase, "state": health["state"],
+                             "reason": health["reason"], "observation_timestamp": sample.get("timestamp")}
+                    # Terminal failures remain sticky; log the transition once.
+                    if not report["telemetry_recovery"]["events"] or report["telemetry_recovery"]["events"][-1]["state"] != "stopped":
+                        report["telemetry_recovery"]["events"].append(event)
                 previous_count_time, previous_admitted, previous_ack = now, report["admitted"], report["acknowledged"]
                 controller.observe(observation(row, row["requested_rate"]))
                 append_json(samples, row)
                 observation_count += 1
                 last_sample = row
-                if now >= next_decision and phase == "load":
+                if now >= next_decision and phase == "load" and health["telemetry_usable"] and hard_stop is None:
                     decision = controller.decide(time.time())
                     applied_at = None
                     if decision.changed:
@@ -261,15 +330,21 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                     if resource_receipt["status"] == "failed":
                         raise RuntimeError(f"resource actuation failed: {resource_receipt}")
                     next_decision = now + config["decision_seconds"]
-                for key, bound in (("kafka_lag", config["hard_lag"]), ("cpu_percent", config["hard_cpu_percent"]),
-                                   ("ram_percent", config["hard_ram_percent"])):
-                    if row.get(key) is not None and row[key] >= bound:
-                        hard_stop = f"hard safety threshold: {key} >= {bound}"
-                if row.get("errors"):
-                    hard_stop = "telemetry unavailable: " + str(row["errors"])
+                if on_observation is not None:
+                    on_observation(row)
 
             while time.monotonic() - began < total_seconds and not hard_stop:
+                if stop_requested is not None and stop_requested():
+                    manual_stop = True
+                    report["stop_requested_at"] = time.time()
+                    break
                 now = time.monotonic()
+                expired = recovery.deadline_reason(now)
+                if expired:
+                    hard_stop = expired
+                    report["telemetry_recovery"]["events"].append({"timestamp": time.time(), "phase": "load",
+                                                                  "state": "stopped", "reason": expired})
+                    break
                 elapsed = now - began
                 if stage_index < 0 or elapsed >= stage_start + config["profile"][stage_index]["seconds"]:
                     if stage_index >= 0:
@@ -288,6 +363,8 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                 if future is not None and future.done():
                     collect(future.result(), "load")
                     future = None
+                    if hard_stop:
+                        break
                 if future is None and now >= next_sample:
                     future = executor.submit(collector.sample)
                     next_sample = now + config["sample_seconds"]
@@ -298,7 +375,11 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                     item = generator.next(report["offered"])
                     report["offered"] += 1
                     stage["offered"] += 1
-                    if gate.accept(now):
+                    if recovery.paused:
+                        report["rejected"] += 1
+                        stage["rejected"] = stage.get("rejected", 0) + 1
+                        report["telemetry_recovery"]["withheld_total"] += 1
+                    elif gate.accept(now):
                         payload = dict(item.payload, stress_sent_at=time.time())
                         try:
                             # Same logical key in both modes preserves offered partition assignments.
@@ -318,7 +399,7 @@ def run_mode(mode, config, output, bootstrap, topic, group):
             report["load_ended_at"] = time.time()
             report["load_seconds"] = time.monotonic() - began
             if report["stages"]:
-                report["stages"][-1].update(ended_at=time.time(), completed=hard_stop is None)
+                report["stages"][-1].update(ended_at=time.time(), completed=hard_stop is None and not manual_stop)
             report["undelivered"] = producer.flush(12)
             if future is not None:
                 collect(future.result(), "drain")
@@ -332,12 +413,14 @@ def run_mode(mode, config, output, bootstrap, topic, group):
                 time.sleep(min(config["sample_seconds"], 1))
             report["drain_seconds"] = time.monotonic() - drain_began
             report["final_lag"] = last_sample.get("kafka_lag") if last_sample else None
-            report["status"] = "safety_stopped" if hard_stop else "completed"
-            report["stop_reason"] = hard_stop
+            report["status"] = "safety_stopped" if hard_stop else "stopped" if manual_stop else "completed"
+            report["stop_reason"] = hard_stop or ("user requested stop" if manual_stop else None)
             if report["delivery_failed"] or report["enqueue_failed"] or report.get("undelivered"):
                 report["status"] = "failed"
             if report["final_lag"] != 0:
                 report["status"] = "drain_timeout"
+    except PreflightCancelled:
+        report.update(status="stopped", stop_reason="user requested stop during preflight")
     except KeyboardInterrupt:
         report["status"] = "interrupted"
     except Exception as exc:

@@ -4,20 +4,26 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import time
 from typing import Protocol
 from urllib.parse import urlsplit
 
 import requests
-from agents.provider_audit import active, emit
+from agents.provider_audit import active, emit, scrub
 
 
 class ProviderError(Exception):
     """Bounded machine-readable failure; never includes response bodies or keys."""
 
-    def __init__(self, code: str, *, retryable: bool = False):
+    def __init__(self, code: str, *, retryable: bool = False, retry_after: float | None = None,
+                 provider: str | None = None, model: str | None = None, attempts: int = 0):
         self.code = code
         self.retryable = retryable
+        self.retry_after = retry_after
+        self.provider = provider
+        self.model = model
+        self.attempts = attempts
         super().__init__(code)
 
 
@@ -76,6 +82,8 @@ class OpenAICompatibleProvider:
     def extract(self, messages: list[dict[str, str]], timeout: float) -> str:
         if not self.enabled:
             raise ProviderError("disabled")
+        if isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
+            raise ProviderError("provider_timeout", retryable=True)
         deadline = time.monotonic() + timeout
         response = None
         payload = {"model": self.model, "messages": messages,
@@ -90,14 +98,15 @@ class OpenAICompatibleProvider:
                 f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json=payload,
-                timeout=(min(2.0, timeout / 3), max(0.1, timeout - min(2.0, timeout / 3))),
+                timeout=(min(2.0, timeout / 3), timeout - min(2.0, timeout / 3)),
                 allow_redirects=False,
                 stream=True,
             )
             emit("http_status", {"http_status": response.status_code})
-            if response.status_code != 200 and active():
-                # Error evidence is opt-in and bounded. Keep the same provider
-                # failure classification even if reading its error body fails.
+            error_body = bytearray()
+            if response.status_code != 200 and (active() or response.status_code == 429):
+                # Only inspect quota failures by default. Other error bodies
+                # remain opt-in audit evidence; never log raw quota details.
                 error_body = bytearray()
                 truncated = False
                 try:
@@ -109,10 +118,29 @@ class OpenAICompatibleProvider:
                 except Exception:
                     truncated = True
                 emit("response", {"http_status": response.status_code,
-                                  "raw_response": bytes(error_body).decode("utf-8", errors="replace"),
+                                  "raw_response": scrub(bytes(error_body).decode("utf-8", errors="replace"), (self._api_key,)),
                                   "truncated": truncated})
             if response.status_code == 429:
-                raise ProviderError("provider_rate_limited", retryable=True)
+                # Use only known structured quota codes, not arbitrary message
+                # substrings (ordinary minute rate limits also say 'quota').
+                quota_codes = {"insufficient_quota", "quota_exceeded", "billing_hard_limit_reached",
+                               "billing_not_active", "credits_exhausted", "daily_limit_exceeded"}
+                try:
+                    error = json.loads(error_body).get("error", {})
+                    quota = isinstance(error, dict) and any(
+                        isinstance(error.get(key), str) and error[key].lower() in quota_codes
+                        for key in ("code", "type"))
+                except (ValueError, TypeError, AttributeError):
+                    quota = False
+                retry_after = None
+                try:
+                    value = float(response.headers.get("Retry-After", ""))
+                    if math.isfinite(value) and value >= 0:
+                        retry_after = min(value, 86400.0)
+                except (TypeError, ValueError, AttributeError):
+                    pass
+                raise ProviderError("provider_quota_exhausted" if quota else "provider_rate_limited",
+                                    retryable=not quota, retry_after=retry_after)
             if response.status_code >= 500:
                 raise ProviderError("provider_unavailable", retryable=True)
             if response.status_code in (401, 403):
@@ -130,7 +158,7 @@ class OpenAICompatibleProvider:
                 if len(content_bytes) > self.MAX_RESPONSE_BYTES:
                     raise ProviderError("provider_response_too_large")
             emit("response", {"http_status": response.status_code,
-                              "raw_response": bytes(content_bytes).decode("utf-8", errors="replace")})
+                              "raw_response": scrub(bytes(content_bytes).decode("utf-8", errors="replace"), (self._api_key,))})
             body = json.loads(content_bytes)
             choice = body["choices"][0]
             if not isinstance(choice, dict):

@@ -91,7 +91,8 @@ AI_TERMINAL_STATUSES = {"success", "failed", "disabled"}
 
 def agent_event_id(payload: Dict[str, Any]) -> str:
     """Stable source-version identity shared with the asynchronous AI worker."""
-    source = {key: value for key, value in payload.items() if key not in {"_id", "_agent_event_id"}}
+    source = {key: value for key, value in payload.items()
+              if key not in {"_id", "_agent_event_id", "pipeline_sent_at"}}
     return hashlib.sha256(
         json.dumps(source, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
     ).hexdigest()
@@ -854,7 +855,7 @@ class KafkaToMongoPipeline:
                         outcome = "invalid" if normalized.get("validation_errors") else "handled"
                         processor_input_outcomes.labels(message.topic(), outcome).inc()
                         processor_input_handling.labels(message.topic()).observe(time.monotonic() - input_started)
-                        sent_at = payload.get("stress_sent_at")
+                        sent_at = payload.get("pipeline_sent_at", payload.get("stress_sent_at"))
                         now = time.time()
                         if (isinstance(sent_at, (int, float)) and not isinstance(sent_at, bool)
                                 and math.isfinite(sent_at) and 0 < sent_at <= now):

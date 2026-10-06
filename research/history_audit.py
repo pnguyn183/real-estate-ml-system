@@ -23,7 +23,8 @@ def audit_history(records: list[dict], *, target="incoming_rate", interval_secon
     stamps = pd.to_datetime(frame.get("timestamp", pd.Series(index=frame.index, dtype=float)).map(parse_utc_timestamp), utc=True, errors="coerce")
     values = pd.to_numeric(frame.get(target, pd.Series(index=frame.index, dtype=float)), errors="coerce").replace([np.inf, -np.inf], np.nan)
     errors = [row.get("errors", []) for row in records]
-    healthy = pd.Series([not error and row.get("instrumentation_ready") is True for error, row in zip(errors, records)], index=frame.index)
+    healthy = pd.Series([not error and row.get("instrumentation_ready") is True and row.get("telemetry_usable") is not False
+                         for error, row in zip(errors, records)], index=frame.index)
     healthy &= stamps.notna() & values.notna() & (values >= 0)
     deltas = stamps.diff().dt.total_seconds()
     identities = [tuple(row.get(key) for key in ("run_id", "topic", "phase")) for row in records]
@@ -90,7 +91,12 @@ def history_plot(records, path):
         axis.grid(alpha=.2)
     axes[2].step(stamps, [bool(row.get("errors")) for row in records], where="post", color="tab:red")
     axes[2].set(ylabel="Collection error", xlabel="Actual UTC timestamp", yticks=[0, 1])
-    fig.suptitle("Recorded passive traffic history: gaps and missing measurements are retained")
+    if "requested_rate" in frame:
+        offered = pd.to_numeric(frame.requested_rate, errors="coerce")
+        axes[0].plot(stamps, offered, linewidth=.8, linestyle="--", label="Requested demand")
+        axes[0].lines[0].set_label("Measured ingress")
+        axes[0].legend()
+    fig.suptitle("Recorded traffic history: gaps and missing measurements are retained")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)

@@ -8,7 +8,9 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -131,3 +133,34 @@ def test_crawler_limits_are_arguments_not_shell_interpolation(monkeypatch):
     assert command[command.index("--limit") + 1] == "5"
     assert command[command.index("--max-pages") + 1] == "1"
     assert "--fresh-start" not in command
+
+
+@pytest.mark.parametrize("training_allowed", [False, True])
+def test_controlled_airflow_delegates_training_without_mongo_or_fit(monkeypatch, training_allowed):
+    from agents.runtime_policy import RuntimePolicy
+    from scripts import auto_train
+    import pymongo
+
+    monkeypatch.setattr(sys, "argv", ["runtime_checks.py", "train"])
+    monkeypatch.setattr(RuntimePolicy, "from_env", lambda: SimpleNamespace(
+        enabled=True, read=lambda: SimpleNamespace(training_allowed=training_allowed)))
+    monkeypatch.setattr(pymongo, "MongoClient", lambda *a, **k: pytest.fail("controlled Airflow must not load training data"))
+    monkeypatch.setattr(auto_train, "run_trainer", lambda: pytest.fail("fit belongs to the dedicated trainer"))
+    assert runtime.main() == 99
+
+
+@pytest.mark.parametrize("enough_data,result,expected", [(False, True, 99), (True, True, 0), (True, False, 1), (True, None, 99)])
+def test_airflow_training_keeps_legacy_behavior_when_control_disabled(monkeypatch, enough_data, result, expected):
+    from scripts import auto_train
+    import pymongo
+
+    monkeypatch.setenv("CONTROL_ENABLED", "false")
+    monkeypatch.setattr(sys, "argv", ["runtime_checks.py", "train"])
+    mongo = MagicMock()
+    count = auto_train.MIN_RECORDS if enough_data else 0
+    mongo.__enter__.return_value.__getitem__.return_value.__getitem__.return_value.count_documents.return_value = count
+    monkeypatch.setattr(pymongo, "MongoClient", lambda *a, **k: mongo)
+    trainer = MagicMock(return_value=result)
+    monkeypatch.setattr(auto_train, "run_trainer", trainer)
+    assert runtime.main() == expected
+    assert trainer.call_count == int(enough_data)

@@ -19,7 +19,7 @@ from research.data_audit import parse_utc_timestamp, write_json
 
 def observation_unavailable(observation: dict) -> bool:
     """Reject explicit collection failures without inventing status for old logs."""
-    return bool(observation.get("errors")) or (
+    return bool(observation.get("errors")) or observation.get("telemetry_usable") is False or (
         "instrumentation_ready" in observation and observation["instrumentation_ready"] is not True
     )
 

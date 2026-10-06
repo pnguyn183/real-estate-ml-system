@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from threading import Event
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -199,7 +201,8 @@ def synthetic_listing(**updates):
     )
 
 
-def test_traffic_completion_latency_is_recorded_only_after_commit(make_pipeline, monkeypatch):
+@pytest.mark.parametrize("stamp_field", ["pipeline_sent_at", "stress_sent_at"])
+def test_traffic_completion_latency_is_recorded_only_after_commit(make_pipeline, monkeypatch, stamp_field):
     pipeline = make_pipeline()
     handling, end_to_end, outcomes = Mock(), Mock(), Mock()
     monkeypatch.setattr(module, "processor_input_handling", handling)
@@ -210,12 +213,68 @@ def test_traffic_completion_latency_is_recorded_only_after_commit(make_pipeline,
         assert pipeline.consumer.commits == [("real_estate_stress_raw", 0, 8)]
 
     end_to_end.labels.return_value.observe.side_effect = assert_committed
-    payload = synthetic_listing(stress_sent_at=module.time.time() - 1)
+    payload = synthetic_listing(**{stamp_field: module.time.time() - 1})
     pipeline.consumer.messages = [Message(json.dumps(payload).encode(), topic="real_estate_stress_raw")]
     pipeline.consume_forever(max_messages=1)
     end_to_end.labels.return_value.observe.assert_called_once()
     handling.labels.return_value.observe.assert_called_once()
     outcomes.labels.assert_called_once_with("real_estate_stress_raw", "handled")
+
+
+@pytest.mark.parametrize("source", ["stress", "scraper"])
+def test_actual_producer_handoff_timestamp_reaches_committed_processor_latency(make_pipeline, monkeypatch, tmp_path, source):
+    from agents import stress
+    from agents.runtime_policy import RuntimePolicy
+    from agents.stress_metrics import StressMetrics
+    from scraper import kafka_producer
+
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+    monkeypatch.setattr(RuntimePolicy, "from_env", lambda: RuntimePolicy(enabled=False))
+
+    class HandoffProducer(Producer):
+        def list_topics(self, topic, timeout):
+            return SimpleNamespace(topics={topic: SimpleNamespace(error=None, partitions={0: None})})
+
+        def poll(self, timeout):
+            while self.pending:
+                self.pending.pop(0)(None, SimpleNamespace(partition=lambda: 0))
+
+    producer = HandoffProducer({})
+    if source == "stress":
+        config = stress.StressConfig(enabled=True, state_root=str(tmp_path / "stress"), max_records=1)
+        report = stress.run_once(config, StressMetrics(), Event(), lambda _: producer)
+        assert report["status"] == "completed" and report["delivered"] == 1
+        truth = json.loads((tmp_path / "stress/default/ground_truth.jsonl").read_text(encoding="utf-8"))
+        assert "pipeline_sent_at" not in truth
+    else:
+        original = listing(pipeline_sent_at=1)
+        clock[0] = 990
+
+        def wait(*args, **kwargs):
+            clock[0] = 1000  # Simulate time spent waiting for the agent's rate grant.
+            return True
+
+        gate = SimpleNamespace(wait=wait, published=lambda: None)
+        assert kafka_producer.publish_records(producer, [original], "real_estate_raw", 1, gate=gate) == 1
+        assert original["pipeline_sent_at"] == 1  # Do not mutate the crawler's record.
+
+    topic, _, payload = producer.sent[0]
+    assert payload["pipeline_sent_at"] == 1000
+    clock[0] = 1002
+    pipeline = make_pipeline()
+    end_to_end = Mock()
+    monkeypatch.setattr(module, "processor_input_end_to_end", end_to_end)
+
+    def observed(duration):
+        assert pipeline.consumer.commits == [(topic, 0, 8)]
+        assert duration == 2
+
+    end_to_end.labels.return_value.observe.side_effect = observed
+    pipeline.consumer.messages = [Message(json.dumps(payload).encode(), topic=topic)]
+    pipeline.consume_forever(max_messages=1)
+    end_to_end.labels.assert_called_once_with(topic)
+    end_to_end.labels.return_value.observe.assert_called_once_with(2)
 
 
 def test_traffic_commit_failure_is_not_counted_as_handled_or_latency(make_pipeline, monkeypatch):
@@ -495,4 +554,6 @@ def test_event_id_ignores_mongo_bookkeeping_but_changes_with_source(make_pipelin
     original = listing()
     identity = module.agent_event_id(original)
     assert module.agent_event_id({**original, "_id": "mongo-id", "_agent_event_id": "old"}) == identity
+    assert module.agent_event_id({**original, "pipeline_sent_at": 1000}) == identity
+    assert module.agent_event_id({**original, "pipeline_sent_at": 2000}) == identity
     assert module.agent_event_id(listing(price_text="9 tỷ")) != identity

@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from modeling.price_model import RealEstatePriceModel
 from processing.price_anomaly import add_anomaly_training_filter
 from agents.safety import real_data_query
+from agents.runtime_policy import RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
 from utils.metrics import (
     model_train_duration,
     start_prometheus_server,
@@ -60,30 +61,38 @@ def check_training_data():
             pass
 
 def run_trainer():
-    trainer_runs.inc()
-    trainer_last_run_timestamp.set(time.time())
-    start_time = time.time()
+    policy = RuntimePolicy.from_env()
     try:
-        logger.info("Starting trainer...")
-        client = MongoClient(MONGO_URI)
-        try:
-            records = list(
-                client[MONGO_DB][MONGO_FEATURE_COLLECTION].find(
-                    training_query(),
-                    {"_id": 0},
+        with training_lease(policy) as allowed:
+            if not allowed:
+                logger.info("Training deferred by control lease or another active trainer")
+                return None
+            trainer_runs.inc()
+            trainer_last_run_timestamp.set(time.time())
+            start_time = time.time()
+            logger.info("Starting trainer...")
+            client = MongoClient(MONGO_URI)
+            try:
+                records = list(
+                    client[MONGO_DB][MONGO_FEATURE_COLLECTION].find(
+                        training_query(),
+                        {"_id": 0},
+                    )
                 )
-            )
-        finally:
-            client.close()
-
-        model = RealEstatePriceModel()
-        result = model.train(records, model_path=MODEL_PATH, metrics_path=METRICS_PATH)
-        train_duration = time.time() - start_time
-        model_train_duration.observe(train_duration)
-        update_metrics_from_result(result)
-        trainer_last_success_timestamp.set(time.time())
-        logger.info("Training completed successfully: samples=%s duration=%.2fs", result.sample_count, train_duration)
-        return True
+            finally:
+                client.close()
+            require_training_permission(policy)
+            model = RealEstatePriceModel()
+            result = model.train(records, model_path=MODEL_PATH, metrics_path=METRICS_PATH)
+            train_duration = time.time() - start_time
+            model_train_duration.observe(train_duration)
+            update_metrics_from_result(result)
+            trainer_last_success_timestamp.set(time.time())
+            logger.info("Training completed successfully: samples=%s duration=%.2fs", result.sample_count, train_duration)
+            return True
+    except TrainingDeferred:
+        logger.info("Training deferred: control lease was revoked before fit")
+        return None
     except Exception as exc:
         trainer_runs_failed.inc()
         logger.error(f"Training error: {exc}")
@@ -100,7 +109,10 @@ def main():
     )
     while True:
         try:
-            if check_training_data():
+            if not RuntimePolicy.from_env().read().training_allowed:
+                logger.info("Training deferred until the control agent permits a new fit")
+                next_sleep = TRAIN_RETRY_INTERVAL
+            elif check_training_data():
                 training_ok = run_trainer()
                 next_sleep = TRAIN_INTERVAL if training_ok else TRAIN_RETRY_INTERVAL
             else:

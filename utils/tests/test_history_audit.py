@@ -33,6 +33,15 @@ def test_unavailable_values_cannot_supply_variation():
     assert report["status"] == "insufficient_variation"
 
 
+def test_recovery_warmup_is_not_usable_history_even_after_http_returns():
+    records = [{"timestamp": 1_700_000_000 + index * 5, "run_id": "one", "topic": "raw",
+                "incoming_rate": index, "errors": [], "instrumentation_ready": True} for index in range(8)]
+    records[3].update(telemetry_usable=False, telemetry_recovery_state="paused")
+    report = audit_history(records)
+    assert report["healthy_target_rows"] == 7
+    assert [segment["rows"] for segment in report["healthy_segments"]] == [3, 4]
+
+
 @pytest.mark.parametrize("records", [[], [{"incoming_rate": 3}], [{"timestamp": "invalid", "incoming_rate": 3}],
                                      [{"timestamp": 1_700_000_000}]])
 def test_cli_reports_empty_or_incomplete_history_without_crashing(tmp_path, records):
