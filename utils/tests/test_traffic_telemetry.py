@@ -139,6 +139,35 @@ def test_docker_units_and_cpu_core_percent_are_not_host_percent():
     assert stats["broker"]["network_rx_bytes"] == 2000
 
 
+@pytest.mark.parametrize("text,expected", [
+    (" 1e+03kB", 1_000_000),
+    ("2.5E-1 MiB", 262_144),
+    ("1e3B", 1000),
+    ("1EB", 10**18),
+])
+def test_docker_scientific_notation_keeps_si_and_iec_units(text, expected):
+    assert size_bytes(text) == expected
+
+
+@pytest.mark.parametrize("text", ["-1kB", "NaNkB", "infMiB", "1e+kB", "1..2MB", "1e309B", "1e308EiB"])
+def test_invalid_or_overflowed_docker_sizes_remain_unavailable(text):
+    with pytest.raises(ValueError):
+        size_bytes(text)
+
+
+def test_docker_stats_accept_live_scientific_network_and_disk_counters():
+    stats = parse_docker_stats([{
+        "Name": "broker", "ID": "abc", "MemUsage": "1e+03MiB / 8GiB",
+        "NetIO": "2MB / 1e+03kB", "BlockIO": "1.5E+02kB / 0B", "CPUPerc": "1.5%",
+    }])["broker"]
+    assert stats["memory_bytes"] == 1000 * 1024**2
+    assert stats["memory_limit_bytes"] == 8 * 1024**3
+    assert stats["network_rx_bytes"] == 2_000_000
+    assert stats["network_tx_bytes"] == 1_000_000
+    assert stats["disk_read_bytes"] == 150_000
+    assert stats["disk_write_bytes"] == 0
+
+
 def test_vm_memory_reports_total_host_headroom_and_full_swap_separately():
     text = "MemTotal: 8388608 kB\nMemFree: 65536 kB\nMemAvailable: 524288 kB\nSwapTotal: 2097152 kB\nSwapFree: 0 kB\n"
     memory = parse_vm_memory(text)

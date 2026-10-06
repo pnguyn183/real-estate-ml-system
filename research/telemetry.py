@@ -36,12 +36,18 @@ DEFAULT_CONTAINERS = (
 
 def size_bytes(value: str) -> float:
     """Parse Docker's displayed SI/IEC units (CLI values have rounding error)."""
-    match = re.fullmatch(r"\s*([0-9.]+)\s*([kmgtpe]?i?b)\s*", value, flags=re.I)
+    # Docker may render rounded counters such as ``1e+03kB``. Keep the
+    # numeric grammar bounded to nonnegative decimal/scientific notation.
+    match = re.fullmatch(r"\s*((?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:e[+-]?[0-9]+)?)\s*([kmgtpe]?i?b)\s*",
+                         value, flags=re.I)
     if match is None:
         raise ValueError(f"Unsupported Docker size {value!r}")
     unit = match[2].lower()
     power = "bkmgtpe".index(unit[0])
-    return float(match[1]) * (1024 if "i" in unit else 1000) ** power
+    result = float(match[1]) * (1024 if "i" in unit else 1000) ** power
+    if not math.isfinite(result):
+        raise ValueError(f"Unsupported Docker size {value!r}")
+    return result
 
 
 def parse_docker_stats(rows: list[dict]) -> dict[str, dict]:

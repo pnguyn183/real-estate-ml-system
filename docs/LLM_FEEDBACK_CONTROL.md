@@ -200,10 +200,11 @@ python -m pytest -q utils/tests/test_control_agent.py utils/tests/test_runtime_p
 python -m pytest -q -ra
 ```
 
-Ngày 05/10/2026, lượt đọc thử live không kết nối được Docker Engine/Kafka;
-kiểm tra lại ngày 06/10 vẫn chưa kết nối được Docker Engine. Chưa có
-kết quả chạy vòng LLM + tài nguyên thật để tuyên bố hiệu quả hay capacity. Không
-thay đổi `.env`, không gọi API thật và không sửa container trong lần kiểm chứng đó.
-Model dự phòng cần credentials do người vận hành cấu hình trước khi thử switch thật.
+Sau khi Docker được bật ngày 06/10/2026, đã kiểm chứng kết nối Gemini, áp dụng
+CPU/RAM vào Docker/Compose, rollback và cơ chế tạm dừng khi thiếu RAM/provider lỗi.
+Lượt thử chưa áp dụng được quyết định LLM để phát tải, nên chưa chứng minh hiệu quả
+điều tiết hay capacity. Có sửa lỗi parser dung lượng Docker dạng ký hiệu khoa học.
+Chi tiết và bằng chứng: [kiểm chứng thực tế 06/10](LLM_FEEDBACK_VALIDATION_20261006.md).
+Model dự phòng cần credentials/route được cấu hình trước khi thử switch thật.
 Các kết quả adaptive trong nghiên cứu cũ thuộc policy cũ, không chứng minh hiệu quả
 của LLM agent này.
