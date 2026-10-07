@@ -206,5 +206,8 @@ Lượt thử chưa áp dụng được quyết định LLM để phát tải, n
 điều tiết hay capacity. Có sửa lỗi parser dung lượng Docker dạng ký hiệu khoa học.
 Chi tiết và bằng chứng: [kiểm chứng thực tế 06/10](LLM_FEEDBACK_VALIDATION_20261006.md).
 Model dự phòng cần credentials/route được cấu hình trước khi thử switch thật.
+Lượt chạy lại ngày 07/10 đã nhận quyết định LLM, phát và xử lý dữ liệu thật,
+đồng thời chuyển model thành công khi HTTP 503; xem
+[kiểm chứng vòng phản hồi và fallback](LLM_FEEDBACK_VALIDATION_20261007.md).
 Các kết quả adaptive trong nghiên cứu cũ thuộc policy cũ, không chứng minh hiệu quả
 của LLM agent này.

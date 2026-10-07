@@ -1,5 +1,9 @@
 # Kiểm chứng thực tế ngày 06/10/2026
 
+Lượt chạy lại ngày 07/10 đã kiểm chứng vòng LLM → Kafka và chuyển model dự phòng;
+xem [báo cáo cập nhật](LLM_FEEDBACK_VALIDATION_20261007.md). Nội dung dưới đây giữ
+nguyên kết quả giới hạn của lượt 06/10.
+
 Đã chạy thử trên Docker thật và gọi Gemini thật. **Chưa chứng minh được vòng
 LLM tự tăng/giảm lưu lượng khi có dữ liệu**: phần lớn lượt thử bị chặn vì thiếu
 RAM host; lần gọi model trong vòng điều tiết gặp lỗi dịch vụ tạm thời.

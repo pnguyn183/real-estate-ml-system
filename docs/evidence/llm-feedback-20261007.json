@@ -1,0 +1,341 @@
+{
+  "code_commit": "f02563daeaafd42c500f7e6dd63fa109a7ebfd9f",
+  "client_date": "2026-10-07",
+  "scope": "Low-load live feedback and HTTP503 model failover. No claim of multi-rate load adaptation, capacity or autonomous resizing.",
+  "model_artifact_note": "Run03 preparation-to-cleanup hashes differ. Normal trainer produced a model during preparation and again after service restoration; controlled trainer only skipped/deferred fits.",
+  "runs": [
+    {
+      "run_id": "llm-live-20261007-02",
+      "samples": 30,
+      "elapsed_seconds": 236.88711190223694,
+      "applied_decisions": [
+        {
+          "elapsed_seconds": 120.42986989021301,
+          "model": "gemini-3.6-flash",
+          "state": "light",
+          "rate_per_second": 5.0,
+          "training_allowed": true,
+          "resources": {}
+        },
+        {
+          "elapsed_seconds": 222.9529745578766,
+          "model": "gemini-3.6-flash",
+          "state": "light",
+          "rate_per_second": 5.0,
+          "training_allowed": true,
+          "resources": {}
+        }
+      ],
+      "pause_reasons": {
+        "telemetry_incomplete": 1,
+        "decision_failed:provider_unavailable": 3,
+        "decision_failed:provider_cooldown": 2
+      },
+      "provider_statuses": [
+        {
+          "model": "gemini-3.6-flash",
+          "status": 503
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 503
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 200
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 503
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 200
+        }
+      ],
+      "stable_positive_windows": [
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.868163391705615,
+          "throughput": 8.519285935484826,
+          "lag": 0,
+          "p95_seconds": 8.599999999999998
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.819985936197222,
+          "throughput": 4.819985936197222,
+          "lag": 0,
+          "p95_seconds": 0.0494921875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.805192675438768,
+          "throughput": 4.805192675438768,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.943103432697622,
+          "throughput": 4.943103432697622,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        }
+      ],
+      "stress_report": {
+        "run_id": "llm-live-20261007-02",
+        "scenario": "normal",
+        "status": "interrupted",
+        "generated": 245,
+        "delivered": 245,
+        "failed": 0,
+        "undelivered": 0,
+        "partitions": {
+          "0": 80,
+          "1": 84,
+          "2": 81
+        },
+        "duplicates": 0,
+        "unstructured": 0,
+        "duration_seconds": 242.9822148600001,
+        "delivered_per_second": 1.008304250338497
+      },
+      "mongo_isolation": [
+        {
+          "database": "real_estate_stress_db",
+          "collections": [
+            {
+              "collection": "training_features",
+              "count": 245
+            },
+            {
+              "collection": "listings_raw",
+              "count": 245
+            }
+          ]
+        },
+        {
+          "database": "real_estate_db",
+          "collections": []
+        }
+      ],
+      "host_available_min_percent": 10.054609155444094,
+      "vm_available_min_percent": 36.29597671775692,
+      "cleanup": {
+        "compose_bytes_restored": true,
+        "env_unchanged": true,
+        "services": [
+          {
+            "service": "scraper",
+            "status": "restored"
+          },
+          {
+            "service": "frontend",
+            "status": "restored"
+          },
+          {
+            "service": "predictor",
+            "status": "restored"
+          },
+          {
+            "service": "api",
+            "status": "restored"
+          },
+          {
+            "service": "mongo-express",
+            "status": "restored"
+          },
+          {
+            "service": "grafana",
+            "status": "restored"
+          }
+        ],
+        "model_hash_unchanged_since_preparation": true
+      },
+      "evidence_sha256": {
+        "live.jsonl": "5b2c3a75030716c0d1d659a5db3a8633eceac690a76e266ef46178ccdf459a3e",
+        "provider.jsonl": "3e3bc71b424dac210612fc6d1f91fecbd620469e73563911f8df126c7edca1c9",
+        "cleanup.json": "43da9a9abcec78839ce69c7652422f63991acc509ac624263b98d3a8a24bbf61",
+        "mongo-isolation.json": "a88a6d691b4fea14edbd88fa133cb053168eb7d716007ea2b3496f56b803670b"
+      }
+    },
+    {
+      "run_id": "llm-live-20261007-03",
+      "samples": 31,
+      "elapsed_seconds": 240.62290024757385,
+      "applied_decisions": [
+        {
+          "elapsed_seconds": 17.226863861083984,
+          "model": "gemini-3.6-flash",
+          "state": "light",
+          "rate_per_second": 5.0,
+          "training_allowed": true,
+          "resources": {}
+        },
+        {
+          "elapsed_seconds": 58.285988092422485,
+          "model": "gemini-3.5-flash-lite",
+          "state": "normal",
+          "rate_per_second": 5.0,
+          "training_allowed": true,
+          "resources": {}
+        },
+        {
+          "elapsed_seconds": 85.23006701469421,
+          "model": "gemini-3.5-flash-lite",
+          "state": "normal",
+          "rate_per_second": 5.0,
+          "training_allowed": true,
+          "resources": {}
+        }
+      ],
+      "pause_reasons": {
+        "telemetry_incomplete": 1,
+        "emergency_host_memory": 21
+      },
+      "provider_statuses": [
+        {
+          "model": "gemini-3.6-flash",
+          "status": 200
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 503
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "status": 200
+        },
+        {
+          "model": "gemini-3.6-flash",
+          "status": 503
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "status": 200
+        }
+      ],
+      "stable_positive_windows": [
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.812980933301785,
+          "throughput": 4.812980933301785,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.874595859778807,
+          "throughput": 4.874595859778807,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.807213565818948,
+          "throughput": 4.807213565818948,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.817352105391916,
+          "throughput": 4.817352105391916,
+          "lag": 0,
+          "p95_seconds": 0.04944852941176471
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.897321064612438,
+          "throughput": 4.897321064612438,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        },
+        {
+          "target_rate": 5.0,
+          "measured_ingress": 4.7966860925071515,
+          "throughput": 4.7966860925071515,
+          "lag": 0,
+          "p95_seconds": 0.04875
+        }
+      ],
+      "stress_report": {
+        "run_id": "llm-live-20261007-03",
+        "scenario": "normal",
+        "status": "interrupted",
+        "generated": 401,
+        "delivered": 401,
+        "failed": 0,
+        "undelivered": 0,
+        "partitions": {
+          "0": 135,
+          "2": 123,
+          "1": 143
+        },
+        "duplicates": 0,
+        "unstructured": 0,
+        "duration_seconds": 246.16286394400004,
+        "delivered_per_second": 1.6290028218522195
+      },
+      "mongo_isolation": [
+        {
+          "database": "real_estate_stress_db",
+          "collections": [
+            {
+              "collection": "training_features",
+              "count": 401
+            },
+            {
+              "collection": "listings_raw",
+              "count": 401
+            }
+          ]
+        },
+        {
+          "database": "real_estate_db",
+          "collections": []
+        }
+      ],
+      "host_available_min_percent": 3.648507144240698,
+      "vm_available_min_percent": 39.85866499906799,
+      "cleanup": {
+        "compose_bytes_restored": true,
+        "env_unchanged": true,
+        "services": [
+          {
+            "service": "scraper",
+            "status": "restored"
+          },
+          {
+            "service": "frontend",
+            "status": "restored"
+          },
+          {
+            "service": "predictor",
+            "status": "restored"
+          },
+          {
+            "service": "api",
+            "status": "restored"
+          },
+          {
+            "service": "mongo-express",
+            "status": "restored"
+          },
+          {
+            "service": "grafana",
+            "status": "restored"
+          }
+        ],
+        "model_hash_unchanged_since_preparation": false
+      },
+      "evidence_sha256": {
+        "live.jsonl": "de4afe60ccc9a7e8e2eaec21e86b743557ecf6dfe3b220390d47a9869f89381c",
+        "provider.jsonl": "ad472ee4f14cb13530ff987c2e195bb6155704dc1700128fcd34a84641cd7f3c",
+        "cleanup.json": "0b0fa9b711e95f593bfab7b23bfcee02bc2876be672c78104549eb9f521408be",
+        "mongo-isolation.json": "d1e327b88bf630f8cd30d11c749144a3aff9c5d5e5863d92fee0a50fd950cc0c"
+      }
+    }
+  ]
+}
