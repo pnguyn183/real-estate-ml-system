@@ -1,0 +1,46 @@
+{
+  "validation_date": "2026-10-13",
+  "verdict": "inconclusive",
+  "eligible_pairs": 0,
+  "demonstrated_pairs": 0,
+  "scope": "Calibration attempts stopped by host RAM emergency guard; no LLM stabilization evidence",
+  "attempts": [
+    {
+      "session": "llm-proof-20261012-01",
+      "status": "guard_stopped",
+      "stop_reason": "emergency_host_memory",
+      "offered": 20,
+      "admitted": 20,
+      "acknowledged": 20,
+      "committed": 20,
+      "pending": 0,
+      "enqueue_failed": 0,
+      "delivery_failed": 0,
+      "planned": 31200,
+      "cancelled_future_offers": 31180,
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "source_commit": "2ce8f3766c4b06dc89af49c0b6dfa6b558046cf8"
+    },
+    {
+      "session": "llm-proof-20261013-01",
+      "status": "guard_stopped",
+      "stop_reason": "emergency_host_memory",
+      "offered": 17,
+      "admitted": 17,
+      "acknowledged": 17,
+      "committed": 17,
+      "pending": 0,
+      "enqueue_failed": 0,
+      "delivery_failed": 0,
+      "planned": 31200,
+      "cancelled_future_offers": 31183,
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "source_commit": "c2ecbccff8655830b9ff37ac4538f442b1021d07"
+    }
+  ],
+  "main_commit": "a2c5fbb8459015c1924ed78449de41240e995e13"
+}
