@@ -1,0 +1,23 @@
+{
+  "pairs": 3,
+  "seed": 42,
+  "baseline_rate": 2000,
+  "calibration_rates": [10, 30, 100, 300, 600],
+  "calibration_stage_seconds": 30,
+  "light_seconds": 40,
+  "overload_seconds": 100,
+  "recovery_seconds": 40,
+  "sample_seconds": 5,
+  "decision_seconds": 20,
+  "timeout_seconds": 20,
+  "lease_seconds": 90,
+  "max_sample_age_seconds": 40,
+  "target_latency_seconds": 2,
+  "min_memory_available_percent": 10,
+  "hard_lag": 10000,
+  "max_records": 100000,
+  "max_queue": 2000,
+  "max_wait_seconds": 20,
+  "drain_seconds": 120,
+  "completion_poll_seconds": 0.25
+}

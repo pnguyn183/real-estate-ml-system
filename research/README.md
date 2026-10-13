@@ -1,9 +1,11 @@
 # Traffic prediction and adaptive admission research
 
 The separate [LLM feedback agent](../docs/LLM_FEEDBACK_CONTROL.md) on `dev`
-controls the real stress/crawl publishers and dedicated trainer. This directory
-retains the reproducible rule-based comparison and history-collection workflow;
-its historical results are not measurements of the new LLM policy.
+controls the real stress/crawl publishers and dedicated trainer. The new
+[LLM overload experiment](../docs/LLM_OVERLOAD_EXPERIMENT.md) adds calibration and
+three paired trials with demand measured before admission. The existing
+`run_experiment` command retains the rule-based comparison; its historical
+results are not measurements of the LLM policy.
 
 The research target is incoming data traffic and sustainable Kafka processing.
 The existing property-price API remains a separate legacy application. Read

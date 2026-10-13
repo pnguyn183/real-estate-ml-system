@@ -78,7 +78,8 @@ class ControlSettings:
 
 
 METRICS = ("timestamp", "incoming_rate", "throughput", "cpu_percent", "ram_percent", "kafka_lag",
-           "latency_p95_seconds", "error_rate", "vm_memory_available_percent", "vm_swap_used_percent")
+           "latency_p95_seconds", "error_rate", "vm_memory_available_percent", "vm_swap_used_percent",
+           "offered_rate", "pending_offered", "rejected_rate", "admission_limit")
 
 
 def finite(value) -> bool:
@@ -193,6 +194,10 @@ Balance stream processing against training. Training permission gates NEW fits;
 a running fit is not interrupted. Do not claim exact capacity from idle or short
 history. Capacity evidence is workload-dependent. Null latency during idle means
 no samples, not zero latency. Never invent forecasts, measurements or action success.
+When offered_rate is present it is demand measured BEFORE admission; incoming_rate
+is admitted Kafka traffic. Account for pending_offered and rejected_rate: low
+Kafka latency obtained by withholding all work is not successful service. Use
+admission_limit and demand trends to evaluate the effect of your last action.
 Keep rate within the operator maximum, use 0 to pause ingress. Resources may name
 only allowed services and must fit per-service and TOTAL Docker budgets. Omit
 resources when adjustment is not justified, disabled, or original limits cannot
@@ -226,7 +231,8 @@ class FeedbackAgent:
 
     def pause(self, reason: str) -> dict:
         receipt = {"timestamp": self.clock(), "status": "paused" if self.apply else "would_pause",
-                   "reason": reason, "decision_id": uuid4().hex}
+                   "reason": reason, "decision_id": uuid4().hex,
+                   "action_origin": "shutdown" if reason == "controller_stopped" else "guard"}
         self.publish(0.0, False, receipt["decision_id"])
         self.actions.append(receipt)
         self._log("decisions.jsonl", receipt)
@@ -288,7 +294,8 @@ class FeedbackAgent:
             self.publish(decision.rate_per_second, decision.training_allowed, decision_id)
             receipt = {"timestamp": self.clock(), "decision_id": decision_id,
                        "status": "applied" if self.apply else "proposed", "decision": decision.model_dump(),
-                       "provider": result.provider, "model": result.model, "resources": resource_receipt}
+                       "provider": result.provider, "model": result.model, "resources": resource_receipt,
+                       "action_origin": "llm"}
             self.actions.append(receipt)
             self._log("decisions.jsonl", receipt)
             return receipt

@@ -200,6 +200,33 @@ def test_idle_measurements_do_not_establish_capacity():
     assert evidence["backlogged_samples"] == 0 and not evidence["saturation_established"]
 
 
+def test_offered_demand_context_preserves_finite_values_and_sanitizes_optional_metrics(tmp_path):
+    agent, _, router, _, _ = setup(tmp_path)
+    receipt = agent.tick(sample(offered_rate=100.0, pending_offered=40,
+                                rejected_rate=float("nan"), admission_limit=12.0))
+    assert receipt["status"] == "applied"
+    context = json.loads(router.calls[0][0][-1]["content"])
+    row = context["history"][-1]
+    assert row["offered_rate"] == 100.0
+    assert row["pending_offered"] == 40
+    assert row["rejected_rate"] is None
+    assert row["admission_limit"] == 12.0
+    assert row["incoming_rate"] == 10.0
+
+
+def test_receipts_distinguish_model_guard_and_shutdown_actions(tmp_path):
+    agent, _, _, _, _ = setup(tmp_path)
+    model = agent.tick(sample())
+    guard = agent.pause("emergency_host_memory")
+    with control_session(agent):
+        pass
+    actions = [json.loads(line) for line in (tmp_path / "decisions.jsonl").read_text().splitlines()]
+    assert model["action_origin"] == "llm"
+    assert guard["action_origin"] == "guard"
+    assert actions[-1]["action_origin"] == "shutdown"
+    assert actions[-1]["reason"] == "controller_stopped"
+
+
 def test_running_airflow_without_control_blocks_apply(tmp_path, monkeypatch):
     root = tmp_path / "runtime" / "control"
     def run(args):

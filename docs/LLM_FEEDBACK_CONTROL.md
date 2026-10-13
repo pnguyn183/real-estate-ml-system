@@ -1,5 +1,8 @@
 # Điều tiết bằng LLM agent trên nhánh dev
 
+Đo hiệu quả khi quá tải bằng [phép thử đối chứng LLM](LLM_OVERLOAD_EXPERIMENT.md):
+cùng workload, Docker limits và trạng thái training, có tính cả nhu cầu trước rate gate.
+
 `agents/control_agent.py` chạy trên máy chủ Docker. Model nhận số đo và lịch sử
 quyết định, tự chọn trạng thái `light`, `normal`, `heavy`, tốc độ đầu vào, quyền
 khởi chạy training và CPU/RAM cho các container được phép. Không có bảng luật
