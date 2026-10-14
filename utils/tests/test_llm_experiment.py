@@ -258,6 +258,11 @@ def test_producer_constructor_failure_still_closes_collector_and_revokes(fake_pi
     assert all(c.closed for c in fake_pipeline.collectors)
     assert result["actions"][-1]["reason"] == "controller_stopped"
     assert "private" not in json.dumps(result)
+    location = result["error_location"][-1]
+    assert location["file"] == "test_llm_experiment.py"
+    assert location["function"] == "__init__"
+    assert isinstance(location["line"], int)
+    assert set(location) == {"file", "function", "line"}
 
 
 def test_observer_failure_invalidates_instead_of_silently_claiming_completion(fake_pipeline, tmp_path):

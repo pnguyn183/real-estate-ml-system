@@ -95,6 +95,47 @@ def test_missing_corrupt_and_expired_policy_recover_after_atomic_replacement(con
     assert policy.read().valid
 
 
+def test_policy_read_retries_only_transient_permission_errors(controlled, monkeypatch):
+    policy, _ = controlled
+    original_open = Path.open
+    calls, sleeps = [], []
+    def transient(path, *args, **kwargs):
+        calls.append(path)
+        if len(calls) <= 2:
+            raise PermissionError("replacement in progress")
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", transient)
+    monkeypatch.setattr("agents.runtime_policy.time.sleep", sleeps.append)
+    assert policy.read().valid
+    assert len(calls) == 3 and sleeps == [.01, .01]
+
+
+def test_policy_read_permanent_permission_failure_is_bounded_and_fails_closed(controlled, monkeypatch):
+    policy, _ = controlled
+    calls, sleeps = [], []
+    def denied(path, *args, **kwargs):
+        calls.append(path)
+        raise PermissionError("access denied")
+    monkeypatch.setattr(Path, "open", denied)
+    monkeypatch.setattr("agents.runtime_policy.time.sleep", sleeps.append)
+    result = policy.read()
+    assert not result.valid and result.rate_per_second == 0 and not result.training_allowed
+    assert len(calls) == 4 and sleeps == [.01] * 3
+
+
+@pytest.mark.parametrize("kind", ["missing", "corrupt", "expired"])
+def test_policy_read_does_not_retry_missing_bad_or_expired_data(controlled, monkeypatch, kind):
+    policy, _ = controlled
+    if kind == "missing":
+        policy.path.unlink()
+    elif kind == "corrupt":
+        policy.path.write_text("broken{")
+    else:
+        write_policy(policy.path, expires_at=100)
+    monkeypatch.setattr("agents.runtime_policy.time.sleep", lambda delay: pytest.fail("unexpected retry"))
+    assert not policy.read().valid
+
+
 def test_gate_rereads_pause_caps_requested_rate_and_polls(controlled):
     policy, clock = controlled
     write_policy(policy.path, rate_per_second=0)

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from agents.control_agent import (ControlSettings, FeedbackAgent, capacity_evidence,
-                                 control_session, controller_lock, observation_problem, verify_participants)
+                                 atomic_json, control_session, controller_lock, observation_problem, verify_participants)
 from agents.runtime_policy import RuntimePolicy
 from agents.model_router import RoutedResponse
 from agents.providers import ProviderError
@@ -225,6 +225,56 @@ def test_receipts_distinguish_model_guard_and_shutdown_actions(tmp_path):
     assert guard["action_origin"] == "guard"
     assert actions[-1]["action_origin"] == "shutdown"
     assert actions[-1]["reason"] == "controller_stopped"
+
+
+def test_atomic_json_retries_transient_reader_contention_without_partial_policy(tmp_path, monkeypatch):
+    import os
+    path = tmp_path / "policy.json"
+    path.write_text('{"old": true}')
+    replace = os.replace
+    calls, sleeps = [], []
+    def transient(source, target):
+        calls.append((source, target))
+        if len(calls) <= 3:
+            assert json.loads(path.read_text()) == {"old": True}
+            raise PermissionError("reader holds destination")
+        replace(source, target)
+    monkeypatch.setattr("agents.control_agent.os.replace", transient)
+    monkeypatch.setattr("agents.control_agent.time.sleep", sleeps.append)
+    atomic_json(path, {"new": True})
+    assert len(calls) == 4 and sleeps == [.02] * 3
+    assert json.loads(path.read_text()) == {"new": True}
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_atomic_json_permanent_permission_failure_is_bounded_and_cleans_temp(tmp_path, monkeypatch):
+    path = tmp_path / "policy.json"
+    path.write_text('{"old": true}')
+    clock, calls = [0.0], []
+    def denied(source, target):
+        calls.append(source)
+        raise PermissionError("permanently denied")
+    def sleep(seconds):
+        clock[0] += seconds
+    monkeypatch.setattr("agents.control_agent.os.replace", denied)
+    monkeypatch.setattr("agents.control_agent.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("agents.control_agent.time.sleep", sleep)
+    with pytest.raises(PermissionError):
+        atomic_json(path, {"new": True})
+    assert clock[0] == pytest.approx(1.0)
+    assert len(calls) <= 52
+    assert json.loads(path.read_text()) == {"old": True}
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_atomic_json_does_not_retry_other_filesystem_errors(tmp_path, monkeypatch):
+    def broken(source, target):
+        raise OSError("disk failure")
+    monkeypatch.setattr("agents.control_agent.os.replace", broken)
+    monkeypatch.setattr("agents.control_agent.time.sleep", lambda seconds: pytest.fail("unexpected retry"))
+    with pytest.raises(OSError):
+        atomic_json(tmp_path / "policy.json", {"new": True})
+    assert not list(tmp_path.iterdir())
 
 
 def test_running_airflow_without_control_blocks_apply(tmp_path, monkeypatch):

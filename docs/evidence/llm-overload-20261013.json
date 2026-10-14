@@ -3,7 +3,7 @@
   "verdict": "inconclusive",
   "eligible_pairs": 0,
   "demonstrated_pairs": 0,
-  "scope": "Calibration attempts stopped by host RAM emergency guard; no LLM stabilization evidence",
+  "scope": "Calibration attempts interrupted by host RAM guard or Windows policy-file contention; no LLM stabilization evidence",
   "attempts": [
     {
       "session": "llm-proof-20261012-01",
@@ -40,6 +40,24 @@
       "cleanup_status": "restored",
       "restore_errors": [],
       "source_commit": "c2ecbccff8655830b9ff37ac4538f442b1021d07"
+    },
+    {
+      "session": "llm-proof-20261013-02",
+      "status": "failed",
+      "stop_reason": "PermissionError",
+      "source_commit": "6284043280737442b8f80eaa4c80cc5f2f750fc4",
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "offered": 15362,
+      "admitted": 15353,
+      "acknowledged": 15353,
+      "committed": 14721,
+      "pending": 632,
+      "enqueue_failed": 0,
+      "delivery_failed": 0,
+      "planned": 31200,
+      "cancelled_future_offers": 15838
     }
   ],
   "main_commit": "a2c5fbb8459015c1924ed78449de41240e995e13"

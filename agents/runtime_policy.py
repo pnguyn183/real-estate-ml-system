@@ -57,8 +57,17 @@ class RuntimePolicy:
         if not self.enabled or (source_topic is not None and not self.applies(source_topic)):
             return PolicySnapshot(math.inf, True, True, "disabled")
         try:
-            with self.path.open("rb") as handle:
-                payload = handle.read(16385)
+            for attempt in range(4):
+                try:
+                    with self.path.open("rb") as handle:
+                        payload = handle.read(16385)
+                    break
+                except PermissionError:
+                    # Atomic replacement can briefly deny new handles on
+                    # Windows. Retry only this filesystem race, not bad data.
+                    if attempt == 3:
+                        raise
+                    time.sleep(.01)
             if len(payload) > 16384:
                 raise ValueError("oversized policy")
             value = json.loads(payload)

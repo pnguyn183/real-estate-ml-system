@@ -138,7 +138,18 @@ def atomic_json(path: Path, value: dict) -> None:
             json.dump(value, output, allow_nan=False, ensure_ascii=True)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(name, path)
+        # Windows readers briefly hold handles without delete sharing. Retry
+        # only replacement; keep the complete old lease visible until success.
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                os.replace(name, path)
+                break
+            except PermissionError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(.02, remaining))
     finally:
         if name and os.path.exists(name):
             os.unlink(name)

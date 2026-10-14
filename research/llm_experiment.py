@@ -238,6 +238,17 @@ def safe_failure_reason(exc):
     return type(exc).__name__
 
 
+def safe_failure_location(exc):
+    """Locate failures without exposing source text, local variables or paths."""
+    frames = []
+    trace = exc.__traceback__
+    while trace is not None:
+        frames.append({"file": Path(trace.tb_frame.f_code.co_filename).name,
+                       "function": trace.tb_frame.f_code.co_name, "line": trace.tb_lineno})
+        trace = trace.tb_next
+    return frames[-12:]
+
+
 def idle_preflight(collector, cfg, bootstrap, stop):
     preflight(bootstrap, TOPIC)
     deadline = time.monotonic() + cfg["drain_seconds"]
@@ -443,6 +454,7 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
     except BaseException as exc:
         result["status"] = "cancelled" if isinstance(exc, KeyboardInterrupt) else "failed"
         result["error_type"] = type(exc).__name__
+        result["error_location"] = safe_failure_location(exc)
         # Keep expected local validation reasons, never arbitrary provider/transport payloads.
         result["stop_reason"] = safe_failure_reason(exc)
     finally:
@@ -595,7 +607,8 @@ def main(argv=None):
                     break
             session["status"] = "completed" if len(runs) == 2 * cfg["pairs"] and not stop.is_set() else "incomplete"
     except Exception as exc:
-        session.update(status="blocked", error_type=type(exc).__name__, reason=safe_failure_reason(exc))
+        session.update(status="blocked", error_type=type(exc).__name__, reason=safe_failure_reason(exc),
+                       error_location=safe_failure_location(exc))
         print("Experiment blocked: " + session["reason"], flush=True)
     finally:
         session["finished_at"] = time.time()
