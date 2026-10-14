@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-14",
+  "session": "llm-proof-20261014-01",
+  "source_commit": "e972055c77379b19929521e1410ceb522351faa5",
+  "verdict": "inconclusive",
+  "eligible_pairs": 0,
+  "demonstrated_pairs": 0,
+  "status": "guard_stopped",
+  "stop_reason": "emergency_host_memory",
+  "llm_actions": 0,
+  "accounting": {
+    "planned": 31200,
+    "offered": 43,
+    "admitted": 43,
+    "acknowledged": 43,
+    "committed": 43,
+    "pending": 0,
+    "enqueue_failed": 0,
+    "delivery_failed": 0,
+    "cancelled_future_offers": 31157
+  },
+  "cleanup_status": "restored",
+  "restore_errors": [],
+  "windows_policy_contention_check": {
+    "scope": "local temporary-file concurrency test, not live LLM evidence",
+    "duration_seconds": 3.012,
+    "writes": 180,
+    "reads": 1801,
+    "write_errors": 0,
+    "invalid_reads": 0
+  },
+  "focused_tests_passed": 202,
+  "main_commit": "a2c5fbb8459015c1924ed78449de41240e995e13"
+}
