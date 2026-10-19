@@ -1,26 +1,282 @@
 {
+  "schema_version": 2,
   "date": "2026-10-14",
-  "session": "llm-proof-20261014-01",
-  "source_commit": "e972055c77379b19929521e1410ceb522351faa5",
   "verdict": "inconclusive",
   "eligible_pairs": 0,
   "demonstrated_pairs": 0,
-  "status": "guard_stopped",
-  "stop_reason": "emergency_host_memory",
   "llm_actions": 0,
-  "accounting": {
-    "planned": 31200,
-    "offered": 43,
-    "admitted": 43,
-    "acknowledged": 43,
-    "committed": 43,
-    "pending": 0,
-    "enqueue_failed": 0,
-    "delivery_failed": 0,
-    "cancelled_future_offers": 31157
-  },
-  "cleanup_status": "restored",
-  "restore_errors": [],
+  "scope": "Three historical sessions on 2026-10-14; no LLM arm ran. Fixed Docker allocations and training stopped during each trial.",
+  "sessions": [
+    {
+      "session": "llm-proof-20261014-01",
+      "source_commit": "e972055c77379b19929521e1410ceb522351faa5",
+      "session_status": "calibration_inconclusive",
+      "verdict": "inconclusive",
+      "eligible_pairs": 0,
+      "demonstrated_pairs": 0,
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "runs": [
+        {
+          "artifact": "runtime/research/llm-proof-20261014-01/calibration/run.json",
+          "mode": "baseline",
+          "status": "guard_stopped",
+          "stop_reason": "emergency_host_memory",
+          "llm_actions": 0,
+          "accounting": {
+            "planned": 31200,
+            "offered": 43,
+            "admitted": 43,
+            "acknowledged": 43,
+            "committed": 43,
+            "pending": 0,
+            "rejected": 0,
+            "rejected_by_reason": {},
+            "enqueue_failed": 0,
+            "delivery_failed": 0,
+            "cancelled_future_offers": 31157
+          },
+          "source_errors": [],
+          "rate_read_errors": 0,
+          "completion_observer": {
+            "errors": [],
+            "max_poll_gap_seconds": 0.4060000000000059
+          },
+          "cleanup_errors": [],
+          "peak_lag_all_samples": 43,
+          "host_available_percent_min_all_samples": 3.457212471800966,
+          "vm_available_percent_min_all_samples": 41.97742431553645,
+          "peak_pipeline_interval_p95_histogram_estimate_seconds_all_samples": 25.700000000000003,
+          "offered_to_observed_commit_p95_upper_seconds": 10.916761875152588
+        }
+      ],
+      "calibration": {
+        "status": "guard_stopped",
+        "evidence": null,
+        "selected_profile": null,
+        "scope": "First sustained overload observed for this workload and allocation, not absolute capacity"
+      }
+    },
+    {
+      "session": "llm-proof-20261014-02",
+      "source_commit": "cffa689d01cee1fcbf5ecb5229dceeb5e745e13d",
+      "session_status": "incomplete",
+      "verdict": "inconclusive",
+      "eligible_pairs": 0,
+      "demonstrated_pairs": 0,
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "runs": [
+        {
+          "artifact": "runtime/research/llm-proof-20261014-02/calibration/run.json",
+          "mode": "baseline",
+          "status": "calibration_complete",
+          "stop_reason": null,
+          "llm_actions": 0,
+          "accounting": {
+            "planned": 31200,
+            "offered": 24641,
+            "admitted": 24621,
+            "acknowledged": 24621,
+            "committed": 24621,
+            "pending": 0,
+            "rejected": 20,
+            "rejected_by_reason": {
+              "calibration_complete": 20
+            },
+            "enqueue_failed": 0,
+            "delivery_failed": 0,
+            "cancelled_future_offers": 6559
+          },
+          "source_errors": [],
+          "rate_read_errors": 0,
+          "completion_observer": {
+            "errors": [],
+            "max_poll_gap_seconds": 1.9370000000001255
+          },
+          "cleanup_errors": [],
+          "peak_lag_all_samples": 2259,
+          "host_available_percent_min_all_samples": 18.47618659252754,
+          "vm_available_percent_min_all_samples": 22.00836103056241,
+          "peak_pipeline_interval_p95_histogram_estimate_seconds_all_samples": 9.446808510638299,
+          "offered_to_observed_commit_p95_upper_seconds": 5.071893692016602
+        },
+        {
+          "artifact": "runtime/research/llm-proof-20261014-02/pair-1-baseline/run.json",
+          "mode": "baseline",
+          "status": "guard_stopped",
+          "stop_reason": "hard_lag_budget",
+          "llm_actions": 0,
+          "accounting": {
+            "planned": 60800,
+            "offered": 44996,
+            "admitted": 44927,
+            "acknowledged": 44927,
+            "committed": 44927,
+            "pending": 0,
+            "rejected": 69,
+            "rejected_by_reason": {
+              "hard_lag_budget": 69
+            },
+            "enqueue_failed": 0,
+            "delivery_failed": 0,
+            "cancelled_future_offers": 15804
+          },
+          "source_errors": [],
+          "rate_read_errors": 0,
+          "completion_observer": {
+            "errors": [],
+            "max_poll_gap_seconds": 1.030999999999949
+          },
+          "cleanup_errors": [],
+          "peak_lag_all_samples": 10411,
+          "host_available_percent_min_all_samples": 14.61104387519655,
+          "vm_available_percent_min_all_samples": 17.82073040511864,
+          "peak_pipeline_interval_p95_histogram_estimate_seconds_all_samples": 29.0,
+          "offered_to_observed_commit_p95_upper_seconds": 19.204400062561035
+        }
+      ],
+      "calibration": {
+        "status": "calibration_complete",
+        "evidence": {
+          "rate": 600,
+          "stage": "calibration_4",
+          "timestamp": 1791984353.0317745,
+          "reason": "sustained_latency",
+          "samples": 3
+        },
+        "selected_profile": [
+          {
+            "name": "light",
+            "rate": 10,
+            "seconds": 40
+          },
+          {
+            "name": "overload",
+            "rate": 600,
+            "seconds": 100
+          },
+          {
+            "name": "recovery",
+            "rate": 10,
+            "seconds": 40
+          }
+        ],
+        "scope": "First sustained overload observed for this workload and allocation, not absolute capacity"
+      },
+      "selected_profile": [
+        {
+          "name": "light",
+          "rate": 10,
+          "seconds": 40
+        },
+        {
+          "name": "overload",
+          "rate": 600,
+          "seconds": 100
+        },
+        {
+          "name": "recovery",
+          "rate": 10,
+          "seconds": 40
+        }
+      ]
+    },
+    {
+      "session": "llm-proof-20261014-03",
+      "source_commit": "cffa689d01cee1fcbf5ecb5229dceeb5e745e13d",
+      "session_status": "incomplete",
+      "verdict": "inconclusive",
+      "eligible_pairs": 0,
+      "demonstrated_pairs": 0,
+      "llm_actions": 0,
+      "cleanup_status": "restored",
+      "restore_errors": [],
+      "runs": [
+        {
+          "artifact": "runtime/research/llm-proof-20261014-03/pair-1-baseline/run.json",
+          "mode": "baseline",
+          "status": "invalid",
+          "stop_reason": "completion_observation_errors",
+          "llm_actions": 0,
+          "accounting": {
+            "planned": 50800,
+            "offered": 10357,
+            "admitted": 10357,
+            "acknowledged": 10357,
+            "committed": 10357,
+            "pending": 0,
+            "rejected": 0,
+            "rejected_by_reason": {},
+            "enqueue_failed": 0,
+            "delivery_failed": 0,
+            "cancelled_future_offers": 40443
+          },
+          "source_errors": [],
+          "rate_read_errors": 0,
+          "completion_observer": {
+            "errors": [
+              {
+                "timestamp": 1791984723.7506695,
+                "error_type": "KafkaException"
+              }
+            ],
+            "max_poll_gap_seconds": 2.515999999999849
+          },
+          "cleanup_errors": [],
+          "peak_lag_all_samples": 396,
+          "host_available_percent_min_all_samples": 11.802281749065857,
+          "vm_available_percent_min_all_samples": 15.88861379565032,
+          "peak_pipeline_interval_p95_histogram_estimate_seconds_all_samples": 26.078947368421044,
+          "offered_to_observed_commit_p95_upper_seconds": 2.4264352321624756,
+          "active_overload_samples": [
+            {
+              "timestamp": 1791984711.4451897,
+              "incoming_rate": 501.345887300747,
+              "throughput": 472.0075730359341,
+              "kafka_lag": 170,
+              "latency_p95_seconds": 0.9420689655172414
+            },
+            {
+              "timestamp": 1791984716.3799934,
+              "incoming_rate": 500.70056647748345,
+              "throughput": 494.8784668672801,
+              "kafka_lag": 199,
+              "latency_p95_seconds": 0.9349378881987576
+            },
+            {
+              "timestamp": 1791984721.5356493,
+              "incoming_rate": 500.1491756459684,
+              "throughput": 461.03469069072594,
+              "kafka_lag": 396,
+              "latency_p95_seconds": 2.0865201900237524
+            }
+          ],
+          "source_active_seconds": 59.96328353881836
+        }
+      ],
+      "selected_profile": [
+        {
+          "name": "light",
+          "rate": 10,
+          "seconds": 40
+        },
+        {
+          "name": "overload",
+          "rate": 500,
+          "seconds": 100
+        },
+        {
+          "name": "recovery",
+          "rate": 10,
+          "seconds": 40
+        }
+      ],
+      "protocol_note": "Follow-up after session llm-proof-20261014-02: 600/s exceeded the unchanged 10000-record lag budget. Test 500/s in three matched AB/BA pairs; baseline must independently establish sustained overload. No LLM outcomes were available when this profile was selected."
+    }
+  ],
   "windows_policy_contention_check": {
     "scope": "local temporary-file concurrency test, not live LLM evidence",
     "duration_seconds": 3.012,
@@ -30,5 +286,18 @@
     "invalid_reads": 0
   },
   "focused_tests_passed": 202,
-  "main_commit": "a2c5fbb8459015c1924ed78449de41240e995e13"
+  "focused_tests_scope": "Historical validation of the Windows policy contention fix at e972055; not a count for later code changes.",
+  "main_commit": "a2c5fbb8459015c1924ed78449de41240e995e13",
+  "remaining_evidence": [
+    "Complete valid baseline and real LLM arms in at least three matched pairs, including both AB and BA orders.",
+    "Observe model rate adjustment followed by stabilization while offered demand remains high; report rejected/deferred demand and completion coverage."
+  ],
+  "metric_notes": [
+    "Committed means consumer-group offset observed past the record; it is not a per-record persistence-success verdict.",
+    "Offered-to-observed-commit p95 is a polling upper bound for observed completions, including waiting before admission.",
+    "Pipeline interval p95 is interpolated from histogram bucket deltas. Interval values are not a pooled global p95.",
+    "Memory minima and all-samples peaks include drain after source stop. Guard-triggered drain is not LLM stabilization.",
+    "cancelled_future_offers are planned arrivals never offered after the run stopped; they are separate from rejected offers.",
+    "Observer errors remain invalidating even when every admitted record is eventually observed committed."
+  ]
 }
