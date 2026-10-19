@@ -19,5 +19,6 @@
   "max_queue": 2000,
   "max_wait_seconds": 20,
   "drain_seconds": 120,
-  "completion_poll_seconds": 0.25
+  "completion_poll_seconds": 0.25,
+  "completion_timeout_seconds": 5
 }

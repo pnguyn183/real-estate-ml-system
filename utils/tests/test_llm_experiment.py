@@ -30,8 +30,16 @@ def sample(**updates):
 def test_default_config_is_bounded_and_calibration_is_separate():
     cfg = experiment.validate_config(config())
     assert cfg["pairs"] == 3
+    assert cfg["completion_timeout_seconds"] == 5
     assert [row["rate"] for row in experiment.calibration_profile(cfg)] == cfg["calibration_rates"]
     assert experiment.calibrated_profile({"status": "completed"}, cfg) is None
+
+
+def test_older_config_gets_explicit_completion_timeout_without_mutation():
+    cfg = config()
+    del cfg["completion_timeout_seconds"]
+    assert experiment.validate_config(cfg)["completion_timeout_seconds"] == 5
+    assert "completion_timeout_seconds" not in cfg
 
 
 @pytest.mark.parametrize("changes", [
@@ -40,6 +48,8 @@ def test_default_config_is_bounded_and_calibration_is_separate():
     {"calibration_rates": [10001]}, {"lease_seconds": 40}, {"max_sample_age_seconds": 20},
     {"sample_seconds": 20, "calibration_stage_seconds": 30}, {"overload_seconds": 30},
     {"min_memory_available_percent": 9},
+    {"completion_timeout_seconds": True}, {"completion_timeout_seconds": float("inf")},
+    {"completion_timeout_seconds": .5}, {"completion_timeout_seconds": 31},
 ])
 def test_invalid_config_rejected_before_runtime(changes):
     cfg = config()
@@ -112,6 +122,7 @@ def test_completion_observer_records_close_failure(monkeypatch):
 
 
 def test_completion_observer_records_partial_partition_errors_without_crediting_failed_offsets(monkeypatch):
+    from confluent_kafka import KafkaError
     observed = []
     class Consumer:
         def __init__(self, *args):
@@ -119,7 +130,8 @@ def test_completion_observer_records_partial_partition_errors_without_crediting_
         def committed(self, partitions, timeout):
             observer.stop_event.set()
             return [SimpleNamespace(partition=0, offset=10, error=None),
-                    SimpleNamespace(partition=1, offset=20, error=RuntimeError("private broker details")),
+                    SimpleNamespace(partition=1, offset=20,
+                        error=KafkaError(KafkaError._TIMED_OUT, "private broker details", retriable=True)),
                     SimpleNamespace(partition=2, offset=-1001, error=None)]
         def close(self):
             pass
@@ -131,6 +143,74 @@ def test_completion_observer_records_partial_partition_errors_without_crediting_
     assert len(observer.errors) == 1
     assert observer.errors[0]["error_type"] == "KafkaPartitionError"
     assert observer.errors[0]["partition"] == 1
+    assert observer.errors[0]["kafka_code"] == KafkaError._TIMED_OUT
+    assert observer.errors[0]["kafka_retriable"] is True
+    assert "private" not in json.dumps(observer.errors)
+
+
+@pytest.mark.parametrize("timeout", [5, 7.5])
+def test_completion_observer_passes_bounded_socket_and_request_timeout(monkeypatch, timeout):
+    seen = {}
+    class Consumer:
+        def __init__(self, cfg):
+            seen["config"] = cfg
+        def committed(self, partitions, timeout):
+            seen["timeout"] = timeout
+            observer.stop_event.set()
+            return []
+        def close(self):
+            seen["closed"] = True
+    monkeypatch.setattr("confluent_kafka.Consumer", Consumer)
+    driver = SimpleNamespace(observe_committed=lambda offsets, now: None)
+    observer = experiment.CompletionObserver("fake", driver, .01, timeout)
+    observer._run()
+    assert seen["config"]["socket.timeout.ms"] == timeout * 1000
+    assert seen["config"]["enable.auto.commit"] is False
+    assert seen["config"]["enable.auto.offset.store"] is False
+    assert seen["timeout"] == timeout
+    assert seen["closed"]
+    assert not observer.errors
+
+
+@pytest.mark.parametrize("alive", [False, True])
+def test_completion_observer_shutdown_budget_covers_request_and_close_but_is_bounded(alive):
+    joins = []
+    observer = experiment.CompletionObserver("fake", None, .01, timeout_seconds=7.5)
+    observer.thread = SimpleNamespace(join=lambda timeout: joins.append(timeout), is_alive=lambda: alive)
+    if alive:
+        with pytest.raises(RuntimeError, match="did not stop"):
+            observer.close()
+    else:
+        observer.close()
+    assert observer.stop_event.is_set()
+    assert joins == [16]
+
+
+def test_completion_observer_keeps_retriable_error_after_successful_read(monkeypatch):
+    from confluent_kafka import KafkaError, KafkaException
+    observed, calls = [], []
+    class Consumer:
+        def __init__(self, cfg):
+            pass
+        def committed(self, partitions, timeout):
+            calls.append(timeout)
+            if len(calls) == 1:
+                raise KafkaException(KafkaError(KafkaError._TIMED_OUT, "private broker credentials", retriable=True))
+            observer.stop_event.set()
+            return [SimpleNamespace(partition=0, offset=10, error=None)]
+        def close(self):
+            pass
+    monkeypatch.setattr("confluent_kafka.Consumer", Consumer)
+    driver = SimpleNamespace(observe_committed=lambda offsets, now: observed.append(offsets))
+    observer = experiment.CompletionObserver("fake", driver, .01)
+    observer._run()
+    assert calls == [5, 5]
+    assert observed == [{0: 10}]
+    assert len(observer.errors) == 1
+    assert observer.errors[0]["error_type"] == "KafkaException"
+    assert observer.errors[0]["kafka_code"] == KafkaError._TIMED_OUT
+    assert observer.errors[0]["kafka_retriable"] is True
+    assert observer.max_poll_gap_seconds > 0
     assert "private" not in json.dumps(observer.errors)
 
 
@@ -235,6 +315,18 @@ def test_fixed_baseline_accounts_every_offer_and_never_calls_model(fake_pipeline
     assert RuntimePolicy(True, tmp_path / "baseline/control/policy.json", experiment.TOPIC).read().rate_per_second == 0
     saved = json.loads((tmp_path / "baseline/run.json").read_text())
     assert saved == result
+    assert result["completion_timeout_seconds"] == 5
+    assert result["completion_observer"]["timeout_seconds"] == 5
+    assert result["completion_observer"]["shutdown_timeout_seconds"] == 11
+
+
+def test_completion_timeout_changes_paired_run_config_identity(fake_pipeline, tmp_path):
+    first = trial(fake_pipeline, tmp_path / "first")
+    fake_pipeline.config["completion_timeout_seconds"] = 7.5
+    second = trial(fake_pipeline, tmp_path / "second")
+    assert first["status"] == second["status"] == "completed"
+    assert first["config_fingerprint"] != second["config_fingerprint"]
+    assert second["completion_observer"]["timeout_seconds"] == 7.5
 
 
 def test_real_feedback_agent_applies_model_with_offered_demand_context(fake_pipeline, tmp_path):

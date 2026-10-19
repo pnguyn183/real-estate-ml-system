@@ -26,6 +26,11 @@ Mỗi lần cần một thư mục output mới. Cấu hình ở
 25 phút cho hiệu chuẩn và sáu lượt; thời gian thực tế phụ thuộc queue và API.
 Lượt bị lỗi hoặc guard sẽ dừng chuỗi thử, lưu bằng chứng và khôi phục dịch vụ.
 
+Observer đọc Kafka commit dùng `completion_timeout_seconds=5` giây cho mỗi
+request, độc lập với chu kỳ poll 0,25 giây. Timeout thực tế và lỗi Kafka đã lọc
+được lưu trong kết quả; lỗi quan sát vẫn làm lượt thử không hợp lệ. Cấu hình cũ
+thiếu trường này tự dùng 5 giây và ghi rõ giá trị hiệu lực vào artifacts.
+
 RAM trống phải **trên 10% ở cả host và Docker VM**; cần thêm khoảng trống vì RAM
 có thể giảm trong lúc chạy. Không hạ ngưỡng để bỏ qua điều kiện thử. Model dự phòng
 cùng project không tạo quota độc lập; tài khoản cần quyền dùng model tương ứng.

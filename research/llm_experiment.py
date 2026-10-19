@@ -37,6 +37,9 @@ def fingerprint(value):
 def validate_config(config):
     """Bound time, demand and queue size before touching Docker or calling APIs."""
     cfg = dict(config)
+    # Older experiment profiles remain usable; write the effective timeout to
+    # config.json and the run identity rather than relying on an implicit value.
+    cfg.setdefault("completion_timeout_seconds", 5)
     bounds = {
         "pairs": (1, 10), "seed": (0, 2**31 - 1), "baseline_rate": (1, 10000), "sample_seconds": (1, 30),
         "decision_seconds": (5, 120), "timeout_seconds": (1, 60),
@@ -44,7 +47,8 @@ def validate_config(config):
         "target_latency_seconds": (.05, 60), "min_memory_available_percent": (10, 50),
         "hard_lag": (100, 50000), "max_records": (1, 1000000), "max_queue": (1, 10000),
         "max_wait_seconds": (1, 120), "drain_seconds": (5, 600),
-        "completion_poll_seconds": (.1, 2), "calibration_stage_seconds": (20, 120),
+        "completion_poll_seconds": (.1, 2), "completion_timeout_seconds": (1, 30),
+        "calibration_stage_seconds": (20, 120),
         "light_seconds": (20, 300), "overload_seconds": (30, 600), "recovery_seconds": (20, 300),
     }
     integers = {"pairs", "seed", "max_records", "max_queue", "hard_lag"}
@@ -148,58 +152,78 @@ def settings(cfg, profile):
 
 class CompletionObserver:
     """Read committed offsets without joining the processing consumer group."""
-    def __init__(self, bootstrap, driver, interval):
+    def __init__(self, bootstrap, driver, interval, timeout_seconds=5):
         self.bootstrap, self.driver, self.interval = bootstrap, driver, interval
+        if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
+                or not 1 <= timeout_seconds <= 30):
+            raise ValueError("Invalid completion observer timeout")
+        self.timeout_seconds = timeout_seconds
+        # Allow an in-flight committed request and socket-bound consumer close,
+        # plus scheduling margin. A stalled client still fails bounded cleanup.
+        self.shutdown_timeout_seconds = 2 * timeout_seconds + 1
         self.stop_event = Event()
         self.errors = []
         self.max_poll_gap_seconds = 0.0
         self.thread = Thread(target=self._run, name="completion-observer", daemon=True)
+
+    def _record_error(self, error, *, partition=None):
+        from confluent_kafka import KafkaError, KafkaException
+        if len(self.errors) >= 100:
+            return
+        row = {"timestamp": time.time(), "error_type": type(error).__name__}
+        if partition is not None:
+            row.update(error_type="KafkaPartitionError", partition=partition)
+        kafka_error = error.args[0] if isinstance(error, KafkaException) and error.args else error
+        if isinstance(kafka_error, KafkaError):
+            # Only typed diagnostic fields; broker/provider text may contain
+            # private addresses or credentials and must never enter artifacts.
+            row.update(kafka_code=kafka_error.code(), kafka_retriable=kafka_error.retriable())
+        self.errors.append(row)
 
     def _run(self):
         consumer = None
         try:
             from confluent_kafka import Consumer, TopicPartition
             consumer = Consumer({"bootstrap.servers": self.bootstrap, "group.id": GROUP,
-                "enable.auto.commit": False, "enable.auto.offset.store": False, "socket.timeout.ms": 2000})
+                "enable.auto.commit": False, "enable.auto.offset.store": False,
+                "socket.timeout.ms": math.ceil(self.timeout_seconds * 1000)})
             partitions = [TopicPartition(TOPIC, i) for i in range(3)]
             previous = time.monotonic()
             while not self.stop_event.is_set():
                 try:
-                    offsets = consumer.committed(partitions, timeout=2)
-                    now = time.monotonic()
-                    self.max_poll_gap_seconds = max(self.max_poll_gap_seconds, now - previous)
-                    previous = now
+                    offsets = consumer.committed(partitions, timeout=self.timeout_seconds)
                     committed = {}
                     for partition in offsets:
                         # Kafka may return successful and failed partitions in
                         # one response without raising a top-level exception.
                         # Never credit a failed partition's offset as completion.
                         if getattr(partition, "error", None) is not None:
-                            if len(self.errors) < 100:
-                                self.errors.append({"timestamp": time.time(),
-                                    "error_type": "KafkaPartitionError", "partition": partition.partition})
+                            self._record_error(partition.error, partition=partition.partition)
                         elif partition.offset >= 0:
                             committed[partition.partition] = partition.offset
                     self.driver.observe_committed(committed, time.time())
                 except Exception as exc:
-                    if len(self.errors) < 100:
-                        self.errors.append({"timestamp": time.time(), "error_type": type(exc).__name__})
+                    self._record_error(exc)
+                finally:
+                    now = time.monotonic()
+                    self.max_poll_gap_seconds = max(self.max_poll_gap_seconds, now - previous)
+                    previous = now
                 self.stop_event.wait(self.interval)
         except Exception as exc:
-            self.errors.append({"timestamp": time.time(), "error_type": type(exc).__name__})
+            self._record_error(exc)
         finally:
             if consumer is not None:
                 try:
                     consumer.close()
                 except Exception as exc:
-                    self.errors.append({"timestamp": time.time(), "error_type": type(exc).__name__})
+                    self._record_error(exc)
 
     def start(self):
         self.thread.start()
 
     def close(self):
         self.stop_event.set()
-        self.thread.join(5)
+        self.thread.join(self.shutdown_timeout_seconds)
         if self.thread.is_alive():
             raise RuntimeError("Completion observer did not stop")
 
@@ -283,9 +307,12 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
     result = {"schema_version": 1, "run_id": run_id, "pair_id": pair_id, "mode": mode,
         "status": "preparing", "profile": profile, "initial_rate": control.max_rate,
         "sample_seconds": cfg["sample_seconds"], "training_disabled": True,
+        "completion_timeout_seconds": cfg.get("completion_timeout_seconds", 5),
         "config_fingerprint": fingerprint({"profile": profile, "seed": cfg["seed"] + pair_id,
             "max_queue": cfg["max_queue"], "max_wait_seconds": cfg["max_wait_seconds"],
-            "sample_seconds": cfg["sample_seconds"], "target_latency_seconds": cfg["target_latency_seconds"]}),
+            "sample_seconds": cfg["sample_seconds"], "target_latency_seconds": cfg["target_latency_seconds"],
+            "completion_poll_seconds": cfg["completion_poll_seconds"],
+            "completion_timeout_seconds": cfg.get("completion_timeout_seconds", 5)}),
         "samples": [], "actions": [], "load_started_at": None, "load_ended_at": None,
         "semantics": {"committed": "Consumer-group offset observed past record; not producer ACK or a per-record success verdict",
             "offered_latency": "Scheduled arrival to first observed commit, an upper bound including admission wait",
@@ -319,7 +346,8 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
         driver = LoadDriver(profile, cfg["seed"] + pair_id, run_id, producer, lambda: reader.read(), output,
             topic=TOPIC, max_queue=cfg["max_queue"], max_wait_seconds=cfg["max_wait_seconds"],
             max_records=cfg["max_records"])
-        observer = CompletionObserver(cfg.get("bootstrap_servers", BOOTSTRAP), driver, cfg["completion_poll_seconds"])
+        observer = CompletionObserver(cfg.get("bootstrap_servers", BOOTSTRAP), driver,
+            cfg["completion_poll_seconds"], cfg.get("completion_timeout_seconds", 5))
         model_pool = ThreadPoolExecutor(max_workers=1)
         sample_pool = ThreadPoolExecutor(max_workers=1)
         result["resource_fingerprint"] = verify_runtime(runtime)["fingerprint"]
@@ -501,7 +529,9 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
             result["status"] = "failed"
         result["accounting"] = driver.snapshot() if driver is not None else {}
         result["completion_observer"] = {"errors": observer.errors if observer else [],
-            "max_poll_gap_seconds": observer.max_poll_gap_seconds if observer else None}
+            "max_poll_gap_seconds": observer.max_poll_gap_seconds if observer else None,
+            "timeout_seconds": observer.timeout_seconds if observer else cfg.get("completion_timeout_seconds", 5),
+            "shutdown_timeout_seconds": observer.shutdown_timeout_seconds if observer else None}
         if observer is not None and observer.errors and result["status"] in {"completed", "calibration_complete"}:
             result["status"], result["stop_reason"] = "invalid", "completion_observation_errors"
         if result["accounting"].get("errors") or result["accounting"].get("rate_read_errors"):
