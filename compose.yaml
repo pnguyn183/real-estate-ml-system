@@ -1,0 +1,47 @@
+services:
+
+  api:
+    image: lethaihoa/giaodien_streamlit:latest
+    build: .
+    command: [python, -m, uvicorn, "api:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      AUTH_OIDC_ISSUER: ${AUTH_OIDC_ISSUER:-}
+      AUTH_OIDC_METADATA_URL: ${AUTH_OIDC_METADATA_URL:-}
+      AUTH_OIDC_CLIENT_ID: ${AUTH_OIDC_CLIENT_ID:-}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      AUTH_ADMIN_GROUPS: ${AUTH_ADMIN_GROUPS:-homenest-admin}
+      AUTH_MANAGER_GROUPS: ${AUTH_MANAGER_GROUPS:-homenest-manager}
+      AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:-}
+      AUTH_MANAGER_EMAILS: ${AUTH_MANAGER_EMAILS:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - homenest-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  web:
+    image: lethaihoa/giaodien_streamlit:latest
+    build: .
+    environment:
+      VALUATION_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    volumes:
+      - homenest-data:/app/data
+      - ./.streamlit:/app/.streamlit:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+volumes:
+  homenest-data:

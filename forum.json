@@ -1,0 +1,38 @@
+[
+  {
+    "id": "welcome-home-nest",
+    "category": "Bắt đầu",
+    "title": "Chào mừng bạn đến với Diễn đàn HomeNest",
+    "content": "Đây là nơi cộng đồng cùng trao đổi kinh nghiệm mua, bán, thuê và tìm hiểu bất động sản. Hãy chia sẻ thông tin có ích, nêu rõ bối cảnh và tôn trọng các góc nhìn khác nhau.\n\nĐể mọi người dễ tham gia, hãy chọn đúng chủ đề, đặt tiêu đề cụ thể và không đăng số điện thoại, giấy tờ hay dữ liệu cá nhân công khai.",
+    "author": "Đội ngũ HomeNest",
+    "author_id": "homenest",
+    "created_at": "2026-10-01T09:00:00+07:00",
+    "pinned": true,
+    "likes": [],
+    "comments": []
+  },
+  {
+    "id": "home-viewing-checklist",
+    "category": "Mua bán",
+    "title": "Checklist khảo sát nhà trước khi xuống tiền",
+    "content": "Khi đi xem nhà, bạn thường kiểm tra những gì ngoài diện tích và nội thất?\n\nMột vài điểm nên ghi lại: tình trạng thực tế so với tin đăng; ánh sáng, tiếng ồn và lối đi; tiện ích quanh khu vực; các khoản phí phát sinh; và hồ sơ pháp lý cần được xác minh với cơ quan hoặc chuyên gia phù hợp.\n\nMỗi căn nhà có bối cảnh riêng. Hãy đối chiếu nhiều nguồn và không chuyển tiền chỉ dựa trên thông tin trong một bài đăng.",
+    "author": "Đội ngũ HomeNest",
+    "author_id": "homenest",
+    "created_at": "2026-10-02T10:30:00+07:00",
+    "pinned": true,
+    "likes": [],
+    "comments": []
+  },
+  {
+    "id": "reading-home-estimates",
+    "category": "Định giá",
+    "title": "Đọc mức giá tham khảo trên HomeNest sao cho đúng?",
+    "content": "Mức tham khảo được tính từ trung vị đơn giá của các tin rao bán tương đồng đang có trong danh mục. Đây là cách nhìn nhanh để bắt đầu so sánh, không phải giá giao dịch đã xác nhận hay kết quả thẩm định.\n\nKhi đối chiếu, hãy lưu ý số lượng mẫu, vị trí cụ thể, tình trạng tài sản, thời điểm đăng và các yếu tố pháp lý. Nếu dữ liệu còn ít, nên xem kết quả như một tín hiệu tham khảo và tìm thêm nguồn độc lập.",
+    "author": "Đội ngũ HomeNest",
+    "author_id": "homenest",
+    "created_at": "2026-10-03T08:45:00+07:00",
+    "pinned": true,
+    "likes": [],
+    "comments": []
+  }
+]

@@ -1,0 +1,45 @@
+[
+  {
+    "from": "admin",
+    "to": "minh",
+    "content": "Tin đăng của bạn đã được duyệt thành công.",
+    "created_at": "2026-09-08 09:00:00"
+  },
+  {
+    "from": "lan",
+    "to": "admin",
+    "content": "Mình muốn cập nhật thông tin cho căn hộ cho thuê.",
+    "created_at": "2026-09-09 15:30:00"
+  },
+  {
+    "from": "nam",
+    "to": "minh",
+    "content": "Mình muốn trao đổi về nhà phố gần chợ Bình Tân.",
+    "created_at": "2026-09-10 11:10:00"
+  },
+  {
+    "from": "linh",
+    "to": "admin",
+    "content": "Mình muốn xem các căn hộ view đẹp ở Quận 9 và Gò Vấp.",
+    "created_at": "2026-09-11 10:10:00"
+  },
+  {
+    "from": "vy",
+    "to": "lan",
+    "content": "Phòng trọ của mình vừa có người quan tâm, bạn có thể tư vấn thêm không?",
+    "created_at": "2026-09-12 08:20:00"
+  },
+  {
+    "from": "quang",
+    "to": "minh",
+    "content": "Khu nhà liền kề Bình Dương đang có nhu cầu rất cao, bạn có muốn trao đổi giá?",
+    "created_at": "2026-09-12 15:45:00"
+  },
+  {
+    "from": "user@homenest.local",
+    "to": "support",
+    "subject": "Hỗ trợ tài khoản · hay",
+    "content": "sbfoewjfp",
+    "created_at": "2026-10-16T15:46+07:00"
+  }
+]

@@ -1,14 +1,20 @@
-__pycache__/
-*.pyc
-.python-version
+# Local Python environments and generated caches
 .venv/
 venv/
-.env
-artifacts/
-runtime/
+__pycache__/
+*.py[cod]
 .pytest_cache/
-node_modules/
-dist/
-coverage/
-*.log
-.DS_Store
+
+# Local browser profile (cookies, session data, and caches)
+.browser-review/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local credentials database and SQLite sidecar files
+accounts.sqlite3*
+
+.ui-review/

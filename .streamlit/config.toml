@@ -1,0 +1,35 @@
+[client]
+toolbarMode = "viewer"
+
+[server]
+fileWatcherType = "poll"
+runOnSave = true
+
+[theme]
+base = "light"
+primaryColor = "#C65D28"
+backgroundColor = "#FBF7F2"
+secondaryBackgroundColor = "#FFFDF9"
+textColor = "#38291F"
+borderColor = "#E9DDD2"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "10px"
+buttonRadius = "8px"
+font = "sans-serif"
+baseFontSize = 15
+headingFontSizes = ["32px", "26px", "21px", "18px", "16px", "14px"]
+headingFontWeights = [700, 650, 650, 600, 600, 600]
+chartCategoricalColors = ["#C65D28", "#8E4526", "#DEA06C", "#7B6A5F", "#E4C29F"]
+dataframeHeaderBackgroundColor = "#F5EDE5"
+linkColor = "#A94F24"
+orangeColor = "#B9501A"
+orangeBackgroundColor = "#FCE8D9"
+orangeTextColor = "#8A3412"
+
+[theme.sidebar]
+backgroundColor = "#F6EEE5"
+secondaryBackgroundColor = "#EEE2D5"
+textColor = "#38291F"
+primaryColor = "#C65D28"
+borderColor = "#E9DDD2"

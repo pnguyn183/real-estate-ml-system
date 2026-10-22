@@ -1,0 +1,14 @@
+ .gitignore             |   26 [32m+[m[31m-[m
+ .streamlit/config.toml |   35 [32m++[m
+ .vscode/settings.json  |    4 [32m+[m
+ README.md              |  565 [32m++++++++++[m[31m-------[m
+ app.py                 | 1633 [32m++++++++++++++++++++++++++++++++++++++++++++++++[m
+ messages.json          |   45 [32m++[m
+ requirements.txt       |   24 [32m+[m[31m-[m
+ run_app.bat            |   20 [32m+[m
+ run_app.ps1            |   22 [32m+[m
+ storage.py             |  571 [32m+++++++++++++++++[m
+ tests/test_app.py      | 1366 [32m++++++++++++++++++++++++++++++++++++++++[m
+ tests/test_storage.py  |  139 [32m+++++[m
+ valuation.py           |  281 [32m+++++++++[m
+ 13 files changed, 4470 insertions(+), 261 deletions(-)
