@@ -1,4 +1,5 @@
 import math
+import weakref
 
 import pytest
 
@@ -170,6 +171,90 @@ def test_new_listing_uses_historical_mongo_baseline_and_persists_thresholds():
     assert result["price_anomaly_type"] == "HIGH"
     assert result["price_anomaly_baseline_size"] == 6
     assert threshold_store.writes
+
+
+def test_fit_streams_all_history_without_retaining_document_objects():
+    class HistoricalRecord(dict):
+        pass
+
+    references = []
+
+    def history():
+        for value in range(1, 257):
+            # The consumer may hold its current record while requesting the next.
+            assert sum(reference() is not None for reference in references) <= 1
+            record = HistoricalRecord(listing(value))
+            references.append(weakref.ref(record))
+            yield record
+        yield listing(1_000_000, url="incoming")
+        yield listing(100, price_vnd=0, url="invalid")
+
+    subject = detector()
+    summary = subject.fit(history(), exclude_url="incoming")
+
+    assert summary.records_processed == 257
+    assert summary.valid_price_per_m2_records == 256
+    assert summary.groups_seen == 2
+    for threshold in subject.thresholds.values():
+        assert threshold.sample_size == 256
+        assert threshold.q1 == pytest.approx(64.75)
+        assert threshold.q3 == pytest.approx(192.25)
+    assert not any(reference() is not None for reference in references)
+
+
+class TrackingCursor:
+    def __init__(self, records):
+        self.records = iter(records)
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self.records)
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("read_fails", [False, True])
+def test_mongo_refresh_closes_cursor_and_preserves_baseline_on_read_failure(read_fails):
+    def history():
+        yield listing(200)
+        if read_fails:
+            raise RuntimeError("historical cursor interrupted")
+        yield listing(300)
+
+    cursor = TrackingCursor(history())
+
+    class HistoricalCollection:
+        def find(self, query, projection):
+            assert query == {"price_vnd": {"$gt": 0}, "area_m2": {"$gt": 0}}
+            assert projection == {
+                "_id": 0, "url": 1, "price_vnd": 1, "area_m2": 1,
+                "province_slug": 1, "district_slug": 1, "property_type": 1,
+            }
+            return cursor
+
+    subject = detector()
+    subject.fit(baseline_values())
+    subject._last_refresh_monotonic = None
+    previous_thresholds = dict(subject.thresholds)
+    previous_summary = subject.baseline_summary
+    threshold_store = FakeCollection()
+
+    if read_fails:
+        with pytest.raises(RuntimeError, match="historical cursor interrupted"):
+            subject.refresh_if_needed(HistoricalCollection(), threshold_store)
+        assert subject.thresholds == previous_thresholds
+        assert subject.baseline_summary is previous_summary
+        assert subject._last_refresh_monotonic is None
+        assert not threshold_store.writes
+    else:
+        assert subject.refresh_if_needed(HistoricalCollection(), threshold_store)
+        assert subject.baseline_summary.records_processed == 2
+        assert threshold_store.writes
+    assert cursor.closed
 
 
 def test_exclude_training_policy_filters_only_flagged_records():

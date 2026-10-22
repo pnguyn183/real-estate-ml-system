@@ -213,21 +213,18 @@ class PriceAnomalyDetector:
 
     def fit(self, reference_records: Iterable[Mapping[str, Any]], exclude_url: str | None = None) -> BaselineSummary:
         """Calculate thresholds from historical records, excluding the incoming URL."""
-        records = [record for record in reference_records if not exclude_url or record.get("url") != exclude_url]
-        summary = BaselineSummary(records_processed=len(records), refreshed_at=self._timestamp())
-        self.thresholds.clear()
-        if not records:
-            self.baseline_summary = summary
-            self._last_refresh_monotonic = time.monotonic()
-            self._log_baseline_summary(summary)
-            return summary
-
+        summary = BaselineSummary(refreshed_at=self._timestamp())
         grouped_values: dict[tuple[str, ...], dict[tuple[str, ...], list[float]]] = {
             columns: {} for columns in self._grouping_levels()
         }
         # A single O(N × grouping-levels) baseline pass is cached for refresh_seconds;
         # sorting occurs only per group to calculate exact linear percentiles.
-        for record in records:
+        # Consume the source once without retaining historical document objects.
+        # Exact quartiles still use every eligible numeric value in each group.
+        for record in reference_records:
+            if exclude_url and record.get("url") == exclude_url:
+                continue
+            summary.records_processed += 1
             price_per_m2 = safe_price_per_m2(record.get("price_vnd"), record.get("area_m2"))
             if price_per_m2 is None:
                 continue
@@ -237,6 +234,8 @@ class PriceAnomalyDetector:
                 if values is not None:
                     groups.setdefault(values, []).append(price_per_m2)
 
+        # Keep the previous baseline intact if reading the historical cursor fails.
+        self.thresholds.clear()
         for columns, groups in grouped_values.items():
             self._build_thresholds(groups, columns, summary)
 
@@ -254,8 +253,13 @@ class PriceAnomalyDetector:
         projection = {"_id": 0, "url": 1, "price_vnd": 1, "area_m2": 1}
         for column in set(self.config.primary_group_columns + self.config.fallback_group_columns):
             projection[column] = 1
-        records = list(feature_collection.find({"price_vnd": {"$gt": 0}, "area_m2": {"$gt": 0}}, projection))
-        self.fit(records, exclude_url=exclude_url)
+        records = feature_collection.find({"price_vnd": {"$gt": 0}, "area_m2": {"$gt": 0}}, projection)
+        try:
+            self.fit(records, exclude_url=exclude_url)
+        finally:
+            close = getattr(records, "close", None)
+            if callable(close):
+                close()
         self.persist_thresholds(threshold_collection)
         return True
 
@@ -360,10 +364,11 @@ class PriceAnomalyDetector:
         summary: BaselineSummary,
     ) -> None:
         for group_values, prices in grouped_values.items():
-            ordered_prices = sorted(prices)
-            sample_size = len(ordered_prices)
-            q1 = self._linear_quantile(ordered_prices, 0.25)
-            q3 = self._linear_quantile(ordered_prices, 0.75)
+            # These lists belong to this refresh, so sorting need not duplicate them.
+            prices.sort()
+            sample_size = len(prices)
+            q1 = self._linear_quantile(prices, 0.25)
+            q3 = self._linear_quantile(prices, 0.75)
             iqr = q3 - q1
             status = "ready"
             lower_bound: float | None = None

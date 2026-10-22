@@ -161,6 +161,10 @@ manifest records provenance and input hashes. Train on `requested_rate` for this
 controlled offered-demand dataset; do not mix it with passive `incoming_rate`.
 See [the session guide](../docs/TRAFFIC_SESSIONS.md) for commands and limitations.
 
+The [October 23 inventory](../docs/TELEMETRY_STATUS_20261023.md) verifies existing
+history and separates sample-count readiness from forecast validation. The next
+two-hour session is prepared but has not started; Docker is currently offline.
+
 ## Policy and safety
 
 `agents/traffic_control.py` is an interpretable reactive baseline. On independently

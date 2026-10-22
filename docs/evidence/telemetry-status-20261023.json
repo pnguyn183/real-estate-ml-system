@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "assessment_date": "2026-10-23",
+  "scope": "Read-only audit of recorded history; no new telemetry collection or model training was performed.",
+  "readiness": "not_established",
+  "controlled_synthetic": {
+    "file_count": 7,
+    "rows": 1623,
+    "healthy_target_rows": 1609,
+    "files": [
+      {
+        "path": "runtime/research/traffic-sessions/session-20260928T071730.240195Z-5c6f14ab/baseline/observations.jsonl",
+        "sha256": "28316b7cc65616599bb9ac9078589b3eae09ab469a4f57fc6ae2493884c7a41a",
+        "rows": 61,
+        "healthy_target_rows": 61,
+        "error_rows": 0,
+        "healthy_target_unique_count": 6,
+        "wall_span_seconds": 287.49064779281616,
+        "persisted_session_status": "stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20260928T071730.240195Z-5c6f14ab/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "requires_chronological_evaluation",
+        "longest_healthy_segment_seconds": 270.063418,
+        "stop_reason": null
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20260928T072430.833035Z-08e08828/baseline/observations.jsonl",
+        "sha256": "e0b1f867055f5f388ea6a61ed5ae6c637596d7bc27736b43ff3cae8b6b6f11f4",
+        "rows": 435,
+        "healthy_target_rows": 434,
+        "error_rows": 1,
+        "healthy_target_unique_count": 37,
+        "wall_span_seconds": 2157.4757556915283,
+        "persisted_session_status": "safety_stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20260928T072430.833035Z-08e08828/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "requires_chronological_evaluation",
+        "longest_healthy_segment_seconds": 2130.02407,
+        "stop_reason": null
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20260928T083821.616764Z-28e33959/baseline/observations.jsonl",
+        "sha256": "72d8c9793a57c03ed2daea470978735b162bbbc5cd908566e7e745017f708eee",
+        "rows": 119,
+        "healthy_target_rows": 118,
+        "error_rows": 1,
+        "healthy_target_unique_count": 11,
+        "wall_span_seconds": 577.5110599994659,
+        "persisted_session_status": "safety_stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20260928T083821.616764Z-28e33959/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "requires_chronological_evaluation",
+        "longest_healthy_segment_seconds": 550.034866,
+        "stop_reason": null
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20260928T095003.698081Z-421b046d/baseline/observations.jsonl",
+        "sha256": "4f626c84cf412152f8adf0306e78c03f380f01b1bb8080364d65a828ba42069b",
+        "rows": 73,
+        "healthy_target_rows": 71,
+        "error_rows": 2,
+        "healthy_target_unique_count": 7,
+        "wall_span_seconds": 349.57693219184875,
+        "persisted_session_status": "safety_stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20260928T095003.698081Z-421b046d/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "requires_chronological_evaluation",
+        "longest_healthy_segment_seconds": 320.054374,
+        "stop_reason": null
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20260928T104402.760784Z-f3ed626a/baseline/observations.jsonl",
+        "sha256": "67910792de9081aa136e647f799482faa2033e2871262dcdbbe4a3a93bd24af9",
+        "rows": 9,
+        "healthy_target_rows": 5,
+        "error_rows": 4,
+        "healthy_target_unique_count": 1,
+        "wall_span_seconds": 50.070579528808594,
+        "persisted_session_status": "safety_stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20260928T104402.760784Z-f3ed626a/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "insufficient_variation",
+        "longest_healthy_segment_seconds": 19.181016,
+        "stop_reason": "required CPU, RAM, or Kafka lag telemetry is unavailable"
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20261001T075454.315978Z-80342f8b/baseline/observations.jsonl",
+        "sha256": "f853c079fa4cd150c9106137315312c942c0f3ca6bc074b5c4800b86d7d93121",
+        "rows": 218,
+        "healthy_target_rows": 218,
+        "error_rows": 0,
+        "healthy_target_unique_count": 19,
+        "wall_span_seconds": 1085.1432588100433,
+        "persisted_session_status": "running",
+        "finalized_metadata": false,
+        "saved_audit_path": null,
+        "saved_audit_matches_raw_sha256": null,
+        "saved_audit_status": null,
+        "longest_healthy_segment_seconds": null,
+        "stop_reason": null
+      },
+      {
+        "path": "runtime/research/traffic-sessions/session-20261009T043759.746720Z-326c030a/baseline/observations.jsonl",
+        "sha256": "8aa563f3f577ecf73609d847ce46c9468a8fca98df6f0341078ae6d2786ebd42",
+        "rows": 708,
+        "healthy_target_rows": 702,
+        "error_rows": 3,
+        "healthy_target_unique_count": 60,
+        "wall_span_seconds": 3523.029037952423,
+        "persisted_session_status": "safety_stopped",
+        "finalized_metadata": true,
+        "saved_audit_path": "runtime/research/traffic-sessions/session-20261009T043759.746720Z-326c030a/history_audit.json",
+        "saved_audit_matches_raw_sha256": true,
+        "saved_audit_status": "requires_chronological_evaluation",
+        "longest_healthy_segment_seconds": 1500.012785,
+        "stop_reason": "Docker VM memory pressure: swap used=98.54%, free=4.96%"
+      }
+    ]
+  },
+  "passive": {
+    "rows": 5209,
+    "healthy_target_rows": 2318,
+    "error_rows": 2889,
+    "files": [
+      {
+        "path": "runtime/research/traffic-history/collector-20260923-052543/run-20260923-052617/observations.jsonl",
+        "sha256": "374fa55279367e9d3b0e0c559e209816c682ece4fab3278965c6327a81453f1e",
+        "rows": 4320,
+        "healthy_target_rows": 1430,
+        "error_rows": 2889,
+        "healthy_target_unique_values": [
+          0.0
+        ],
+        "forecast_status": "insufficient_variation"
+      },
+      {
+        "path": "runtime/research/traffic-history/run-20260922-164630/observations.jsonl",
+        "sha256": "36bcf9db44fbe7326bfc2305ec00768bc16739649036a69cfcf912ec4ab60771",
+        "rows": 889,
+        "healthy_target_rows": 888,
+        "error_rows": 0,
+        "healthy_target_unique_values": [
+          0.0
+        ],
+        "forecast_status": "insufficient_variation"
+      }
+    ]
+  },
+  "structural_split_assessment": {
+    "method": "Bounded standard-library reproduction of research.benchmark.build_traffic_supervised eligibility and chronological_split; feature matrices and model scores were not computed. Preserve per-run/topic/phase/error boundaries, 1.8x median-interval gap limit, nearest-horizon tolerance half the median interval, 120-second history, 80/20 chronological splits with label embargo. Counts are structural checks, not a substitute for running the canonical benchmark.",
+    "minimum_train_rows": 100,
+    "minimum_test_or_validation_rows": 30,
+    "latest_oct09_session": {
+      "300": {
+        "supervised_rows": 384,
+        "train_rows": 247,
+        "test_rows": 77,
+        "selection_train_rows": 161,
+        "validation_rows": 50,
+        "unique_targets": {
+          "train": 22,
+          "test": 9,
+          "selection_train": 14,
+          "validation": 5
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": true
+      },
+      "600": {
+        "supervised_rows": 257,
+        "train_rows": 101,
+        "test_rows": 52,
+        "selection_train_rows": 0,
+        "validation_rows": 21,
+        "unique_targets": {
+          "train": 9,
+          "test": 5,
+          "selection_train": 0,
+          "validation": 3
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": false
+      }
+    },
+    "all_finalized_controlled_sessions": {
+      "300": {
+        "supervised_rows": 754,
+        "train_rows": 543,
+        "test_rows": 151,
+        "selection_train_rows": 374,
+        "validation_rows": 109,
+        "unique_targets": {
+          "train": 48,
+          "test": 15,
+          "selection_train": 33,
+          "validation": 11
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": true
+      },
+      "600": {
+        "supervised_rows": 540,
+        "train_rows": 384,
+        "test_rows": 108,
+        "selection_train_rows": 283,
+        "validation_rows": 77,
+        "unique_targets": {
+          "train": 33,
+          "test": 10,
+          "selection_train": 24,
+          "validation": 7
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": true
+      }
+    },
+    "all_controlled_sessions_including_unfinalized_oct01": {
+      "300": {
+        "supervised_rows": 888,
+        "train_rows": 665,
+        "test_rows": 178,
+        "selection_train_rows": 504,
+        "validation_rows": 133,
+        "unique_targets": {
+          "train": 58,
+          "test": 17,
+          "selection_train": 44,
+          "validation": 12
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": true
+      },
+      "600": {
+        "supervised_rows": 614,
+        "train_rows": 458,
+        "test_rows": 123,
+        "selection_train_rows": 357,
+        "validation_rows": 92,
+        "unique_targets": {
+          "train": 40,
+          "test": 11,
+          "selection_train": 31,
+          "validation": 9
+        },
+        "outer_split_count_gate": true,
+        "selection_split_count_gate": true
+      }
+    }
+  },
+  "collection": {
+    "status": "not_started",
+    "reason": "Docker is off and the coordinating agent measured approximately 0.57 GiB available host RAM. Starting the Docker workload is outside the current request to defer RAM-dependent work.",
+    "requested_additional_seconds": 7200,
+    "variable_history_command": "python -m research.collect_session start --hours 2 --lean --min-rate 5 --max-rate 60 --seed 20261023 --name telemetry-20261023",
+    "passive_alternative_command": "python -m research.telemetry --output runtime/research/traffic-history/passive-20261023/observations.jsonl --samples 1440 --interval 5 --duration-seconds 7200 --topic real_estate_raw --group-id real_estate_training_pipeline --run-id passive-20261023",
+    "expected_samples_at_5_seconds": 1440,
+    "limitations": [
+      "Both commands require running Docker services; passive collection does not create traffic and can remain constant/idle.",
+      "The variable-history session publishes synthetic input on the stress topic; real infrastructure measurements are not natural production demand.",
+      "Two hours is a collection target, not proof of forecast skill or LLM control benefit.",
+      "The lean session temporarily stops optional running services and restores recorded container IDs after completion; resource guards remain enabled."
+    ],
+    "prepared_plan": {
+      "plan_path": "runtime/research/telemetry-preparation-20261023/plan.json",
+      "launch_path": "runtime/research/telemetry-preparation-20261023/launch.json",
+      "status": "prepared_not_started",
+      "planned_load_seconds": 7200,
+      "projected_records": 220036,
+      "lean_mode": true,
+      "process_started": false,
+      "pre_run_requirement": "Rebuild processor image with the tested streaming fix before actual collection; Docker build is deferred."
+    }
+  },
+  "conclusions": [
+    "Latest two-hour request ran for only approximately 58m43s and ended with a Docker VM memory safety stop.",
+    "Latest session can support the structural five-minute train/validation/test count checks; its ten-minute selection split fails the count requirement.",
+    "Combined finalized sessions satisfy structural count checks at both horizons, but forecast skill has not been measured on this combined dataset.",
+    "Existing passive logs have no nonzero healthy ingress observations and cannot establish forecast skill.",
+    "Missing/error rows and distinct sessions must not be merged into an invented continuous series.",
+    "No historical forecasting result can replace the unfinished matched baseline-versus-LLM overload experiment."
+  ]
+}

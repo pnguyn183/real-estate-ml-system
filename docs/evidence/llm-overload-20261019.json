@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "evidence_date": "2026-10-19",
+  "compiled_date": "2026-10-23",
+  "session_id": "llm-proof-20261019-01",
+  "source_commit": "778fe1e479f995265b8bb3cea8d8c8f0bef3a914",
+  "verdict": "inconclusive",
+  "session_status": "incomplete",
+  "run_status": "guard_stopped",
+  "stop_reason": "emergency_host_memory",
+  "eligible_pairs": 0,
+  "demonstrated_pairs": 0,
+  "applied_llm_decisions": 0,
+  "overload_observed": false,
+  "profile": [
+    {
+      "name": "light",
+      "rate": 10,
+      "seconds": 40
+    },
+    {
+      "name": "overload",
+      "rate": 500,
+      "seconds": 100
+    },
+    {
+      "name": "recovery",
+      "rate": 10,
+      "seconds": 40
+    }
+  ],
+  "observed_stages": [
+    "light"
+  ],
+  "accounting": {
+    "planned": 50800,
+    "offered": 68,
+    "admitted": 68,
+    "acknowledged": 68,
+    "committed": 68,
+    "deferred": 0,
+    "rejected": 0,
+    "enqueue_failed": 0,
+    "delivery_failed": 0,
+    "pending": 0,
+    "queued": 0,
+    "cancelled_future_offers": 50732,
+    "latency_count": 68,
+    "latency_missing": 0,
+    "errors": [],
+    "rate_read_errors": 0
+  },
+  "offset_growth": 68,
+  "offered_to_commit_p95_upper_seconds": 7.794977903366089,
+  "completion_semantics": "Consumer-group offset observed past record; not producer ACK or a per-record success verdict",
+  "latency_semantics": "Scheduled arrival to first observed commit, an upper bound including admission wait",
+  "completion_observer": {
+    "errors": [],
+    "max_poll_gap_seconds": 0.28099999998812564,
+    "timeout_seconds": 5,
+    "shutdown_timeout_seconds": 11
+  },
+  "observer_fix": {
+    "commit": "e5c56644f286c92c113c54435ca49b6c04eab603",
+    "timeout_seconds": 5,
+    "shutdown_timeout_seconds": 11,
+    "validation": {
+      "passed": 47,
+      "seconds": 11.02,
+      "source": "Historical work-session report before the fix commit; not rerun for this document."
+    },
+    "error_policy": "Observation errors still invalidate the trial."
+  },
+  "memory": {
+    "guard_floor_percent": 10,
+    "host_before_trial": {
+      "memory_available_percent": 16.131497914230273,
+      "memory_available_bytes": 2722156544,
+      "memory_total_bytes": 16874790912
+    },
+    "lowest_sampled_host_available_percent": 11.292429624386685,
+    "lowest_sampled_vm_available_percent": 18.534501117158033,
+    "guard_trigger_host_available_percent": null,
+    "guard_sampling_note": "The faster host-memory watchdog emitted emergency_host_memory; its triggering memory value is not persisted. Five-second telemetry samples must not be treated as the actual minimum.",
+    "container_samples": [
+      {
+        "timestamp_utc": "2026-10-19T10:33:34.602347+00:00",
+        "host_available_percent": 15.49943177156683,
+        "vm_available_percent": 49.74282064991088,
+        "memory_mib": {
+          "real_estate_processor_1": 155.3,
+          "real_estate_processor_2": 162.6,
+          "real_estate_processor_3": 150.4,
+          "real_estate_mongodb": 942.0
+        },
+        "processor_network_rx_bytes": {
+          "real_estate_processor_1": 2060000,
+          "real_estate_processor_2": 2090000,
+          "real_estate_processor_3": 2030000
+        }
+      },
+      {
+        "timestamp_utc": "2026-10-19T10:33:39.448660+00:00",
+        "host_available_percent": 11.292429624386685,
+        "vm_available_percent": 18.534501117158033,
+        "memory_mib": {
+          "real_estate_processor_1": 659.4,
+          "real_estate_processor_2": 665.7,
+          "real_estate_processor_3": 655.1,
+          "real_estate_mongodb": 1793.024
+        },
+        "processor_network_rx_bytes": {
+          "real_estate_processor_1": 108000000,
+          "real_estate_processor_2": 108000000,
+          "real_estate_processor_3": 107000000
+        }
+      },
+      {
+        "timestamp_utc": "2026-10-19T10:33:44.908261+00:00",
+        "host_available_percent": 12.403666954543182,
+        "vm_available_percent": 35.22532819492416,
+        "memory_mib": {
+          "real_estate_processor_1": 183.8,
+          "real_estate_processor_2": 190.0,
+          "real_estate_processor_3": 182.6,
+          "real_estate_mongodb": 1911.808
+        },
+        "processor_network_rx_bytes": {
+          "real_estate_processor_1": 108000000,
+          "real_estate_processor_2": 108000000,
+          "real_estate_processor_3": 107000000
+        }
+      },
+      {
+        "timestamp_utc": "2026-10-19T10:33:49.410815+00:00",
+        "host_available_percent": 12.1232422177463,
+        "vm_available_percent": 35.39704833769189,
+        "memory_mib": {
+          "real_estate_processor_1": 183.7,
+          "real_estate_processor_2": 189.8,
+          "real_estate_processor_3": 182.4,
+          "real_estate_mongodb": 1911.808
+        },
+        "processor_network_rx_bytes": {
+          "real_estate_processor_1": 108000000,
+          "real_estate_processor_2": 108000000,
+          "real_estate_processor_3": 107000000
+        }
+      }
+    ],
+    "interpretation": "Both processor and MongoDB memory grew in the observed interval. A MongoDB-cache-only explanation is insufficient. These samples establish correlation, not the responsible code path or causality."
+  },
+  "isolation": {
+    "training_disabled": true,
+    "resource_fingerprint": "d192641d55692a3fed2e383e9a78e240aa37d723ad3321c9cbef2bb5fe4f6385",
+    "processor_limits": {
+      "processor-2": {
+        "cpu_count": 1.0,
+        "memory_bytes": 805306368,
+        "memory_swap_bytes": 1610612736
+      },
+      "processor-3": {
+        "cpu_count": 1.0,
+        "memory_bytes": 805306368,
+        "memory_swap_bytes": 1610612736
+      },
+      "processor": {
+        "cpu_count": 1.0,
+        "memory_bytes": 805306368,
+        "memory_swap_bytes": 1610612736
+      }
+    },
+    "status": "restored",
+    "restore_errors": [],
+    "run_cleanup_errors": [],
+    "restored_services": [
+      "frontend",
+      "mongo-express",
+      "api",
+      "scraper",
+      "predictor",
+      "grafana",
+      "trainer"
+    ],
+    "unrestored_services": []
+  },
+  "remaining": "At least three eligible AB/BA pairs with genuine model decisions and recovery under sustained offered load. Live RAM-dependent overload testing is excluded from the 2026-10-23 work scope; passive telemetry does not replace this evidence.",
+  "source_artifacts": [
+    {
+      "path": "runtime/research/llm-proof-20261019-01/identity.json",
+      "sha256": "28842eef056df7d855ec22230a597a293b5447774fc389c4fa5da6a46b4f9abe"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/session.json",
+      "sha256": "6b45f4d2d2072a09f11a502c59f66851d6ed64d5e6c39b5d8e5aac1738738357"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/config.json",
+      "sha256": "8412baa29186df830298c5d0272c85a9b78b6d9d4a74d7d17cb417d43f88cdca"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/comparison.json",
+      "sha256": "b916b3b5958445599b3b4c20ade0ba324e0bcc8152b31b2036552800d122b6a4"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/isolation.json",
+      "sha256": "262bc790e001efb7aafa6f0f85563ce026ea3157bba55a7d96d233d79adb52e2"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/pair-1-baseline/run.json",
+      "sha256": "f4b289f9c091850b1e53971fbc1a8702888af0a72408091116edeea89038d830"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/pair-1-baseline/load-summary.json",
+      "sha256": "a1a4f75cacbba14e5a2576deef35f58c762901902a690d750320f28f06f2c590"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/pair-1-baseline/control/decisions.jsonl",
+      "sha256": "4cc57b5351a0437a9198f0b71b52bc162f6ac576c4cb2db944546c5f7fdd7889"
+    },
+    {
+      "path": "runtime/research/llm-proof-20261019-01/pair-1-baseline/telemetry.jsonl",
+      "sha256": "7ac7104c575d77798eff81d2e7ebbe8cba81288792be2a4252f0b1c4448bcc0a"
+    }
+  ]
+}

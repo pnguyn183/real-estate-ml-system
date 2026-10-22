@@ -117,3 +117,21 @@ python -m research.llm_experiment --restore runtime/research/llm-proof/isolation
 
 Lệnh chỉ khôi phục thao tác chưa hoàn tất với đúng container ID, không tạo
 container hoặc khởi động dịch vụ vốn đã tắt.
+
+## Điểm tiếp tục ngày 23/10/2026
+
+[Lượt 19/10](LLM_OVERLOAD_VALIDATION_20261019.md) dừng vì RAM host trước khi
+chạy nhánh LLM; không có phép thử đối chứng nào được xác nhận đạt. Theo yêu cầu
+ngày 23/10, chưa chạy lại phần thử tải cần thêm RAM.
+
+Đối chiếu mã tìm thấy `PriceAnomalyDetector.refresh_if_needed` tạo danh sách
+toàn bộ document lịch sử, rồi `fit` tạo thêm một danh sách tham chiếu. Bản sửa
+đọc cursor một lượt, chỉ giữ các giá trị số cần cho percentile chính xác và
+sắp xếp tại chỗ. Giữ nguyên toàn bộ lịch sử, quy tắc loại URL và đóng cursor
+khi lỗi; 23 kiểm thử price anomaly/feature enrichment đạt. Chưa đo mức giảm RAM
+trên Docker thật. Cần build lại image processor trước khi kiểm chứng bản sửa.
+
+Phần tích hợp giới hạn cache MongoDB viết dở đã được gỡ; không có thay đổi cấu
+hình cache MongoDB được thực hiện. Giới hạn Docker và ngưỡng dừng giữ nguyên.
+Xem riêng [tình trạng dữ liệu telemetry](TELEMETRY_STATUS_20261023.md): thu lịch
+sử dự báo không thay thế phép thử chứng minh LLM điều tiết khi quá tải.
