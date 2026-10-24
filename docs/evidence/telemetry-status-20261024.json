@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "assessment_date": "2026-10-24",
+  "timezone": "Asia/Saigon",
+  "status": "additional_two_hour_collection_incomplete",
+  "historical_session": {
+    "path": "runtime/research/traffic-sessions/session-20261022T233647.626631Z-8f23060b",
+    "status": "safety_stopped",
+    "seed": 1378811262,
+    "workload_kind": "controlled_synthetic",
+    "policy": "fixed_baseline",
+    "git_head_from_manifest": "acb8803a33a796da7c36d4b3739e6dcf66a15674",
+    "requested_duration_seconds": 7200,
+    "actual_load_seconds": 1602.4529999999795,
+    "observation_span_seconds": 1619.139988,
+    "rows": 327,
+    "healthy_target_rows": 322,
+    "error_rows": 3,
+    "longest_healthy_segment_seconds": 1254.215372,
+    "timestamp_gap_count": 0,
+    "duplicate_timestamp_count": 0,
+    "offered": 49064,
+    "admitted": 48094,
+    "acknowledged": 48094,
+    "rejected": 970,
+    "telemetry_withheld": 963,
+    "delivery_failed": 0,
+    "enqueue_failed": 0,
+    "undelivered": 0,
+    "observed_topic_offset_growth": 48094,
+    "final_lag": 0,
+    "stop_reason": "Docker VM memory pressure: available=8.23% <= 10%",
+    "restoration_status": "restored",
+    "restoration_errors": [],
+    "restoration_ended_at": "2026-10-23T00:05:36.352332+00:00",
+    "raw_file_sha256": {
+      "session.json": "f0a9a79fbb1ac2134641f1cb36d1deb2c1a0e92a38b2559b7a9846398979182f",
+      "config.json": "adc82793c57c74d74d2e4f979f60952b58549f00f91814ffabc6b3cdb5f549aa",
+      "environment.json": "3352c376dc646acdcb1c0420db52b8dd8826d112987fb8ffc29fd6a9fe304b62",
+      "history_audit.json": "e6ac70498e244298b0c884844d965ca27af846ee06f8b68cf1bd8405776209b5",
+      "baseline/observations.jsonl": "9710d3d60f8ecde0fda090118be6e6d7bb3ebe4e6b2160fe620b6d69e8932714",
+      "baseline/manifest.json": "3b5f446270fdab691373dd239138603e72e062cc73c1b1154aa092728d712238",
+      "baseline/report.json": "e3be5244c69e9fb8319bc120e0f4b223199bdd1877b47b0111736558d963639e"
+    }
+  },
+  "memory_samples": [
+    {
+      "elapsed_seconds": 1.969,
+      "phase": "load",
+      "vm_available_percent": 56.638419069933846,
+      "vm_swap_used_percent": 0.06847381591796875,
+      "processor_memory_mib": [
+        152.8,
+        161.2,
+        185.6
+      ],
+      "kafka_memory_mib": [
+        447.0,
+        436.3,
+        422.6
+      ],
+      "mongodb_memory_mib": 685.1
+    },
+    {
+      "elapsed_seconds": 320.016,
+      "phase": "load",
+      "vm_available_percent": 12.577279191215451,
+      "vm_swap_used_percent": 23.22559356689453,
+      "processor_memory_mib": [
+        595.5,
+        585.8,
+        609.3
+      ],
+      "kafka_memory_mib": [
+        645.5,
+        1029.1,
+        669.4
+      ],
+      "mongodb_memory_mib": 1841.2
+    },
+    {
+      "elapsed_seconds": 1602.453,
+      "phase": "load",
+      "vm_available_percent": 8.228298439734507,
+      "vm_swap_used_percent": 64.50958251953125,
+      "processor_memory_mib": [
+        529.5,
+        532.1,
+        541.0
+      ],
+      "kafka_memory_mib": [
+        899.3,
+        919.2,
+        876.5
+      ],
+      "mongodb_memory_mib": 2005.0,
+      "lag": 3104
+    },
+    {
+      "elapsed_seconds": 1605.063,
+      "phase": "drain",
+      "vm_available_percent": 6.951744913779021,
+      "vm_swap_used_percent": 64.79949951171875,
+      "processor_memory_mib": [
+        593.8,
+        596.5,
+        598.3
+      ],
+      "kafka_memory_mib": [
+        867.7,
+        900.7,
+        859.2
+      ],
+      "mongodb_memory_mib": 1972.2,
+      "lag": 3104
+    },
+    {
+      "elapsed_seconds": 1621.11,
+      "phase": "drain",
+      "vm_available_percent": 23.924855914206944,
+      "vm_swap_used_percent": 64.83707427978516,
+      "processor_memory_mib": [
+        115.6,
+        118.8,
+        120.9
+      ],
+      "kafka_memory_mib": [
+        929.3,
+        958.7,
+        907.8
+      ],
+      "mongodb_memory_mib": 2147.3,
+      "lag": 0
+    }
+  ],
+  "memory_interpretation": "Processor, MongoDB and broker memory all contributed to the observed footprint. Early processor spikes near 12, 320 and 622 seconds are consistent with the configured 300-second history refresh; correlation does not prove the responsible code path. Reducing new input does not remove existing history scans or the existing runtime footprint.",
+  "deployment_provenance": {
+    "streaming_fix_verified_in_running_processors": false,
+    "reason": "The manifest hashes kafka_to_mongo.py only, not price_anomaly.py. Its processor container IDs and images match the October 19 pre-fix experiment. A workspace commit or newer image tag does not verify the source in a running container.",
+    "comparison_artifact": "runtime/research/llm-proof-20261019-01/isolation.json",
+    "container_ids": [
+      "5ff7e7434ad6",
+      "342801767e6e",
+      "385fb3250ea9"
+    ],
+    "image_ids": [
+      "ed8082ec7479",
+      "6e928430a483",
+      "0760790a7080"
+    ],
+    "limitation": "Artifacts do not exclude manual modifications inside the containers; deployed dependency hashes are required."
+  },
+  "continuation_attempt": {
+    "new_collection_started": false,
+    "observation_source": "Current coordinating-agent startup check using psutil.virtual_memory; rounded values saved in readiness.json, separate from the historical session",
+    "readiness_path": "runtime/research/telemetry-preparation-20261024/readiness.json",
+    "readiness_sha256": "d3ed508023a7e25aed1132e8cf828a7c96a329b02b89fb40c8091524acdc6d06",
+    "host_available_gib_before_startup_approx": 3.25,
+    "host_available_percent_before_startup_approx": 20.68,
+    "host_available_gib_after_startup_approx": 0.01,
+    "host_available_percent_after_startup_approx": 0.09,
+    "docker_initial_state": "off",
+    "docker_restoration": "Docker Desktop stopped successfully; original off state restored",
+    "docker_restoration_exit_code": 0,
+    "host_available_gib_after_restoration_approx": 4.25,
+    "host_available_percent_after_restoration_approx": 27.06
+  },
+  "proposed_followup_profile": {
+    "started": false,
+    "status": "prepared_not_started",
+    "plan_path": "runtime/research/telemetry-preparation-20261024/plan.json",
+    "plan_sha256": "f40a7e08ab86f1c99637929671832aaf2e0507645005bd6cb79e58fb300f8a0b",
+    "launch_path": "runtime/research/telemetry-preparation-20261024/launch.json",
+    "launch_sha256": "993d23104aeec30867f3f8c2d8f6dd3b50f6e34ff183e4b15530e7359ba72e1f",
+    "seed": 20261024,
+    "duration_seconds": 7200,
+    "minimum_rate_parameter": 5,
+    "maximum_rate_parameter": 20,
+    "generated_minimum_rate": 5.2182,
+    "generated_maximum_rate": 18.9268,
+    "stage_count": 120,
+    "distinct_requested_rates": 120,
+    "projected_records": 85961,
+    "sample_seconds": 5,
+    "nominal_sample_count": 1440,
+    "existing_guards_preserved": true,
+    "limitation": "Lower input reduces incoming work but cannot guarantee that the existing runtime fits in available memory. Planned observations are not collected observations."
+  },
+  "offline_forecast_evaluation": {
+    "status": "completed",
+    "runtime_state": "Docker off; existing local measurements only",
+    "root_path": "runtime/research/telemetry-evaluation-20261024",
+    "input_sessions": 7,
+    "input_rows": 1732,
+    "excluded_history": "Stale October 1 session with unfinalized status",
+    "workload_kind": "controlled_synthetic",
+    "target": "requested_rate",
+    "target_semantics": "offered demand before admission",
+    "lag_seconds": [
+      60,
+      120
+    ],
+    "trees": 100,
+    "jobs": 1,
+    "selection": "Lowest validation RMSE only; test evaluates that frozen choice and never selects a replacement",
+    "artifact_criterion": "At least 5% RMSE improvement over persistence and positive R2 on both validation and test",
+    "horizons": {
+      "300": {
+        "selected_model": "xgboost",
+        "train_size": 676,
+        "test_size": 185,
+        "selection_train_size": 531,
+        "validation_size": 136,
+        "validation_rmse": 4.554355333189746,
+        "validation_persistence_rmse": 27.586952376291308,
+        "validation_r2": 0.8916819042003414,
+        "test_rmse": 8.587930500497878,
+        "test_persistence_rmse": 27.696607493462427,
+        "test_r2": 0.6990424376567372,
+        "test_relative_rmse_improvement": 0.6899284324795016,
+        "eligible": true,
+        "reason": "passed_for_experimental_inference_only",
+        "artifact": "forecast/horizon_300s/forecast.joblib"
+      },
+      "600": {
+        "selected_model": "gradient_boosting",
+        "train_size": 397,
+        "test_size": 130,
+        "selection_train_size": 283,
+        "validation_size": 80,
+        "validation_rmse": 15.174887473947674,
+        "validation_persistence_rmse": 28.31358219931293,
+        "validation_r2": 0.007697489266316415,
+        "test_rmse": 16.812512773184103,
+        "test_persistence_rmse": 27.894421723462642,
+        "test_r2": -0.08443570165153047,
+        "test_relative_rmse_improvement": 0.3972804691970828,
+        "eligible": false,
+        "reason": "Negative test R2 fails the explained-variance criterion despite lower RMSE than persistence",
+        "artifact": null
+      }
+    },
+    "raw_file_sha256": {
+      "observations.jsonl": "5517c1599f605749e9f5fbb797052024fb65c64c04d77e754046e1690a3de40b",
+      "observations.manifest.json": "a3d5ba6847d9d95f045cefa92147c4ecb189e9cef8ab0f983be9afde1b08c10a",
+      "forecast/metrics.json": "b2f40dba68d4910d0ac9a6cc72ca6309182bcbd887a87f382302174323a8c744",
+      "forecast/horizon_300s/forecast.joblib": "6470a34be998a74fbf349436e4e4b80cf17d9a82a28c20c5a94753aad7f07637",
+      "forecast/horizon_300s/forecast.json": "05611f6eedbce0a55cab0f8181e57354b5e405a91b3cc31825aeecc2d567a1eb",
+      "forecast/horizon_300s/split.json": "70838a92209280fe5b27ceaa5e1d61b4e2d6ea02a2cbec8efeb0a48b9841c5d3",
+      "forecast/horizon_600s/split.json": "354717bd511c6822d5d6c10f556eda30c7595519434f7a2e810f68d4db9143f7"
+    },
+    "independent_checks": [
+      "Selected models equal the minimum validation RMSE candidates; superior test alternatives were not substituted.",
+      "Last training label precedes first test observation; last selection-training label precedes first validation observation for both horizons.",
+      "Selected-model and persistence RMSE and R2 recomputed from saved CSV predictions agree within serialization rounding.",
+      "Input, manifest, metrics, splits and exported artifact hashes match saved files."
+    ],
+    "limitations": [
+      "Existing synthetic offered-demand history only; not natural production traffic or evidence of seasonal generalization.",
+      "Forecast accuracy does not establish causal benefit of LLM or predictive control.",
+      "Offline evaluation does not constitute additional two-hour telemetry collection."
+    ]
+  },
+  "remaining_work": [
+    "Verify deployed processor dependency hashes and recreate from the streaming-fix image if needed.",
+    "Collect the requested additional history when the runtime can remain available with sufficient memory.",
+    "Reassess the experimental five-minute forecast and failed ten-minute horizon using additional independent history before production claims.",
+    "Keep the RAM-intensive matched baseline-versus-LLM overload experiment separately pending under the user's current scope."
+  ],
+  "latest_readiness_check": {
+    "checked_at_utc": "2026-10-24T11:36:51.819492+00:00",
+    "host_available_gib": 4.959,
+    "host_available_percent": 31.56,
+    "host_total_gib": 15.72,
+    "docker_engine_available": false,
+    "docker_info_exit_code": 1,
+    "docker_info_reason": "Docker Desktop Linux engine named pipe not found",
+    "new_collection_started": false,
+    "startup_attempted": false
+  }
+}

@@ -164,6 +164,9 @@ See [the session guide](../docs/TRAFFIC_SESSIONS.md) for commands and limitation
 The [October 23 inventory](../docs/TELEMETRY_STATUS_20261023.md) verifies existing
 history and separates sample-count readiness from forecast validation. The next
 two-hour session is prepared but has not started; Docker is currently offline.
+The [October 24 follow-up](../docs/TELEMETRY_STATUS_20261024.md) records another
+interrupted session and evaluates seven finalized histories: the five-minute
+candidate passes the experimental gate, while the ten-minute candidate fails.
 
 ## Policy and safety
 

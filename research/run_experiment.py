@@ -18,6 +18,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import time
 from uuid import uuid4
@@ -130,7 +131,8 @@ def code_identity():
              Path("research/telemetry_guard.py"),
              Path("research/preflight.py"),
              Path("agents/resource_actuator.py"),
-             Path("processing/kafka_to_mongo.py"), Path("utils/metrics.py")]
+             Path("processing/kafka_to_mongo.py"), Path("processing/price_anomaly.py"),
+             Path("processing/feature_engineering.py"), Path("utils/metrics.py")]
     result = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     result["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     result["python"] = platform.python_version()
@@ -143,14 +145,43 @@ def code_identity():
         result["containers"] = None
         result["container_identity_error"] = type(exc).__name__
     result["worker_source_hashes"] = {}
+    result["worker_dependency_source_hashes"] = {}
+    worker_paths = ("processing/kafka_to_mongo.py", "processing/price_anomaly.py",
+                    "processing/feature_engineering.py")
+    # Read the deployed files together. A missing dependency must never inherit
+    # the checkout's hash or hide an available hash for another deployed file.
+    worker_hash_script = (
+        "from pathlib import Path\nimport hashlib, json\nhashes = {}\n"
+        f"for source in {worker_paths!r}:\n"
+        "    try:\n"
+        "        hashes[source] = hashlib.sha256((Path('/app') / source).read_bytes()).hexdigest()\n"
+        "    except OSError as exc:\n"
+        "        hashes[source] = {'error': type(exc).__name__}\n"
+        "print(json.dumps(hashes))"
+    )
     for service in ("processor", "processor-2", "processor-3"):
         try:
-            result["worker_source_hashes"][service] = subprocess.check_output(
+            output = subprocess.check_output(
                 ["docker", "compose", "exec", "-T", service, "python", "-c",
-                 "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('/app/processing/kafka_to_mongo.py').read_bytes()).hexdigest())"],
-                text=True, timeout=10).strip()
-        except (subprocess.SubprocessError, OSError) as exc:
-            result["worker_source_hashes"][service] = {"error": type(exc).__name__}
+                 worker_hash_script], text=True, timeout=10)
+            hashes = json.loads(output)
+            if not isinstance(hashes, dict) or set(hashes) != set(worker_paths):
+                raise ValueError("invalid worker source identity")
+            for value in hashes.values():
+                if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+                    continue
+                if (isinstance(value, dict) and set(value) == {"error"}
+                        and isinstance(value["error"], str)
+                        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,99}", value["error"])):
+                    continue
+                raise ValueError("invalid worker source hash")
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            hashes = {source: {"error": type(exc).__name__} for source in worker_paths}
+        # Preserve the scalar per-worker field consumed by existing reports.
+        result["worker_source_hashes"][service] = hashes[worker_paths[0]]
+        result["worker_dependency_source_hashes"][service] = {
+            source: hashes[source] for source in worker_paths[1:]
+        }
     return result
 
 
