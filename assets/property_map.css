@@ -1,0 +1,22 @@
+html, body, #homenest-map-root, #homenest-map { height: 100%; width: 100%; margin: 0; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", Arial, sans-serif; color: #17334e; }
+#homenest-map-root { position: relative; overflow: hidden; background: #e6ede9; }
+#homenest-map { z-index: 0; }
+.leaflet-container { font-family: inherit; background: #e6ede9; }
+.leaflet-control-zoom { border: 1px solid #d5dfdd !important; box-shadow: 0 2px 8px #17334e18 !important; }
+.leaflet-control-zoom a { color: #244b60; }
+.leaflet-control-attribution { max-width: calc(100% - 65px); font-size: 10px; line-height: 1.4; background: #fffffff0 !important; }
+.leaflet-control-attribution a { color: #285d78; }
+.leaflet-control-scale-line { font-size: 10px; }
+.hn-map-pin { background: none; border: none; }
+.hn-map-pin svg { display: block; filter: drop-shadow(0 2px 3px #17334e66); }
+#map-home { position: absolute; top: 10px; right: 10px; z-index: 800; display: grid; place-items: center; width: 34px; height: 34px; background: #fff; border: 1px solid #cad7d3; border-radius: 5px; color: #285269; cursor: pointer; box-shadow: 0 2px 8px #17334e18; }
+#map-home:hover, #map-retry:hover { background: #f0f5f2; }
+button:focus-visible, .leaflet-control a:focus-visible { outline: 3px solid #a84a21; outline-offset: 2px; }
+#map-message { position: absolute; left: 52px; right: 52px; top: 10px; z-index: 750; padding: 10px 12px; border: 1px solid #d5dfd8; border-radius: 8px; background: #fffffff5; box-shadow: 0 2px 12px #17334e12; font-size: 12px; line-height: 1.6; }
+#map-message[hidden], #map-retry[hidden] { display: none; }
+#map-retry { display: block; margin-top: 8px; padding: 6px 12px; min-height: 34px; border: 1px solid #b5c9be; border-radius: 5px; background: #fff; color: #285269; font: inherit; font-weight: 600; cursor: pointer; }
+#homenest-map-root[data-state="error"] #map-message { border-color: #d6ad91; }
+#homenest-map-root[data-state="error"] #map-message-text { color: #82401e; }
+noscript { position: absolute; inset: 90px 20px auto; z-index: 900; background: white; padding: 20px; border-radius: 8px; font-size: 14px; }

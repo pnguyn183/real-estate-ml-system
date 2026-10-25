@@ -1,0 +1,56 @@
+{
+  "admin": {
+    "full_name": "Admin HomeNest",
+    "email": "admin@homenest.vn",
+    "phone": "0900 000 001",
+    "bio": "Quản lý toàn bộ hệ thống và kiểm duyệt tin đăng."
+  },
+  "minh": {
+    "full_name": "Minh Hoàng",
+    "email": "minh@gmail.com",
+    "phone": "0909 222 444",
+    "bio": "Chủ đầu tư và người bán bất động sản lâu năm."
+  },
+  "lan": {
+    "full_name": "Lan Anh",
+    "email": "lananh@gmail.com",
+    "phone": "0905 110 220",
+    "bio": "Cho thuê căn hộ sinh viên và căn hộ nhỏ."
+  },
+  "nam": {
+    "full_name": "Nam Trần",
+    "email": "namtran@gmail.com",
+    "phone": "0904 556 778",
+    "bio": "Bán nhà phố và đất nền khu dân cư."
+  },
+  "hung": {
+    "full_name": "Hưng Đặng",
+    "email": "hung@gmail.com",
+    "phone": "0908 333 999",
+    "bio": "Đầu tư đất nền và bất động sản khu vực ngoại thành."
+  },
+  "hoa": {
+    "full_name": "Hòa Nguyễn",
+    "email": "hoa@gmail.com",
+    "phone": "0907 890 111",
+    "bio": "Chuyên bán căn hộ cao cấp và căn hộ gia đình."
+  },
+  "linh": {
+    "full_name": "Linh Chi",
+    "email": "linhchi@gmail.com",
+    "phone": "0911 443 332",
+    "bio": "Chuyên tư vấn căn hộ góc và nhà ở gia đình."
+  },
+  "quang": {
+    "full_name": "Quang Sỹ",
+    "email": "quangsy@gmail.com",
+    "phone": "0912 519 804",
+    "bio": "Mua bán nhà liền kề và căn hộ mới tại khu đô thị."
+  },
+  "vy": {
+    "full_name": "Vy Nguyễn",
+    "email": "vynguyen@gmail.com",
+    "phone": "0908 777 110",
+    "bio": "Tư vấn phòng trọ và căn hộ cho thuê ngắn hạn."
+  }
+}

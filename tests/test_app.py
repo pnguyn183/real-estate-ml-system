@@ -4,11 +4,11 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlparse
 
 import requests
 from streamlit.testing.v1 import AppTest
@@ -165,10 +165,15 @@ class AppInteractionTests(unittest.TestCase):
         return json.loads(storage.DATA_FILE.read_text(encoding="utf-8"))
 
     def valuation_map_query(self):
-        maps = [element.proto.src for element in self.app.get("iframe")
-                if "openstreetmap.org/export/embed.html" in element.proto.src]
+        maps = [element.proto.srcdoc for element in self.app.get("iframe")
+                if 'homenest-map-config' in element.proto.srcdoc]
         self.assertEqual(len(maps), 1)
-        return parse_qs(urlparse(maps[0]).query)
+        config_tag = re.search(
+            r'<script\b(?=[^>]*\bid=[\"\']homenest-map-config[\"\'])[^>]*>(.*?)</script\s*>',
+            maps[0], re.DOTALL | re.IGNORECASE)
+        self.assertIsNotNone(config_tag, 'The local map must expose its normalized configuration')
+        point = json.loads(config_tag.group(1))['point']
+        return {'marker': [f'{point[0]},{point[1]}']} if point is not None else {}
 
     def account_options(self):
         return [label.rsplit(" · ", 1)[-1]
@@ -895,6 +900,7 @@ class AppInteractionTests(unittest.TestCase):
             **tools,
             "services_hero_explore": "explore",
             "services_hero_valuation": "valuation",
+            "services_featured_valuation": "valuation",
             "services_contact": "contact",
             "services_forum": "forum",
         }
@@ -912,6 +918,49 @@ class AppInteractionTests(unittest.TestCase):
                 self.assert_no_exception()
                 self.assertEqual(self.app.segmented_control(key="services_goal").value,
                                  "Tất cả")
+
+    def test_services_search_combines_with_goal_and_survives_tool_navigation(self):
+        self.login()
+        self.app.button(key="primary_nav_amenities").click().run()
+        tool_keys = {"services_explore", "services_valuation", "services_create",
+                     "services_mine", "services_favorites", "services_market"}
+
+        def assert_tools(expected):
+            self.assert_no_exception()
+            self.assertEqual(tool_keys & {button.key for button in self.app.button},
+                             expected)
+            counter = next(item.proto.body for item in self.app.get("html")
+                           if 'class="hn-tools-results"' in item.proto.body)
+            visible_text = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", counter)).strip()
+            self.assertEqual(visible_text,
+                             f"Đang hiển thị {len(expected)} / 6 tiện ích")
+
+        assert_tools(tool_keys)
+        # Unaccented, uppercase input and extra whitespace should find the same tool.
+        self.app.text_input(key="services_search").set_value("  DINH   GIA  ").run()
+        assert_tools({"services_valuation"})
+        self.app.segmented_control(key="services_goal").set_value("Đăng & quản lý").run()
+        assert_tools(set())
+        self.assertTrue(any(item.value == "Chưa tìm thấy tiện ích phù hợp"
+                            for item in self.app.subheader))
+
+        self.app.button(key="services_search_clear").click().run()
+        self.assertEqual(self.app.text_input(key="services_search").value, "")
+        self.assertEqual(self.app.segmented_control(key="services_goal").value, "Tất cả")
+        assert_tools(tool_keys)
+
+        self.app.text_input(key="services_search").set_value("ban do").run()
+        assert_tools({"services_valuation"})
+        self.app.button(key="services_valuation").click().run()
+        self.assert_no_exception()
+        self.assertEqual(self.app.session_state.view, "valuation")
+        self.app.button(key="primary_nav_amenities").click().run()
+        self.assertEqual(self.app.text_input(key="services_search").value, "ban do")
+        assert_tools({"services_valuation"})
+
+        self.app.text_input(key="services_search").set_value("tin da luu").run()
+        assert_tools({"services_favorites"})
+        self.assertEqual(self.stored_records(), self.records)
 
     def test_manager_services_batch_opens_csv_upload_panel(self):
         self.login_as_role("Manager")
@@ -1222,6 +1271,42 @@ class AppInteractionTests(unittest.TestCase):
             self.assertIsNone(self.app.number_input(key='valuation_longitude').value)
             self.assertNotIn('marker', self.valuation_map_query())
             self.assertEqual(predict.call_count, 1)
+
+    def test_valuation_map_preserves_location_when_returning_to_page(self):
+        self.login()
+        records = copy.deepcopy(self.records)
+        first = records[0]
+        first.update(latitude=10.71, longitude=106.72,
+                     address='Địa chỉ thử nghiệm tại Quận 7')
+        self.app.session_state.properties = records
+        self.navigate('valuation')
+        self.app.selectbox(key='valuation_listing').set_value(first['id']).run()
+
+        def assert_map_survives_navigation():
+            marker = self.valuation_map_query()['marker']
+            address = self.app.text_input(key='valuation_map_address').value
+            self.navigate('overview')
+            self.navigate('valuation')
+            self.assertEqual(self.app.selectbox(key='valuation_listing').value, first['id'])
+            self.assertEqual(self.valuation_map_query()['marker'], marker)
+            self.assertEqual(self.app.text_input(key='valuation_map_address').value, address)
+
+        assert_map_survives_navigation()
+        self.app.number_input(key='valuation_latitude').set_value(10.81).run()
+        self.app.number_input(key='valuation_longitude').set_value(106.82).run()
+        assert_map_survives_navigation()
+        self.assertEqual(self.app.number_input(key='valuation_latitude').value, 10.81)
+        self.assertEqual(self.app.number_input(key='valuation_longitude').value, 106.82)
+
+        candidates = [dict(latitude=21.03, longitude=105.85,
+                           label='Khu vực thử nghiệm', kind='area')]
+        with patch('property_map.geocode_address', return_value=candidates) as lookup:
+            self.app.text_input(key='valuation_map_address').set_value('Địa chỉ tra cứu').run()
+            self.app.button(key='valuation_map_search').click().run()
+            self.app.selectbox(key='valuation_map_candidate').set_value(0).run()
+            assert_map_survives_navigation()
+            self.assertEqual(self.app.selectbox(key='valuation_map_candidate').value, 0)
+            lookup.assert_called_once_with('Địa chỉ tra cứu')
 
     def test_valuation_map_remains_available_when_estimate_fails_or_has_no_comparables(self):
         from api_client import ValuationAPIError

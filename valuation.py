@@ -186,11 +186,12 @@ def _render_valuation_inputs(properties):
             st.session_state._valuation_previous_location = location
         if st.session_state.get('valuation_type') not in (None, *types):
             st.session_state.valuation_type = types[0]
+        st.session_state.setdefault('valuation_area', 85.0)
         with st.container(key='hn-value-basic-fields'):
             kind_column, area_column = st.columns([1.3, 1], gap='small')
             property_type = kind_column.selectbox('Loại bất động sản', types,
                                                   key='valuation_type', persist_state='session')
-            area = area_column.number_input('Diện tích (m²)', min_value=0.0, value=85.0,
+            area = area_column.number_input('Diện tích (m²)', min_value=0.0, value=None,
                                              step=1.0, key='valuation_area', persist_state='session')
         subject = {'location': location, 'type': property_type, 'area': area}
         with st.expander('Thông tin bổ sung của bất động sản', icon=':material/tune:'):

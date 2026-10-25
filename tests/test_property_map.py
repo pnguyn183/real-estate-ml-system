@@ -1,5 +1,8 @@
+from html.parser import HTMLParser
+import json
 import math
 import os
+import re
 import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
@@ -16,6 +19,99 @@ from property_map import (
 def feature(latitude=10.78, longitude=106.70, **props):
     return {'type': 'Feature', 'geometry': {'type': 'Point',
             'coordinates': [longitude, latitude]}, 'properties': props}
+
+
+class MapDocumentTests(unittest.TestCase):
+    """The browser receives safe state and locally available rendering code."""
+
+    def document(self, *args, **kwargs):
+        from property_map_view import render_map_html
+        document = render_map_html(*args, **kwargs)
+        config_tag = re.search(
+            r'<script\b(?=[^>]*\bid=[\"\']homenest-map-config[\"\'])[^>]*>(.*?)</script\s*>',
+            document, re.DOTALL | re.IGNORECASE)
+        self.assertIsNotNone(config_tag, 'Map state must be embedded as a JSON configuration')
+        return document, json.loads(config_tag.group(1))
+
+    def test_overview_does_not_fabricate_a_property_marker(self):
+        _, config = self.document()
+        self.assertIsNone(config['point'])
+        self.assertFalse(config['area'])
+
+    def test_valid_coordinates_and_zero_are_normalized_without_losing_area(self):
+        for latitude, longitude, expected in [
+                (0, 0, [0.0, 0.0]),
+                ('10.78', '106.7', [10.78, 106.7]),
+                (-90, 180, [-90.0, 180.0])]:
+            with self.subTest(point=(latitude, longitude)):
+                _, config = self.document(latitude, longitude, area=True)
+                self.assertEqual(config['point'], expected)
+                self.assertTrue(config['area'])
+
+    def test_partial_boolean_nonfinite_and_out_of_range_pairs_have_no_marker(self):
+        for pair in [(None, 106), (10, None), (True, 0), (0, False),
+                     (math.nan, 1), (1, math.inf), (91, 106), (1, -181),
+                     ('north', 106), ([], 106)]:
+            with self.subTest(point=pair):
+                _, config = self.document(*pair)
+                self.assertIsNone(config['point'])
+
+    def test_map_has_a_bounded_set_of_independent_https_raster_providers(self):
+        _, config = self.document(10.78, 106.7)
+        providers = config['providers']
+        self.assertGreaterEqual(len(providers), 2)
+        self.assertLessEqual(len(providers), 4)
+        hosts = set()
+        for provider in providers:
+            parsed = urlsplit(provider['url'])
+            self.assertEqual(parsed.scheme, 'https')
+            self.assertTrue(parsed.hostname)
+            self.assertIsNone(parsed.username)
+            self.assertIsNone(parsed.password)
+            hosts.add(parsed.hostname)
+            for coordinate in ('{z}', '{x}', '{y}'):
+                self.assertIn(coordinate, provider['url'])
+            self.assertTrue(provider['name'].strip())
+            self.assertTrue(provider['attribution'].strip())
+            self.assertIsInstance(provider['maxZoom'], int)
+            self.assertGreaterEqual(provider['maxZoom'], 1)
+            self.assertLessEqual(provider['maxZoom'], 22)
+        self.assertGreaterEqual(len(hosts), 2)
+
+    def test_rendering_does_not_depend_on_remote_scripts_or_stylesheets(self):
+        class Dependencies(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.external = []
+                self.inline_scripts = 0
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'script':
+                    if attrs.get('src'):
+                        self.external.append(attrs['src'])
+                    else:
+                        self.inline_scripts += 1
+                elif tag == 'link' and attrs.get('rel', '').lower() == 'stylesheet':
+                    self.external.append(attrs.get('href', ''))
+
+        document, _ = self.document()
+        dependencies = Dependencies()
+        dependencies.feed(document)
+        self.assertEqual(dependencies.external, [],
+                         'Leaflet must remain usable when public CDNs cannot resolve')
+        self.assertGreaterEqual(dependencies.inline_scripts, 2)
+
+    def test_coordinate_text_cannot_inject_executable_html(self):
+        payload = '</script><script>alert("untrusted-map-input")</script>'
+        for pair in [(payload, 106), (10, payload)]:
+            with self.subTest(point=pair):
+                document, config = self.document(*pair)
+                self.assertIsNone(config['point'])
+                self.assertNotIn(payload, document)
+        from property_map_view import render_map_html
+        with self.assertRaises(TypeError):
+            render_map_html(address=payload)
 
 
 class CoordinateTests(unittest.TestCase):
@@ -105,6 +201,9 @@ class GeocoderTests(unittest.TestCase):
         self.assertEqual(kwargs['timeout'], (3, 8))
         self.assertEqual(kwargs['params']['limit'], 5)
         self.assertEqual(kwargs['params']['countrycode'], 'VN')
+        # The public API rejects lang=vi with HTTP 400. Omitting it uses
+        # local place names and works across the public and private servers.
+        self.assertNotIn('lang', kwargs['params'])
         self.assertTrue(kwargs['headers']['User-Agent'].startswith('HomeNest/1.0'))
         self.assertFalse(kwargs['allow_redirects'])
 

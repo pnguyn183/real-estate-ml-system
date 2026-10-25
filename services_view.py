@@ -2,6 +2,7 @@
 
 from html import escape
 from pathlib import Path
+import unicodedata
 
 import streamlit as st
 
@@ -14,8 +15,8 @@ def _render_summary(properties):
     saved = sum(prop.get("id") in favorites for prop in properties)
     owned = sum(prop.get("user_id") == username for prop in properties)
     items = (
-        ("search", len(properties), "Tin trong danh mục", "Khám phá lựa chọn bán và cho thuê"),
-        ("bookmark", saved, "Tin bạn đã lưu", "Trở lại những lựa chọn đang quan tâm"),
+        ("search", len(properties), "Tin hiện có", "Các lựa chọn bán và cho thuê"),
+        ("bookmark", saved, "Tin đã lưu", "Xem lại những lựa chọn bạn quan tâm"),
         ("edit", owned, "Bài đăng của bạn", "Chủ động quản lý thông tin đã đăng"),
     )
     st.html('<div class="hn-tools-summary">' + "".join(
@@ -32,10 +33,10 @@ def _render_hero(navigate):
     with st.container(key="hn-tools-hero"):
         copy, visual = st.columns([1.18, 1], gap="large", vertical_alignment="center")
         with copy, st.container(key="hn-tools-hero-copy"):
-            st.html('<span class="hn-tools-eyebrow">TIỆN ÍCH HOMENEST</span>')
-            st.title("Tiện ích cho mọi bước đi của bạn.")
-            st.write("Tìm nhà, tham khảo giá và quản lý tin đăng trong một không gian "
-                     "được thiết kế cho hành trình bất động sản của bạn.")
+            st.html('<span class="hn-tools-eyebrow">CÔNG CỤ CHO HÀNH TRÌNH CỦA BẠN</span>')
+            st.title("Tiện ích bất động sản")
+            st.write("Từ tìm một nơi để ở đến quản lý tài sản của bạn. "
+                     "Chọn công cụ phù hợp và bắt đầu ngay tại đây.")
             with st.container(horizontal=True, key="hn-tools-hero-actions"):
                 st.button("Khám phá bất động sản", icon=":material/arrow_forward:",
                           type="primary", key="services_hero_explore",
@@ -49,11 +50,11 @@ def _render_hero(navigate):
         with visual, st.container(key="hn-tools-hero-visual"):
             st.html(
                 '<div class="hn-tools-visual">'
-                f'<img src="{photo_uri("hero-residence.jpg")}" alt="Không gian sống hiện đại với ánh sáng tự nhiên; ảnh minh họa HomeNest">'
+                f'<img src="{photo_uri("garden-home.jpg")}" alt="Không gian phòng khách hiện đại với ánh sáng tự nhiên; ảnh minh họa HomeNest">'
                 '<span class="hn-tools-photo-label">Ảnh minh họa HomeNest</span>'
-                '<div class="hn-tools-visual-caption"><small>CHO HÀNH TRÌNH TÌM TỔ ẤM</small>'
-                '<h2>Đúng công cụ.<br>Rõ lựa chọn.</h2>'
-                '<p>Đồng hành từ nhu cầu đến quyết định.</p></div></div>'
+                '<div class="hn-tools-visual-caption"><small>KHÔNG GIAN SỐNG BẠN MONG MUỐN</small>'
+                '<h2>Thêm cơ sở.<br>Rõ lựa chọn.</h2>'
+                '<p>Tìm hiểu kỹ hơn trước mỗi quyết định.</p></div></div>'
             )
 
 
@@ -61,47 +62,91 @@ def _tool_cards(saved, owned):
     return [
         {
             "slug": "explore", "icon": "search", "label": "Khám phá", "group": "buy",
-            "title": "Tìm bất động sản phù hợp",
-            "description": "Thu hẹp lựa chọn từ điều bạn cần, để mỗi lần tìm kiếm đều có định hướng.",
-            "features": ["Lọc theo khu vực, loại hình và ngân sách", "Tách riêng nhu cầu mua và thuê"],
+            "title": "Tìm nhà & đất",
+            "description": "Tìm tin bán hoặc cho thuê theo khu vực, loại hình và ngân sách của bạn.",
+            "features": ["Bộ lọc mua và thuê riêng biệt", "Xem chi tiết và liên hệ người đăng"],
+            "keywords": "khám phá tìm kiếm mua nhà thuê nhà căn hộ đất nền",
             "action": "Tìm bất động sản", "key": "services_explore", "view": "explore",
         },
         {
             "slug": "valuation", "icon": "chart", "label": "Phân tích", "group": "buy",
-            "title": "Hiểu giá trước khi lựa chọn",
-            "description": "Tham khảo mức giá chào bán từ các tin cùng khu vực và loại bất động sản.",
-            "features": ["Xem các tin được dùng để đối chiếu", "Tải báo cáo giá tham khảo"],
+            "title": "Phân tích & định giá",
+            "description": "Đối chiếu giá chào bán và xem vị trí bất động sản trên bản đồ.",
+            "features": ["Các tin tương đồng trong cùng khu vực", "Tải báo cáo và mở vị trí trên Google Maps"],
+            "keywords": "phân tích định giá bản đồ vị trí tọa độ báo cáo",
             "action": "Mở công cụ định giá", "key": "services_valuation", "view": "valuation",
         },
         {
             "slug": "create", "icon": "home", "label": "Đăng tin", "group": "sell",
-            "title": "Giới thiệu bất động sản của bạn",
-            "description": "Trình bày rõ thông tin, hình ảnh và nhu cầu để người tìm dễ tiếp cận tin đăng.",
+            "title": "Đăng tin mới",
+            "description": "Giới thiệu tài sản với thông tin rõ ràng và hình ảnh do bạn cung cấp.",
             "features": ["Đăng tin bán hoặc cho thuê", "Đính kèm tối đa 5 ảnh thực tế"],
             "action": "Đăng tin mới", "key": "services_create", "view": "editor",
         },
         {
             "slug": "mine", "icon": "dashboard", "label": "Quản lý", "group": "sell",
-            "title": "Chăm sóc từng tin đăng",
-            "description": "Tập trung các bài đăng của bạn tại một nơi để theo dõi và cập nhật khi cần.",
-            "features": [f"{owned} bài đăng của bạn trong danh mục", "Chỉnh sửa thông tin và xóa tin của bạn"],
+            "title": "Quản lý tin đăng",
+            "description": "Xem lại, chỉnh sửa và cập nhật những bất động sản bạn đã đăng.",
+            "features": [f"{owned} bài đăng của bạn trong danh mục", "Chỉnh sửa hoặc xóa tin của bạn"],
             "action": "Quản lý bài đăng", "key": "services_mine", "view": "mine",
         },
         {
             "slug": "favorites", "icon": "bookmark", "label": "Cá nhân", "group": "buy",
-            "title": "Giữ lại những lựa chọn ưng ý",
-            "description": "Gom các tin bạn quan tâm để thuận tiện xem lại và liên hệ người đăng.",
+            "title": "Tin đã lưu",
+            "description": "Trở lại những lựa chọn bạn quan tâm để xem kỹ và liên hệ khi sẵn sàng.",
             "features": [f"{saved} tin đã lưu còn trong danh mục", "Thêm hoặc bỏ lưu khi nhu cầu thay đổi"],
+            "keywords": "yêu thích lưu bookmark danh sách cá nhân",
             "action": "Xem tin đã lưu", "key": "services_favorites", "view": "favorites",
         },
         {
             "slug": "market", "icon": "chart", "label": "Thị trường", "group": "buy",
-            "title": "Nhìn rõ mặt bằng giá khu vực",
-            "description": "Đặt các khu vực cạnh nhau để có thêm góc nhìn trước khi tìm hiểu sâu hơn.",
+            "title": "Mặt bằng giá khu vực",
+            "description": "So sánh đơn giá chào bán giữa các khu vực có tin trong HomeNest.",
             "features": ["Trung vị giá chào bán trên mỗi m²", "So sánh các khu vực có tin trong HomeNest"],
             "action": "Khám phá mặt bằng giá", "key": "services_market", "view": "market",
         },
     ]
+
+
+def _search_text(value):
+    normalized = unicodedata.normalize('NFKD', str(value).casefold().replace('đ', 'd'))
+    return ' '.join(''.join(char for char in normalized if not unicodedata.combining(char)).split())
+
+
+def _filtered_tools(cards, goal, query):
+    phrase = _search_text(query)
+    tokens = phrase.split()
+    group = {'Tìm & chọn nhà': 'buy', 'Đăng & quản lý': 'sell'}.get(goal)
+    indexed = [(card, _search_text(' '.join((
+        card['title'], card['description'], card['action'], card['label'],
+        card.get('keywords', ''), *card['features'])))) for card in cards]
+    # Prefer a named feature such as "bản đồ" over unrelated occurrences of
+    # "bán" and "động" elsewhere in a real-estate description.
+    matches = [card for card, text in indexed if phrase in text]
+    if not matches:
+        matches = [card for card, text in indexed if all(token in text for token in tokens)]
+    return [card for card in matches if group is None or card['group'] == group]
+
+
+def _reset_tool_filters():
+    st.session_state.services_search = ''
+    st.session_state.services_goal = 'Tất cả'
+
+
+def _render_featured_tool(navigate):
+    with st.container(border=True, key='hn-tools-featured'):
+        copy, action = st.columns([1.7, 1], gap='medium', vertical_alignment='center')
+        with copy:
+            st.html('<span class="hn-tools-eyebrow">GỢI Ý KHÁM PHÁ</span>')
+            st.subheader('Xem mức giá. Hiểu vị trí.', anchor=False)
+            st.write('Phân tích tin chào bán, xem bản đồ và tải báo cáo trong cùng một công cụ.')
+            st.html('<div class="hn-tools-featured-points"><span>Giá tham khảo</span>'
+                    '<span>Bản đồ vị trí</span><span>Báo cáo tải về</span></div>')
+        with action:
+            st.button('Phân tích một bất động sản', key='services_featured_valuation',
+                      icon=':material/near_me:', type='primary', width='stretch',
+                      on_click=navigate, args=('valuation',))
+            st.caption('Dựa trên các tin chào bán cùng khu vực và loại hình trong HomeNest.')
 
 
 def _render_tool_card(card, navigate):
@@ -109,7 +154,7 @@ def _render_tool_card(card, navigate):
         st.html('<div class="hn-tools-card-top">'
                 f'<span class="hn-tools-tool-icon">{line_icon(card["icon"])}</span>'
                 f'<span class="hn-tools-card-label">{card["label"]}</span></div>')
-        st.subheader(card["title"])
+        st.subheader(card["title"], anchor=False)
         st.write(card["description"])
         st.html('<ul class="hn-tools-features">' + "".join(
             f'<li>{escape(feature)}</li>' for feature in card["features"]
@@ -152,26 +197,40 @@ def render_services_page(properties, *, navigate, on_batch):
             st.html(f'<span class="hn-tools-access">{member_space}</span>', width="content")
         _render_hero(navigate)
         saved, owned = _render_summary(properties)
-        st.html('<div class="hn-tools-section-title" id="cong-cu-homenest"><div>'
-                '<span class="hn-tools-eyebrow">BỘ CÔNG CỤ CỦA BẠN</span>'
-                '<h2>Bạn muốn bắt đầu từ đâu?</h2>'
-                '<p>Chọn tiện ích phù hợp với nhu cầu hiện tại.</p></div>'
-                '<span class="hn-tools-section-number">06 TIỆN ÍCH</span></div>')
-        goal = st.segmented_control(
-            "Nhu cầu của bạn", ["Tất cả", "Tìm & chọn nhà", "Đăng & quản lý"],
-            default="Tất cả", selection_mode="single", label_visibility="collapsed",
-            key="services_goal", persist_state="session", width="stretch",
-        )
-        cards = [card for card in _tool_cards(saved, owned)
-                 if goal in (None, "Tất cả") or card["group"] == (
-                     "buy" if goal == "Tìm & chọn nhà" else "sell")]
+        all_cards = _tool_cards(saved, owned)
+        st.session_state.setdefault('services_search', '')
+        st.session_state.setdefault('services_goal', 'Tất cả')
+        heading = st.empty()
+        with st.container(key='hn-tools-filters'):
+            query = st.text_input('Tìm tiện ích', value=None, placeholder='Ví dụ: định giá, bản đồ, tin đã lưu…',
+                                  key='services_search', max_chars=100, icon=':material/search:',
+                                  persist_state='session')
+            goal = st.segmented_control(
+                "Nhu cầu của bạn", ["Tất cả", "Tìm & chọn nhà", "Đăng & quản lý"],
+                selection_mode="single", label_visibility="collapsed",
+                key="services_goal", persist_state="session", width="stretch",
+            )
+        cards = _filtered_tools(all_cards, goal, query or '')
+        heading.html('<div class="hn-tools-section-title" id="cong-cu-homenest"><div>'
+                     '<span class="hn-tools-eyebrow">BỘ CÔNG CỤ CỦA BẠN</span>'
+                     '<h2>Bạn muốn bắt đầu từ đâu?</h2>'
+                     '<p>Tìm nhanh một công cụ hoặc chọn theo nhu cầu của bạn.</p></div>'
+                     f'<span class="hn-tools-section-number">{len(cards):02d} TIỆN ÍCH</span></div>')
+        with st.container(horizontal=True, horizontal_alignment='distribute', key='hn-tools-filter-status'):
+            st.html(f'<p class="hn-tools-results" role="status" aria-live="polite">'
+                    f'Đang hiển thị <strong>{len(cards)} / {len(all_cards)}</strong> tiện ích</p>', width='content')
+            if query or goal not in (None, 'Tất cả'):
+                st.button('Xóa bộ lọc', key='services_search_clear', icon=':material/filter_alt_off:',
+                          type='tertiary', on_click=_reset_tool_filters)
         with st.container(key="hn-tools-grid"):
-            for start in range(0, len(cards), 2):
-                with st.container(key=f"hn-tools-row-{start // 2}"):
-                    columns = st.columns(2, gap="medium")
-                    for column, card in zip(columns, cards[start:start + 2]):
-                        with column:
-                            _render_tool_card(card, navigate)
+            for card in cards:
+                _render_tool_card(card, navigate)
+        if not cards:
+            with st.container(border=True, key='hn-tools-empty'):
+                st.subheader('Chưa tìm thấy tiện ích phù hợp', anchor=False)
+                st.write('Thử từ khóa ngắn hơn hoặc chọn “Tất cả” để xem thêm công cụ. '
+                         'Bạn cũng có thể dùng nút “Xóa bộ lọc” để bắt đầu lại.')
+        _render_featured_tool(navigate)
         if st.session_state.role == "Manager":
             with st.container(key="hn-tools-manager"):
                 st.html('<div class="hn-tools-manager-copy"><span class="hn-tools-eyebrow">DÀNH CHO QUẢN LÝ</span>'

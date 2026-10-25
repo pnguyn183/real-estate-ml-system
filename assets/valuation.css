@@ -94,6 +94,7 @@
 [data-testid="stAppViewContainer"] .st-key-hn-value-metrics [data-testid="stMetricLabel"] { color: #6a7885; font-size: 13px; font-weight: 500; line-height: 1.5; }
 [data-testid="stAppViewContainer"] .st-key-hn-value-metrics [data-testid="stMetricValue"] { color: #17334e; font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: -0.025em; line-height: 1.5; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
 .st-key-hn-value-metrics [data-testid="stMetricValue"] > div { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+[data-testid="stAppViewContainer"] .st-key-hn-value-metrics [data-testid="stMetricValue"] [data-testid="stMarkdownContainer"] p { color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; line-height: inherit; margin: 0; }
 .hn-value-quality { align-items: baseline; background: #eef3f3; border: 1px solid #e0e8e8; border-radius: 8px; color: #5d7379; display: flex; flex-wrap: wrap; font-size: 13px; gap: 0.4rem 0.8rem; line-height: 1.75; padding: 0.8rem 1rem; }
 .hn-value-quality strong { color: #365663; font-size: 13px; font-weight: 650; }
 .hn-value-quality p { margin: 0; }

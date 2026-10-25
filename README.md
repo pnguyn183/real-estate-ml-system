@@ -64,14 +64,14 @@ Admin có thể quản lý toàn bộ tin; Manager có thêm công cụ định 
 
 ### Tổng quan và báo cáo
 
-- Admin có tổng quan vận hành: số tin bán/cho thuê, yêu cầu hỗ trợ, lối tắt quản trị và danh sách tin gần đây; không có công cụ tìm nhà hoặc lưu tin.
+- Admin có dashboard vận hành: phạm vi thời gian của tin đăng, tổng danh mục, tài khoản User, yêu cầu hỗ trợ và nhóm tin tương tự; kèm cơ cấu danh mục, nhịp đăng tin, tin gần đây và các lối mở rà soát nội dung.
 - User thấy số tin của mình, tin đang bán, số tin đã lưu và trung vị giá chào bán/m² của danh mục để tham khảo.
 - Manager thấy quy mô danh mục, số tin đang bán/cho thuê và trung vị giá chào bán trên mỗi m² từ những tin có giá và diện tích hợp lệ.
 - Biểu đồ số tin theo loại bất động sản và trung vị đơn giá theo khu vực.
 - Ba tin mới nhất trong danh mục.
-- Báo cáo Admin bổ sung tổng giá chào bán, giá chào bán trung bình, số tin có dấu hiệu trùng và nút tải CSV trực tiếp. CSV dùng UTF-8 có BOM để hỗ trợ tiếng Việt khi mở bằng Excel; các ô văn bản có thể bị diễn giải thành công thức được xuất dưới dạng văn bản an toàn.
+- Báo cáo Admin lọc theo thời gian tạo, nhu cầu, loại hình và khu vực. Các chỉ số, biểu đồ, bảng và CSV dùng cùng phạm vi đã lọc; tin thuê được tách khỏi tổng giá chào bán và trung vị đơn giá bán. CSV xuất toàn bộ kết quả phù hợp, gồm các trang chưa hiển thị, dùng UTF-8 có BOM và bảo vệ ô văn bản có thể bị diễn giải thành công thức.
 
-Trang đăng nhập/đăng ký và tổng quan dùng ảnh tham khảo đã lưu cục bộ trong `assets/properties/`, không tải ảnh từ bên thứ ba khi chạy app. Tin đăng luôn ưu tiên ảnh do người đăng tải; khi chưa có ảnh thực tế, HomeNest dùng ảnh tham khảo có nhãn rõ ràng, không trình bày ảnh minh họa như ảnh của tin đăng.
+Trang đăng nhập/đăng ký và tổng quan thành viên dùng ảnh tham khảo đã lưu cục bộ trong `assets/properties/`, không tải ảnh từ bên thứ ba khi chạy app. Tin đăng luôn ưu tiên ảnh do người đăng tải; khi chưa có ảnh thực tế, HomeNest dùng ảnh tham khảo có nhãn rõ ràng, không trình bày ảnh minh họa như ảnh của tin đăng.
 | Diễn đàn | Tìm/lọc chủ đề theo danh mục, đính kèm ảnh, thích và trao đổi trong phản hồi |
 Biểu đồ và chỉ số lấy từ dữ liệu hiện có trong ứng dụng. Tin cho thuê được tách khỏi các phép tổng hợp giá bán; các thống kê tổng quan chưa điều chỉnh khác biệt giữa loại hình và khu vực.
 
@@ -121,18 +121,53 @@ Trang **Quản lý tài khoản User** lấy tài khoản thật từ `accounts.
 
 Các API quản trị kiểm tra quyền Admin và chỉ cho phép tác động tới tài khoản User. Phiên nội bộ được xác thực lại ở mỗi lần thao tác; khóa tài khoản hoặc đổi mật khẩu làm phiên cũ mất hiệu lực, kể cả sau khi mở khóa trở lại. Các callback ghi dữ liệu cũng kiểm tra lại phiên. Hồ sơ thành viên nội bộ đồng bộ họ tên với tài khoản, giữ nguyên email đăng nhập và dữ liệu yêu thích; email liên hệ có thể khác email đăng nhập.
 
+### Dashboard Admin thống nhất
+
+Tổng quan, tin đăng, tài khoản, tin trùng, báo cáo, hỗ trợ, cài đặt, đăng/sửa tin và chi tiết tin dùng cùng tiêu đề gọn, thẻ chỉ số, bảng và biểu mẫu. Màu sắc và bố cục quản trị được giới hạn trong khu vực Admin, không áp dụng cho User hoặc Manager.
+
+- **Tin đăng:** tìm không dấu theo mã, tiêu đề, khu vực hoặc người đăng; kết hợp nhu cầu, loại hình, khu vực và nội dung cần rà soát. Có sắp xếp, phân trang, xóa bộ lọc và chọn đúng tin để xem/sửa/xóa. Lựa chọn cũ được đối chiếu lại khi nạp danh mục mới.
+- **Tin tương tự:** xem từng nhóm và mở tin để đối chiếu; không tự động xóa chỉ dựa trên dấu hiệu tương tự.
+- **Hỗ trợ:** tìm theo người gửi, tiêu đề hoặc nội dung; lọc yêu cầu chung và tin gửi riêng cho Admin, có phân trang để xem hơn 20 tin. Hộp thư không hiển thị tin gửi riêng đến tài khoản khác và không suy diễn trạng thái đã đọc hoặc đã xử lý.
+- **Cài đặt:** nạp lại danh mục, mở quản lý tài khoản và xuất danh mục. Nạp lại không xóa dữ liệu hoặc khôi phục mẫu. CSV tin đăng không thay thế bản sao lưu toàn bộ hệ thống.
+
+### Trung tâm Tiện ích
+
+Trang **Tiện ích** tập hợp sáu công cụ: tìm nhà và đất, phân tích và định giá, đăng tin mới, quản lý tin đăng, tin đã lưu và mặt bằng giá khu vực. Các chỉ số đầu trang lấy từ danh mục hiện tại và tài khoản đang đăng nhập. Thẻ công cụ tự xếp thành ba, hai hoặc một cột theo chiều rộng nội dung.
+
+Ô **Tìm tiện ích** hỗ trợ tiếng Việt có dấu hoặc không dấu, ví dụ `dinh gia`, `ban do`, `tin da luu`. Có thể kết hợp từ khóa với nhóm **Tìm & chọn nhà** hoặc **Đăng & quản lý**; số tiện ích cập nhật theo kết quả thực tế. Nút **Xóa bộ lọc** đặt lại cả từ khóa và nhóm nhu cầu. Khi không có kết quả, trang hiển thị hướng dẫn rõ ràng. Bộ lọc được giữ khi chuyển trang rồi quay lại trong cùng phiên. Manager có thêm lối mở công cụ định giá CSV; User không thấy công cụ này.
+
 ## Phương pháp định giá
 
-Tại **Phân tích & định giá**, chọn khu vực, loại bất động sản và diện tích. Kết quả cập nhật theo lựa chọn:
+Tại **Phân tích & định giá**, chọn tin có sẵn để tự điền thông tin hoặc nhập khu vực, loại bất động sản và diện tích. Màn hình chia thành thông tin tài sản, kết quả giá tham khảo và bản đồ; trên điện thoại các phần xếp theo chiều dọc. Kết quả cập nhật theo lựa chọn:
 
 1. Lọc tin có trạng thái **Bán**, cùng loại và cùng toàn bộ tên khu vực sau khi chuẩn hóa chữ hoa/thường, Unicode và khoảng trắng.
 2. Bỏ tin có giá/diện tích không hợp lệ và tin trùng theo tiêu đề, giá, diện tích, liên hệ.
 3. Tính đơn giá mỗi tin bằng giá chào bán chia diện tích.
 4. Tính **giá tham khảo = trung vị đơn giá các tin × diện tích cần định giá**.
 
-Màn hình kết quả gồm giá chào bán tham khảo, trung vị đơn giá, số mẫu hợp lệ và bảng dữ liệu đối chiếu. Khi có ít nhất 2 mẫu, ứng dụng bổ sung biểu đồ đơn giá, đường trung vị và khoảng giá thấp nhất–cao nhất theo mẫu. Khi có ít hơn 3 mẫu, ứng dụng báo dữ liệu còn ít. Nếu không có mẫu phù hợp, ứng dụng thông báo thiếu dữ liệu và không suy đoán từ khu vực khác.
+Màn hình kết quả gồm giá chào bán tham khảo, trung vị đơn giá, số mẫu hợp lệ và bảng dữ liệu đối chiếu. Khi có ít nhất 2 mẫu, ứng dụng bổ sung biểu đồ đơn giá, đường trung vị và khoảng giá thấp nhất–cao nhất theo mẫu. Nút **Tải báo cáo** xuất tệp HTML gồm kết quả, dữ liệu so sánh, thời điểm tính và vị trí đã chọn nếu có. Kết quả được giữ tối đa 60 giây trong phiên cho cùng thông tin đầu vào; nút cập nhật cho phép tính lại ngay. Khi có ít hơn 3 mẫu, ứng dụng báo dữ liệu còn ít. Nếu không có mẫu phù hợp, ứng dụng thông báo thiếu dữ liệu và không suy đoán từ khu vực khác.
 
 Đây là ước tính từ giá chào bán trong danh mục, chưa phải giá giao dịch đã xác nhận. Ứng dụng chưa có mô hình dự báo theo thời gian hay nguồn dữ liệu thị trường trực tiếp; phép tính chưa điều chỉnh pháp lý, mặt tiền, chất lượng hoặc tiện ích. Khoảng giá theo mẫu không phải khoảng tin cậy thống kê.
+
+### Bản đồ vị trí bất động sản
+
+- Tin có cặp tọa độ hợp lệ (`latitude`/`longitude`, `lat`/`lon` hoặc `lat`/`lng`) được hiển thị bằng ghim từ dữ liệu tin đăng.
+- Nhập địa chỉ rồi chọn **Tìm trên bản đồ** để tra cứu; chọn một gợi ý để đặt ghim. Kết quả tra cứu được ghi rõ là gần đúng hoặc khu vực tham khảo, cần kiểm tra lại với vị trí thực tế.
+- Mở **Nhập tọa độ** để cung cấp vĩ độ và kinh độ. Cần đủ cả hai giá trị; `0` là tọa độ hợp lệ. Có thể mở vị trí trên OpenStreetMap hoặc Google Maps bằng các nút cạnh bản đồ.
+- Khi chưa xác định vị trí, bản đồ hiển thị tổng quan Việt Nam và không tự gán ghim cho căn nhà. Đổi tin, khu vực hoặc địa chỉ sẽ xóa ghim cũ; chuyển trang rồi quay lại giữ vị trí đã chọn trong phiên. Nút xóa ghim không thay đổi kết quả định giá.
+
+Bản đồ vẫn sử dụng được khi thiếu dữ liệu đối chiếu hoặc dịch vụ định giá tạm lỗi. Vị trí tra cứu và tọa độ không tham gia công thức định giá hiện tại. Các thao tác ở bản đồ dùng lại kết quả phân tích còn hiệu lực trong phiên.
+
+Bản đồ dùng Leaflet 1.9.4 đóng gói sẵn trong project, hiển thị trực tiếp trong ứng dụng. Nền bản đồ tải từ [OpenTopoMap](https://opentopomap.org/about); nếu nguồn này lỗi hoặc quá thời gian chờ, ứng dụng tự chuyển sang máy chủ [Top-O-Map](https://top-o-map.com/) có tên miền độc lập. Bản đồ không cần tải trang `www.openstreetmap.org` hay thư viện JavaScript từ CDN. Có thể phóng to, thu nhỏ, kéo bản đồ và nhấn nút về vị trí đã chọn. Khi cả hai nguồn lỗi, khung bản đồ hiển thị thông báo cùng nút **Thử lại**; thử lại giữ nguyên ghim và góc nhìn hiện tại. Nguồn dữ liệu và giấy phép được ghi ngay trên bản đồ.
+
+Tra cứu địa chỉ dùng [Photon](https://github.com/komoot/photon) và chỉ gửi địa chỉ khi người dùng nhấn tìm. Nền bản đồ và tra cứu địa chỉ cần kết nối Internet, không cần khóa API. Ứng dụng lưu đệm kết quả tra cứu 24 giờ (tối đa 256 truy vấn) và giới hạn một yêu cầu mỗi giây trong mỗi tiến trình. Khi vận hành với lưu lượng lớn, có thể cấu hình máy chủ tương thích Photon bằng biến môi trường của tiến trình Streamlit:
+
+```powershell
+$env:HOMENEST_GEOCODER_URL = "https://your-photon-host.example/api/"
+.\venv\Scripts\python.exe run_local.py
+```
+
+Không đặt biến này sẽ dùng `https://photon.komoot.io/api/`. Khi tra cứu lỗi, người dùng vẫn có thể nhập tọa độ hoặc mở Google Maps để kiểm tra địa chỉ.
 
 ## Cài đặt và chạy
 
@@ -238,6 +273,8 @@ $env:AUTH_OIDC_CLIENT_ID = "your-client-id.apps.googleusercontent.com"
 gd_Streamlit/
 ├── app.py                 # Giao diện, điều hướng, trạng thái phiên và thao tác theo vai trò
 ├── admin_accounts.py      # Hồ sơ, hoạt động và kiểm soát tài khoản User dành cho Admin
+├── admin_dashboard.py     # Tổng quan, quản lý tin, báo cáo, tin tương tự, hỗ trợ và cài đặt
+├── admin_ui.py            # Tiêu đề, định dạng, bộ lọc và bảng dùng chung của Admin
 ├── landing.py             # Trang giới thiệu công khai trước đăng nhập
 ├── auth_store.py          # Tài khoản nội bộ, kiểm tra mật khẩu và SQLite
 ├── create_account.py      # Tiện ích terminal cấp tài khoản với role
@@ -254,6 +291,9 @@ gd_Streamlit/
 ├── services_view.py       # Trang Tiện ích, bộ lọc theo nhu cầu và số liệu cá nhân
 ├── design_view.py         # Bộ sưu tập không gian sống, loại hình và gợi ý thiết kế
 ├── valuation.py           # Tính và trình bày định giá từ tin chào bán so sánh
+├── valuation_view.py      # Kết quả, biểu đồ, dữ liệu đối chiếu và báo cáo HTML
+├── property_map.py        # Bản đồ vị trí, tọa độ và tra cứu địa chỉ qua Photon
+├── property_map_view.py   # Tài liệu bản đồ Leaflet, cấu hình nền chính và dự phòng
 ├── data.py                # Module dữ liệu cũ, không được app.py sử dụng
 ├── .streamlit/
 │   └── config.toml        # Theme chung của ứng dụng
@@ -265,12 +305,19 @@ gd_Streamlit/
 │   ├── landing.css        # Giao diện trang giới thiệu, giới hạn phạm vi riêng
 │   ├── forum.css          # Giao diện diễn đàn và bố cục trên điện thoại
 │   ├── services.css       # Giao diện trung tâm tiện ích trên máy tính và điện thoại
+│   ├── admin.css          # Dashboard và biểu mẫu chỉ áp dụng cho khu vực Admin
 │   ├── design.css         # Giao diện bộ sưu tập thiết kế và bố cục trên điện thoại
+│   ├── valuation.css      # Giao diện trang phân tích, kết quả và bản đồ
+│   ├── property_map.js    # Bản đồ tương tác, chuyển nguồn khi lỗi và thử lại
+│   ├── property_map.css   # Kiểu bản đồ, ghim và trạng thái tải
+│   ├── vendor/leaflet/    # Leaflet 1.9.4 cục bộ, giấy phép và checksum chính thức
 │   └── neighborhood.svg   # Minh họa trang đăng nhập và tin chưa có ảnh
 ├── tests/
 │   ├── test_app.py        # Kiểm thử tương tác bằng Streamlit AppTest
+│   ├── test_admin_dashboard.py # Kiểm thử bộ lọc, CSV, phân trang và phạm vi hộp thư Admin
 │   ├── test_storage.py    # Kiểm thử đọc/ghi và chuẩn hóa dữ liệu
 │   ├── test_valuation.py  # Kiểm thử thuật toán định giá
+│   ├── test_property_map.py # Kiểm thử tọa độ, tra cứu, liên kết và trạng thái bản đồ
 │   ├── test_prediction.py # Kiểm thử xác thực đầu vào và batch
 │   ├── test_api.py        # Kiểm thử API và kiểm soát quyền
 │   ├── test_auth.py       # Kiểm thử đăng ký, đăng nhập và role tài khoản nội bộ
@@ -306,9 +353,11 @@ Dữ liệu tin đăng được giữ trong phiên sau khi nạp. Admin có th�
 | Chỉ số, biểu đồ và trang tổng quan | `render_metrics()`, `render_charts()`, `render_overview()` |
 | Thẻ tin và trang chi tiết | `render_card()`, `render_grid()`, `render_detail()` |
 | Tìm kiếm, quản lý tin và form đăng/sửa | `render_explore()`, `render_listing_management()`, `render_editor()` |
-| Kết quả định giá và bảng đối chiếu | `render_valuation()` trong `valuation.py` |
+| Trang phân tích, kết quả và bảng đối chiếu | `valuation.py`, `valuation_view.py`, `assets/valuation.css` |
+| Bản đồ và tra cứu địa chỉ | `property_map.py`, `property_map_view.py`, `assets/property_map.js`, `assets/property_map.css` |
+| Dashboard và các trang quản trị | `admin_dashboard.py`, `admin_ui.py`, `admin_accounts.py`, `assets/admin.css` |
 
-Theme dùng font sans-serif thống nhất (Segoe UI/Arial fallback), thang cỡ tiêu đề giảm dần và màu cam đất trên nền kem ấm. Khu vực sau đăng nhập có thanh thương hiệu xanh đậm, điều hướng làm nổi mục đang chọn, đầu trang kèm ảnh minh họa phù hợp theo nội dung và thẻ/biểu mẫu đồng nhất. Tổng quan User và Admin có ảnh bất động sản lưu cục bộ; thẻ tin, thiết kế, diễn đàn và các trang nội dung tái sử dụng bộ ảnh HomeNest. `client.toolbarMode = "viewer"` ẩn các thao tác dành cho nhà phát triển như Deploy trên thanh công cụ.
+Theme dùng font sans-serif thống nhất (Segoe UI/Arial fallback), thang cỡ tiêu đề giảm dần và màu cam đất trên nền kem ấm. Khu vực sau đăng nhập có thanh thương hiệu xanh đậm và điều hướng làm nổi mục đang chọn. Admin dùng tiêu đề dashboard gọn để dành không gian cho số liệu và thao tác; tổng quan thành viên, thẻ tin, thiết kế và diễn đàn tái sử dụng ảnh cục bộ HomeNest có nhãn minh họa. `client.toolbarMode = "viewer"` ẩn các thao tác dành cho nhà phát triển như Deploy trên thanh công cụ.
 
 Trang chủ tài khoản User mở đầu bằng ảnh hero bất động sản toàn chiều ngang, lớp phủ tương phản và phần giới thiệu/nút hành động đặt trực tiếp trên ảnh; số liệu danh mục nằm trong các thẻ kính mờ. Các lựa chọn nổi bật lấy trực tiếp từ tin đăng đang có; người dùng có thể mở chi tiết, lưu tin, liên hệ người đăng hoặc vào trang tìm kiếm. Dải hình ảnh minh bạch nêu rõ ảnh chỉ để tham khảo và giá là dữ liệu chào bán trong danh mục, không phải giá giao dịch hay định giá độc lập. Phần giới thiệu tính năng và lời mời khám phá tiếp tục dẫn tới các khu vực thật trong ứng dụng.
 

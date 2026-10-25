@@ -182,8 +182,9 @@ def _geocode_cached(query, endpoint):
                     time.sleep(delay)
             gate['last_started'] = time.monotonic()
             response = requests.get(
-                endpoint, params={'q': query, 'limit': MAX_RESULTS,
-                                  'lang': 'vi', 'countrycode': 'VN'},
+                # Use the server's local-name default. The public instance
+                # rejects lang=vi even though Vietnamese places are searchable.
+                endpoint, params={'q': query, 'limit': MAX_RESULTS, 'countrycode': 'VN'},
                 headers={'User-Agent': 'HomeNest/1.0 (property-location lookup)',
                          'Accept': 'application/json'}, timeout=(3, 8),
                 allow_redirects=False,
@@ -269,6 +270,8 @@ def _search_address():
 
 def render_property_map(location, record=None):
     """Render independent location controls and return the currently shown pin."""
+    from property_map_view import render_map_html
+
     if st.session_state.get('_valuation_map_context') != _context_identity(record, location):
         reset_map_context(record, location)
     with st.container(border=True, key='hn-value-map'):
@@ -276,7 +279,8 @@ def render_property_map(location, record=None):
         st.caption('Tra cứu địa chỉ, chọn gợi ý phù hợp hoặc nhập tọa độ để xác định vị trí trên bản đồ.')
         address = st.text_input('Địa chỉ hoặc khu vực', key='valuation_map_address',
                                 max_chars=300, on_change=clear_map_point,
-                                placeholder='Số nhà, tên đường, phường / xã, tỉnh / thành')
+                                placeholder='Số nhà, tên đường, phường / xã, tỉnh / thành',
+                                persist_state='session')
         st.button('Tìm trên bản đồ', key='valuation_map_search',
                   icon=':material/search:', on_click=_search_address, width='stretch')
         if error := st.session_state.get('_valuation_map_error'):
@@ -287,7 +291,7 @@ def render_property_map(location, record=None):
                          index=None, key='valuation_map_candidate',
                          format_func=lambda index: candidates[index]['label'],
                          placeholder='Chọn kết quả phù hợp với bất động sản',
-                         on_change=_candidate_changed)
+                         on_change=_candidate_changed, persist_state='session')
         elif st.session_state.get('_valuation_map_searched'):
             st.info('Chưa tìm thấy vị trí phù hợp. Hãy thêm tên đường, phường / xã hoặc nhập tọa độ.')
         with st.expander('Nhập tọa độ', icon=':material/my_location:'):
@@ -295,10 +299,12 @@ def render_property_map(location, record=None):
             with st.container(horizontal=True):
                 st.number_input('Vĩ độ', min_value=-90.0, max_value=90.0, value=None,
                                 format='%.6f', key='valuation_latitude',
-                                on_change=_manual_coordinate_changed, width=180)
+                                on_change=_manual_coordinate_changed, width=180,
+                                persist_state='session')
                 st.number_input('Kinh độ', min_value=-180.0, max_value=180.0, value=None,
                                 format='%.6f', key='valuation_longitude',
-                                on_change=_manual_coordinate_changed, width=180)
+                                on_change=_manual_coordinate_changed, width=180,
+                                persist_state='session')
         latitude = st.session_state.get('valuation_latitude')
         longitude = st.session_state.get('valuation_longitude')
         point = validate_coordinates(latitude, longitude)
@@ -325,8 +331,8 @@ def render_property_map(location, record=None):
                        'Hãy đối chiếu vị trí với tin đăng trước khi đi xem nhà.')
             if basis in {'area', 'geocode'}:
                 st.caption('Gợi ý từ địa chỉ chỉ có tính tham khảo, chưa xác nhận đúng căn nhà hoặc thửa đất.')
-        st.iframe(osm_embed_url(*(point or (None, None)), area=area),
-                  height=350, width='stretch')
+        st.iframe(render_map_html(*(point or (None, None)), area=area),
+                  height=350, width='stretch', tab_index=0)
         with st.container(horizontal=True):
             st.link_button('OpenStreetMap', osm_map_url(*(point or (None, None))),
                            icon=':material/open_in_new:')
@@ -334,7 +340,8 @@ def render_property_map(location, record=None):
                            icon=':material/directions:')
             st.button('Xóa vị trí', key='valuation_map_clear', on_click=clear_map_point,
                       icon=':material/location_off:')
-        st.caption('Bản đồ © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)'
+        st.caption('Nền [OpenTopoMap](https://opentopomap.org/about) / [Top-O-Map](https://top-o-map.com/)'
+                   ' · Dữ liệu © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), SRTM'
                    ' · Tra cứu [Photon](https://photon.komoot.io/)')
     return {'point': point, 'basis': basis, 'basis_label': labels.get(basis, labels['overview']),
             'latitude': point[0] if point is not None else None,

@@ -1,9 +1,8 @@
 """HomeNest: listing management and comparable asking-price analysis."""
 from datetime import datetime, timedelta, timezone
-from collections.abc import Mapping
+from contextlib import nullcontext
 from pathlib import Path
 from statistics import median
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pandas as pd
@@ -11,7 +10,6 @@ import streamlit as st
 
 from api_client import (ValuationAPIError, health as valuation_health,
                         login_account, register_account, update_account_profile)
-from csv_export import spreadsheet_safe_csv
 from forum_media import MAX_FORUM_IMAGES, prepare_forum_images
 from forum_view import format_forum_time, render_forum_header, render_forum_home
 from services_view import render_services_page
@@ -20,10 +18,12 @@ from session_auth import (current_identity, oidc_auth_configured,
                           oidc_id_token_exposed, api_bearer_token)
 from storage import (IMAGES_DIR, load_properties, save_properties, load_users,
                      save_users, load_messages, save_messages, load_forum_posts,
-                     save_forum_posts, detect_duplicate_properties, DataStoreError)
+                     save_forum_posts, DataStoreError)
 from valuation import render_valuation
 from landing import photo_uri, render_landing
 from admin_accounts import render_accounts
+from admin_ui import admin_heading
+import admin_dashboard
 import browser_auth
 
 st.set_page_config(page_title="HomeNest | Phân tích bất động sản",
@@ -101,6 +101,12 @@ def money(value, compact=False):
 
 
 def heading(title, description, symbol="dashboard"):
+    if st.session_state.get("role") == "Admin":
+        admin_heading(title, description, section={
+            'inventory_2': 'TIN ĐĂNG', 'add_home': 'ĐĂNG TIN',
+            'edit_note': 'CHỈNH SỬA TIN', 'home_work': 'CHI TIẾT TIN',
+        }.get(symbol, 'TỔNG QUAN'))
+        return
     with st.container(key="hn-page-heading"):
         copy, visual = st.columns([1, 0.24], gap="medium", vertical_alignment="center")
         with copy:
@@ -473,44 +479,8 @@ def render_overview(properties):
 
 
 def render_admin_overview(properties):
-    heading("Tổng quan quản trị", "Quản lý tài khoản, nội dung đăng tải và các yêu cầu hỗ trợ trong HomeNest.", "admin_panel_settings")
-    with st.container(border=True, key="hn-admin-welcome"):
-        hero_copy, hero_image = st.columns([1.1, 0.9], gap="large", vertical_alignment="center")
-        with hero_copy:
-            st.caption("HOMENEST · KHÔNG GIAN QUẢN TRỊ")
-            st.subheader("Vận hành danh mục bất động sản")
-            st.write("Theo dõi hoạt động, quản lý tin đăng và hỗ trợ thành viên từ một không gian thống nhất.")
-            with st.container(horizontal=True, key="hn-admin-hero-actions"):
-                st.button("Quản lý tài khoản User", icon=icon("manage_accounts"), type="primary",
-                          key="admin_overview_accounts", on_click=navigate, args=("accounts",))
-                st.button("Đăng tin mới", icon=icon("add_home"), key="admin_overview_publish",
-                          on_click=navigate, args=("editor",))
-        with hero_image:
-            st.image(str(HERO_PHOTO), width="stretch")
-            st.caption("Không gian sống HomeNest · Ảnh tham khảo")
-    with st.container(horizontal=True, key="hn-admin-kpis"):
-        st.metric("Tin trong danh mục", len(properties), border=True)
-        st.metric("Tin bán", sum(p.get("status") == "Bán" for p in properties), border=True)
-        st.metric("Tin cho thuê", sum(p.get("status") == "Cho thuê" for p in properties), border=True)
-        st.metric("Yêu cầu hỗ trợ", sum(m.get("to") == "support" for m in load_messages()), border=True)
-    shortcuts = [
-        ("inventory_2", "Quản lý nội dung", "Xem, chỉnh sửa và xóa các tin trong danh mục.", "listings"),
-        ("manage_accounts", "Quản lý người dùng", "Hồ sơ, hoạt động, trạng thái truy cập và nhật ký tài khoản User.", "accounts"),
-        ("difference", "Rà soát tin trùng", "Đối chiếu các nhóm tin có dấu hiệu tương tự trước khi xử lý.", "duplicates"),
-        ("assessment", "Báo cáo danh mục", "Theo dõi số liệu vận hành và xuất dữ liệu tin đăng.", "reports"),
-    ]
-    for start in range(0, len(shortcuts), 2):
-        for column, (symbol, title, description, view) in zip(st.columns(2), shortcuts[start:start + 2]):
-            with column, st.container(border=True, height="stretch"):
-                st.subheader(f"{icon(symbol)} {title}")
-                st.write(description)
-                st.button("Mở quản lý", icon=icon("arrow_forward"), key=f"admin_shortcut_{view}",
-                          on_click=navigate, args=(view,))
-    st.subheader("Tin đăng gần đây")
-    if properties:
-        table(sorted(properties, key=lambda p: p.get("created_at", ""), reverse=True)[:5])
-    else:
-        st.info("Danh mục chưa có tin đăng.")
+    admin_dashboard.render_overview(properties, navigate=navigate, refresh=refresh_properties,
+                                    open_detail=open_detail, messages=load_messages())
 
 
 def render_explore(properties):
@@ -630,6 +600,10 @@ def render_detail(properties):
 
 
 def render_listing_management(properties, mine=False):
+    if st.session_state.role == 'Admin' and not mine:
+        admin_dashboard.render_listings(properties, navigate=navigate, refresh=refresh_properties,
+                                        open_detail=open_detail, request_delete=request_delete)
+        return
     heading("Bài đăng của tôi" if mine else "Quản lý tin đăng",
             "Theo dõi, cập nhật nội dung và quản lý các bất động sản trong danh mục.", "inventory_2")
     records = [p for p in properties if not mine or p.get("user_id") == st.session_state.username]
@@ -758,6 +732,9 @@ def render_favorites(properties):
 
 def render_messages():
     is_admin = st.session_state.role == "Admin"
+    if is_admin:
+        admin_dashboard.render_support(load_messages())
+        return
     heading("Hộp thư hỗ trợ" if is_admin else "Hộp thư",
             "Yêu cầu hỗ trợ và tin nhắn nhận được." if is_admin
             else "Các tin nhắn gửi đến tài khoản của bạn.", "inbox")
@@ -814,62 +791,15 @@ def render_profile():
 
 
 def render_duplicates(properties):
-    heading("Kiểm tra tin trùng", "Rà soát các nhóm có loại, khu vực, tiêu đề, giá và diện tích gần nhau.", "difference")
-    groups = detect_duplicate_properties(properties)
-    st.caption("Đây là các tin có dấu hiệu tương tự; cần đối chiếu nội dung trước khi xóa.")
-    if not groups:
-        st.success("Chưa phát hiện nhóm tin trùng trong danh mục.", icon=icon("fact_check"))
-    for number, group in enumerate(groups, 1):
-        with st.container(border=True):
-            st.subheader(f"Nhóm {number} · {len(group)} tin")
-            table(group)
+    admin_dashboard.render_duplicates(properties, open_detail=open_detail)
 
 
 def render_reports(properties):
-    heading("Báo cáo danh mục", "Tổng hợp nguồn cung, giá chào bán và xuất dữ liệu phục vụ phân tích.", "assessment")
-    render_metrics(properties)
-    sale = [p for p in properties if p.get("status") == "Bán"]
-    total = sum(p["price"] for p in sale)
-    with st.container(horizontal=True):
-        st.metric("Tổng giá chào bán", money(total, True), border=True, help=money(total))
-        st.metric("Giá chào bán trung bình", money(total / len(sale), True) if sale else "—", border=True)
-        st.metric("Tin có dấu hiệu trùng", sum(len(g) for g in detect_duplicate_properties(properties)), border=True)
-    render_charts(properties)
-    st.download_button("Xuất danh mục CSV", data=spreadsheet_safe_csv(pd.DataFrame(properties)),
-                       file_name=f"homenest_{datetime.now(timezone(timedelta(hours=7))):%Y%m%d}.csv", mime="text/csv",
-                       icon=icon("download"), type="primary")
-    if properties:
-        table(properties)
+    admin_dashboard.render_reports(properties)
 
 
 def render_settings(properties):
-    heading("Cài đặt dữ liệu", "Kiểm tra tình trạng danh mục và đồng bộ các cập nhật mới nhất.", "settings")
-    with st.container(border=True):
-        st.subheader("Dữ liệu ứng dụng")
-        st.write(f"Danh mục hiện có {len(properties)} tin đăng.")
-        st.caption("Tải lại để nhận những thay đổi từ phiên làm việc khác.")
-        st.button("Tải lại dữ liệu", icon=icon("sync"), on_click=refresh_properties, type="primary")
-    with st.container(border=True):
-        st.subheader("Tài khoản và phân quyền")
-        st.write("Tài khoản email/mật khẩu có role User, Manager hoặc Admin. "
-                 "Chỉ người vận hành máy chủ mới tạo Manager/Admin bằng create_account.py; "
-                 "form đăng ký công khai luôn gán User.")
-        st.button("Mở quản lý tài khoản User", icon=icon("manage_accounts"),
-                  key="settings_accounts", on_click=navigate, args=("accounts",))
-        try:
-            roles = st.secrets.get("roles", {})
-        except FileNotFoundError:
-            roles = {}
-        admin_url = roles.get("admin_console_url") if isinstance(roles, Mapping) else None
-        if admin_url:
-            parsed_url = urlsplit(str(admin_url))
-            if parsed_url.scheme == "https" and parsed_url.netloc:
-                st.link_button("Mở trang quản trị tài khoản OIDC", str(admin_url),
-                               icon=icon("open_in_new"))
-            else:
-                st.error("roles.admin_console_url phải là URL HTTPS hợp lệ.")
-        else:
-            st.caption("Tạo tài khoản nội bộ có role Manager/Admin bằng create_account.py từ terminal máy chủ.")
+    admin_dashboard.render_settings(properties, navigate=navigate, refresh=refresh_properties)
 
 
 @st.cache_data(ttl=15, show_spinner=False)
@@ -1585,49 +1515,55 @@ else:
         st.success(flash, icon=icon("check_circle"))
     if flash := st.session_state.pop("flash_error", None):
         st.error(flash, icon=icon("error_outline"))
-    view = st.session_state.view
-    if not allowed_view(view):
-        st.error("Bạn không có quyền truy cập mục này.")
-    elif view == "overview":
-        if st.session_state.role == "Admin":
-            render_admin_overview(properties)
-        else:
-            render_overview(properties)
-    elif view == "accounts":
-        render_accounts(on_open_listing=open_managed_listing)
-    elif view == "valuation":
-        render_valuation(properties)
-    elif view == "explore":
-        render_explore(properties)
-    elif view == "market":
-        render_market_overview(properties)
-    elif view == "services":
-        render_services()
-    elif view == "design":
-        render_design_catalog(properties)
-    elif view == "forum":
-        render_forum()
-    elif view == "contact":
-        render_contact()
-    elif view == "detail":
-        render_detail(properties)
-    elif view in {"listings", "mine"}:
-        render_listing_management(properties, mine=view == "mine")
-    elif view == "editor":
-        render_editor(properties)
-    elif view == "favorites":
-        render_favorites(properties)
-    elif view == "messages":
-        render_messages()
-    elif view == "profile":
-        render_profile()
-    elif view == "duplicates":
-        render_duplicates(properties)
-    elif view == "reports":
-        render_reports(properties)
-    elif view == "settings":
-        render_settings(properties)
-    if st.session_state.get("pending_delete") is not None:
-        confirm_delete(st.session_state.pending_delete)
+    is_admin_workspace = st.session_state.role == 'Admin'
+    if is_admin_workspace:
+        st.html('<style>' + (Path(__file__).parent / 'assets/admin.css').read_text(encoding='utf-8') + '</style>')
+    with st.container(key='hn-admin') if is_admin_workspace else nullcontext():
+        view = st.session_state.view
+        if not allowed_view(view):
+            st.error("Bạn không có quyền truy cập mục này.")
+        elif view == "overview":
+            if st.session_state.role == "Admin":
+                render_admin_overview(properties)
+            else:
+                render_overview(properties)
+        elif view == "accounts":
+            render_accounts(on_open_listing=open_managed_listing)
+        elif view == "valuation":
+            render_valuation(properties)
+        elif view == "explore":
+            render_explore(properties)
+        elif view == "market":
+            render_market_overview(properties)
+        elif view == "services":
+            render_services()
+        elif view == "design":
+            render_design_catalog(properties)
+        elif view == "forum":
+            render_forum()
+        elif view == "contact":
+            render_contact()
+        elif view == "detail":
+            with st.container(key='hn-admin-detail') if st.session_state.role == 'Admin' else nullcontext():
+                render_detail(properties)
+        elif view in {"listings", "mine"}:
+            render_listing_management(properties, mine=view == "mine")
+        elif view == "editor":
+            with st.container(key='hn-admin-editor') if st.session_state.role == 'Admin' else nullcontext():
+                render_editor(properties)
+        elif view == "favorites":
+            render_favorites(properties)
+        elif view == "messages":
+            render_messages()
+        elif view == "profile":
+            render_profile()
+        elif view == "duplicates":
+            render_duplicates(properties)
+        elif view == "reports":
+            render_reports(properties)
+        elif view == "settings":
+            render_settings(properties)
+        if st.session_state.get("pending_delete") is not None:
+            confirm_delete(st.session_state.pending_delete)
 
 write_route_url()
