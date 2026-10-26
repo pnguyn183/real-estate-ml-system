@@ -61,7 +61,7 @@ For the complete implementation map and detailed Mermaid diagrams, see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [flow_diagram.md](flow_diagram.md).
 
-See the [Project Report](docs/PROJECT_REPORT.md) for the requirements checklist,
+See the [Project Report](docs/PROJECT_REPORT.md) for implementation progress,
 implemented capabilities, completed work, remaining gaps and Gemini input/output evidence.
 One synthetic record was verified through the real Gemini API on 2026-09-24;
 this does not establish dataset-wide extraction accuracy. The earlier
@@ -297,7 +297,7 @@ the `npm.ps1` execution policy is restricted.
 
 ## Documentation index
 
-- [Project Report: requirements, progress and evidence](docs/PROJECT_REPORT.md)
+- [Project Report: implementation, results and evidence](docs/PROJECT_REPORT.md)
 - [Implemented architecture](docs/ARCHITECTURE.md)
 - [Deployment](DEPLOYMENT.md)
 - [Quick reference](docs/QUICK_REFERENCE.md)

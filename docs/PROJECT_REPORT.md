@@ -1,12 +1,10 @@
 # Project Report
 
-**Cập nhật checklist: 26/10/2026 · Nhánh: `dev` · Mã nguồn đối chiếu: `6bc14df`.**
+**Cập nhật: 26/10/2026 · Nhánh: `dev` · Mã nguồn đối chiếu: `6bc14df`.**
 
-Báo cáo này thay thế `BAO_CAO_GIANG_VIEN.md`, tổng hợp các yêu cầu trong cuộc
-trao đổi và những hạng mục nghiên cứu đã ghi trong báo cáo trước. Các yêu cầu
-“tiếp tục”, kiểm tra RAM và chạy lại được gộp vào công việc tương ứng, không
-được tính thành tính năng mới. Kết quả thực nghiệm mới nhất được đối chiếu là
-ngày **24/10/2026**; cập nhật tài liệu ngày 26/10 không phải một lượt chạy mới.
+Báo cáo tổng hợp các chức năng đã triển khai, kết quả kiểm chứng, những hạn chế
+hiện tại và kế hoạch phát triển tiếp theo của hệ thống. Dữ liệu thực nghiệm
+được cập nhật đến ngày **24/10/2026**.
 
 **Trạng thái tổng thể:** đã có stress agent, extraction agent, vòng phản hồi LLM,
 công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã xác minh vòng LLM
@@ -17,64 +15,57 @@ công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã
 Quy ước checklist:
 
 - `[x]`: hoàn thành đúng phạm vi ghi trong mục; có thể chỉ là hoàn thành mã/công cụ nếu được ghi rõ.
-- `[ ] Một phần`: đã có triển khai hoặc bằng chứng hạn chế, nhưng yêu cầu tổng thể còn thiếu.
+- `[ ] Một phần`: đã triển khai một phần hoặc còn thiếu kiểm chứng để nghiệm thu.
 - `[ ] Chưa hoàn thành`: chưa có triển khai hoặc chưa có bằng chứng đạt tiêu chí.
 - **Git**: bằng chứng đã lưu trong repository. **Local**: file trong `runtime/` hoặc artifact trên máy chạy, không có khi chỉ clone GitHub. Test mô phỏng không thay thế số đo thực tế.
 
-## 1. Checklist các yêu cầu đã giao
+## 1. Tiến độ triển khai và kiểm chứng
 
-### 1.1. Giữ bản an toàn và phân nhánh
+### 1.1. Agent quan sát và tự điều tiết
 
-- [x] **R01 — Giữ `main` ở bản hai agent stress/extract, không chứa điều tiết.** Baseline được tạo tại `c51b23a`; `main` hiện ở `a2c5fbb`. Cây `agents/` trên nhánh này không có control agent, model router hay resource actuator; không có thư mục `research/`. [Commit baseline](https://github.com/pnguyn183/real-estate-ml-system/commit/c51b23a).
-- [x] **R02 — Bỏ báo cáo giảng viên và file `frontend(admin,user)` khỏi `main`.** Commit `a2c5fbb` xóa cả hai; ứng dụng trong thư mục `frontend/` vẫn thuộc baseline. [Commit dọn nhánh main](https://github.com/pnguyn183/real-estate-ml-system/commit/a2c5fbb).
-- [x] **R03 — Phát triển và push phần điều tiết lên `dev`.** Trước lần cập nhật báo cáo này, remote `dev` ở `6bc14df`; remote `main` vẫn ở `a2c5fbb`. Báo cáo này thuộc `dev`. [Lịch sử dev](https://github.com/pnguyn183/real-estate-ml-system/commits/dev).
-- [x] **R04 — Có checklist tổng hợp yêu cầu, khả năng, tiến độ và bằng chứng; đổi tên báo cáo thành Project Report.** Chính tài liệu này và các liên kết ở [README](../README.md), [mục lục tài liệu](README.md).
+- [x] **Có telemetry phục vụ điều tiết.** Đã đo CPU/RAM container, RAM/swap VM, tài nguyên host, Kafka ingress/throughput/lag, latency, lỗi và lịch sử quyết định. Có phát hiện số đo thiếu/cũ. Mã: [telemetry.py](../research/telemetry.py), [control_agent.py](../agents/control_agent.py). Chạy thật: [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
+- [x] **Phân loại trạng thái tải bằng LLM.** Model nhận telemetry và chọn `light`, `normal`, `heavy`; đã quan sát `light → normal` khi có dữ liệu thật. Trạng thái và tốc độ được model đề xuất từ số đo; code kiểm tra giới hạn an toàn trước khi áp dụng. [Thiết kế và phạm vi](LLM_FEEDBACK_CONTROL.md), [bằng chứng 07/10](evidence/llm-feedback-20261007.json).
+- [x] **Có dynamic feedback loop rate limiting chạy được.** Telemetry → LLM → quyết định JSON → policy có thời hạn → producer/Kafka → telemetry vòng sau đã chạy thật với 646 record. Rate gate điều chỉnh nhịp phát theo `rate_per_second`. [runtime_policy.py](../agents/runtime_policy.py), [kiểm chứng 07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
+- [ ] **Một phần: LLM tự tăng/giảm nhiều mức tốc độ theo tải.** Cơ chế đã có nhưng mọi quyết định LLM hợp lệ trong hai lượt 07/10 đều chọn **5 record/s**. Việc giảm về 0 do RAM/provider thuộc guard của code, chưa phải bằng chứng LLM tự giảm tốc để giải quyết nghẽn. [Giới hạn thực nghiệm](LLM_FEEDBACK_VALIDATION_20261007.md).
+- [ ] **Một phần: agent biết giới hạn hệ thống và phân biệt rảnh/bình thường/nặng.** Có phân loại LLM, capacity Docker và throughput đã quan sát; đã tạo được quá tải ở cấu hình cụ thể. Chưa xác định công suất tối đa hoặc mức vận hành tối ưu có tính lặp lại. `capacity_evidence()` không coi vài mẫu rảnh là bằng chứng saturation. [control_agent.py](../agents/control_agent.py), [hiệu chuẩn 14/10](LLM_OVERLOAD_VALIDATION_20261014.md).
+- [x] **Có bảo vệ khi thiếu RAM hoặc telemetry/model bị lỗi.** Policy thiếu/sai/hết hạn đưa producer về rate an toàn; thiếu RAM ngăn phát mới và ngăn bắt đầu training, processor tiếp tục xử lý backlog. Đã quan sát thật các lần `emergency_host_memory`. Cơ chế này không tạo thêm RAM và không bảo đảm cả stack vẫn chạy khi footprint nền vượt bộ nhớ. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [runtime_policy.py](../agents/runtime_policy.py).
 
-### 1.2. Agent quan sát và tự điều tiết
+### 1.2. Docker resource constraints và luồng training
 
-- [x] **R05 — Có telemetry phục vụ điều tiết.** Đã đo CPU/RAM container, RAM/swap VM, tài nguyên host, Kafka ingress/throughput/lag, latency, lỗi và lịch sử quyết định. Có phát hiện số đo thiếu/cũ. Mã: [telemetry.py](../research/telemetry.py), [control_agent.py](../agents/control_agent.py). Chạy thật: [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
-- [x] **R06 — Dùng agent LLM quyết định trạng thái thay vì bảng ngưỡng 75%/85% cố định.** Model nhận telemetry và chọn `light`, `normal`, `heavy`; đã quan sát `light → normal` khi có dữ liệu thật. Các mức RAM và nghỉ 1–2/5 giây người dùng nêu là ví dụ, không phải quy tắc đã đóng cứng vào LLM. [Thiết kế và phạm vi](LLM_FEEDBACK_CONTROL.md), [bằng chứng 07/10](evidence/llm-feedback-20261007.json).
-- [x] **R07 — Có dynamic feedback loop rate limiting chạy được.** Telemetry → LLM → quyết định JSON → policy có thời hạn → producer/Kafka → telemetry vòng sau đã chạy thật với 646 record. Rate gate điều chỉnh nhịp phát theo `rate_per_second`. [runtime_policy.py](../agents/runtime_policy.py), [kiểm chứng 07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **R08 — Một phần: LLM tự tăng/giảm nhiều mức tốc độ theo tải.** Cơ chế đã có nhưng mọi quyết định LLM hợp lệ trong hai lượt 07/10 đều chọn **5 record/s**. Việc giảm về 0 do RAM/provider thuộc guard của code, chưa phải bằng chứng LLM tự giảm tốc để giải quyết nghẽn. [Giới hạn thực nghiệm](LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **R09 — Một phần: agent biết giới hạn hệ thống và phân biệt rảnh/bình thường/nặng.** Có phân loại LLM, capacity Docker và throughput đã quan sát; đã tạo được quá tải ở cấu hình cụ thể. Chưa xác định công suất tối đa hoặc mức vận hành tối ưu có tính lặp lại. `capacity_evidence()` không coi vài mẫu rảnh là bằng chứng saturation. [control_agent.py](../agents/control_agent.py), [hiệu chuẩn 14/10](LLM_OVERLOAD_VALIDATION_20261014.md).
-- [x] **R10 — Có bảo vệ khi thiếu RAM hoặc telemetry/model bị lỗi.** Policy thiếu/sai/hết hạn đưa producer về rate an toàn; thiếu RAM ngăn phát mới và ngăn bắt đầu training, processor tiếp tục xử lý backlog. Đã quan sát thật các lần `emergency_host_memory`. Cơ chế này không tạo thêm RAM và không bảo đảm cả stack vẫn chạy khi footprint nền vượt bộ nhớ. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [runtime_policy.py](../agents/runtime_policy.py).
+- [x] **Khai báo giới hạn tài nguyên Docker.** Compose có CPU/RAM/swap cho processor và trainer; cấu hình mẫu mỗi processor 1 CPU/768 MiB, trainer 1 CPU/1024 MiB. Đây là giới hạn khai báo, không phải số đo mức tiêu thụ hiện tại. [docker-compose.yml](../docker-compose.yml), [.env.example](../.env.example).
+- [x] **Có công cụ để agent sửa resource limit trực tiếp trong `docker-compose.yml`.** Công cụ kiểm tra ngân sách, áp dụng `docker update`, xác minh runtime rồi lưu YAML; có backup, kiểm tra thay đổi đồng thời và rollback. Ngày 06/10 đã đổi processor 1 CPU/768 MiB → 0,9 CPU/704 MiB và khôi phục; lỗi được chèn để kiểm tra rollback cũng khôi phục thành công. [compose_resources.py](../agents/compose_resources.py), [bằng chứng actuator](LLM_FEEDBACK_VALIDATION_20261006.md).
+- [ ] **Một phần: LLM tự chọn CPU/RAM và chứng minh thay đổi đó có ích.** Công cụ đã chạy thật, nhưng các allocation của bài thử 06/10 do người thử cung cấp. Quyết định LLM 07/10 có `resources={}`. Chưa có bằng chứng LLM tự chọn allocation, áp dụng và cải thiện quá tải. Không có autoscaling số replica hoặc broker. [Phạm vi công cụ](LLM_FEEDBACK_CONTROL.md).
+- [x] **Tách tiến trình training khỏi xử lý stream và cho agent cấp quyền bắt đầu.** Trainer là service riêng, đọc `training_allowed`, có khóa tránh fit đồng thời; Airflow nhường training cho trainer khi control bật. Một fit đang chạy được phép hoàn tất. [auto_train.py](../scripts/auto_train.py), [train_model.py](../modeling/train_model.py), [runtime_policy.py](../agents/runtime_policy.py), [DAG](../airflow/dags/real_estate_pipeline.py).
+- [ ] **Một phần: kiểm chứng training hoàn tất dưới điều tiết mà stream vẫn ổn định.** Đã thấy hoãn training và cấp quyền thật, nhưng các lượt control cố ý không chạy fit để giữ model phục vụ. Tách service vẫn dùng chung host/VM; chưa phải cô lập tài nguyên tuyệt đối. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
 
-### 1.3. Docker resource constraints và luồng training
+### 1.3. Model và chuyển dự phòng
 
-- [x] **R11 — Khai báo giới hạn tài nguyên Docker.** Compose có CPU/RAM/swap cho processor và trainer; cấu hình mẫu mỗi processor 1 CPU/768 MiB, trainer 1 CPU/1024 MiB. Đây là giới hạn khai báo, không phải số đo mức tiêu thụ hiện tại. [docker-compose.yml](../docker-compose.yml), [.env.example](../.env.example).
-- [x] **R12 — Có công cụ để agent sửa resource limit trực tiếp trong `docker-compose.yml`.** Công cụ kiểm tra ngân sách, áp dụng `docker update`, xác minh runtime rồi lưu YAML; có backup, kiểm tra thay đổi đồng thời và rollback. Ngày 06/10 đã đổi processor 1 CPU/768 MiB → 0,9 CPU/704 MiB và khôi phục; lỗi được chèn để kiểm tra rollback cũng khôi phục thành công. [compose_resources.py](../agents/compose_resources.py), [bằng chứng actuator](LLM_FEEDBACK_VALIDATION_20261006.md).
-- [ ] **R13 — Một phần: LLM tự chọn CPU/RAM và chứng minh thay đổi đó có ích.** Công cụ đã chạy thật, nhưng các allocation của bài thử 06/10 do người thử cung cấp. Quyết định LLM 07/10 có `resources={}`. Chưa có bằng chứng LLM tự chọn allocation, áp dụng và cải thiện quá tải. Không có autoscaling số replica hoặc broker. [Phạm vi công cụ](LLM_FEEDBACK_CONTROL.md).
-- [x] **R14 — Tách tiến trình training khỏi xử lý stream và cho agent cấp quyền bắt đầu.** Trainer là service riêng, đọc `training_allowed`, có khóa tránh fit đồng thời; Airflow nhường training cho trainer khi control bật. Một fit đang chạy được phép hoàn tất. [auto_train.py](../scripts/auto_train.py), [train_model.py](../modeling/train_model.py), [runtime_policy.py](../agents/runtime_policy.py), [DAG](../airflow/dags/real_estate_pipeline.py).
-- [ ] **R15 — Một phần: kiểm chứng training hoàn tất dưới điều tiết mà stream vẫn ổn định.** Đã thấy hoãn training và cấp quyền thật, nhưng các lượt control cố ý không chạy fit để giữ model phục vụ. Tách service vẫn dùng chung host/VM; chưa phải cô lập tài nguyên tuyệt đối. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md).
+- [x] **Có cấu hình model/API key và router dự phòng.** Hỗ trợ endpoint/model/key chính và dự phòng, có thể tách cấu hình điều tiết khỏi extraction; cooldown và deadline được xử lý trong router. [model_router.py](../agents/model_router.py), [providers.py](../agents/providers.py), [cấu hình vận hành](#6-cấu-hình-và-điều-kiện-vận-hành).
+- [x] **Chuyển model khi model chính lỗi dịch vụ.** Ngày 07/10 có hai lần HTTP 503 thật ở Gemini 3.6 Flash, chuyển sang Gemini 3.5 Flash-Lite và nhận HTTP 200; luồng tiếp tục khi lease còn hiệu lực. Đây là tên model trong bằng chứng lịch sử. [Báo cáo và log tham chiếu](LLM_FEEDBACK_VALIDATION_20261007.md).
+- [ ] **Một phần: tự switch khi hết token/quota và có model miễn phí dự phòng.** Router đã xử lý quota/rate limit và có test mô phỏng, nhưng chưa kiểm chứng cạn quota thật. Fallback đã thử dùng cùng key/provider, không tạo quota độc lập; chưa chứng minh một route miễn phí được cấu hình vận hành thường xuyên. Phải có tài khoản, model và key được cấp quyền; không tự tạo key hay mua quota. [test_model_router.py](../utils/tests/test_model_router.py), [cấu hình fallback](LLM_FEEDBACK_CONTROL.md).
 
-### 1.4. Model và chuyển dự phòng
+### 1.4. Kiểm chứng tích hợp và độ ổn định
 
-- [x] **R16 — Có cấu hình model/API key và router dự phòng.** Hỗ trợ endpoint/model/key chính và dự phòng, có thể tách cấu hình điều tiết khỏi extraction; cooldown và deadline được xử lý trong router. [model_router.py](../agents/model_router.py), [providers.py](../agents/providers.py), [cấu hình cần cung cấp](#6-cấu-hình-và-điều-kiện-cần-có).
-- [x] **R17 — Chuyển model khi model chính lỗi dịch vụ.** Ngày 07/10 có hai lần HTTP 503 thật ở Gemini 3.6 Flash, chuyển sang Gemini 3.5 Flash-Lite và nhận HTTP 200; luồng tiếp tục khi lease còn hiệu lực. Đây là tên model trong bằng chứng lịch sử. [Báo cáo và log tham chiếu](LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **R18 — Một phần: tự switch khi hết token/quota và có model miễn phí dự phòng.** Router đã xử lý quota/rate limit và có test mô phỏng, nhưng chưa kiểm chứng cạn quota thật. Fallback đã thử dùng cùng key/provider, không tạo quota độc lập; chưa chứng minh một route miễn phí được cấu hình vận hành thường xuyên. Phải có tài khoản, model và key được cấp quyền; không tự tạo key hay mua quota. [test_model_router.py](../utils/tests/test_model_router.py), [cấu hình fallback](LLM_FEEDBACK_CONTROL.md).
+- [x] **Kiểm chứng tích hợp trên Docker, Kafka/Mongo và provider thật.** Đã có dữ liệu Kafka/Mongo thật, gọi model thật và thử actuator thật; kết quả được ghi theo từng lượt, gồm cả thất bại. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md), [13/10](LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md).
+- [x] **Xây dựng bộ thử đối chứng điều tiết LLM.** Đã xây harness baseline/LLM, hiệu chuẩn quá tải, workload cùng seed, tách nhu cầu trước gate khỏi lượng được nhận, lưu quyết định/ingress/commit/lag/latency/lỗi và trạng thái khôi phục. [llm_experiment.py](../research/llm_experiment.py), [llm_report.py](../research/llm_report.py), [tiêu chí đối chứng](LLM_OVERLOAD_EXPERIMENT.md).
+- [ ] **Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Các lượt đối chứng đến 19/10 chưa hoàn thành cặp hợp lệ; không có quyết định LLM trong các nhánh overload đã lưu. Lượt 14/10 đã tạo quá tải thật, nhưng chưa chạy được nhánh LLM tương ứng. [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md).
+- [x] **Cải thiện độ ổn định và khả năng truy vết.** Đã sửa tranh chấp policy file Windows, timeout observer, đọc lịch sử anomaly theo luồng và ghi hash dependency thực sự trong worker. Chi tiết commit/tests ở [mục 7](#7-các-bản-sửa-đã-hoàn-thành).
+- [ ] **Một phần: kiểm chứng bản sửa giảm RAM trên Docker.** Mã và test đã hoàn tất; phiên 23/10 vẫn dùng cùng container/image identity như trước bản sửa và thiếu hash dependency cần thiết. Phải xác minh/recreate worker trước khi nhận kết quả mới là kiểm chứng bản sửa. Chưa có số đo giảm RAM thực tế. [Provenance và giới hạn](TELEMETRY_STATUS_20261024.md).
+- [x] **Theo dõi riêng RAM host, Docker VM và container.** Các số đo được lưu cùng thời điểm và phạm vi đo, giúp xác định áp lực bộ nhớ ở từng lớp. RAM container thấp không đồng nghĩa host hoặc VM còn đủ bộ nhớ. [Định nghĩa số đo](#5-dữ-liệu-telemetry-và-kết-quả-dự-báo).
 
-### 1.5. Chạy thực tế, đo hiệu quả và tiếp tục công việc dở
+### 1.5. Thu telemetry và đánh giá mô hình
 
-- [x] **R19 — Chạy thực tế sau khi bật Docker.** Đã có dữ liệu Kafka/Mongo thật, gọi model thật và thử actuator thật; kết quả được ghi theo từng lượt, gồm cả thất bại. [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md), [13/10](LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md).
-- [x] **R20 — Có cách đo và bộ thử chứng minh agent đã adjust.** Đã xây harness baseline/LLM, hiệu chuẩn quá tải, workload cùng seed, tách nhu cầu trước gate khỏi lượng được nhận, lưu quyết định/ingress/commit/lag/latency/lỗi và trạng thái khôi phục. [llm_experiment.py](../research/llm_experiment.py), [llm_report.py](../research/llm_report.py), [tiêu chí đối chứng](LLM_OVERLOAD_EXPERIMENT.md).
-- [ ] **R21 — Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Các lượt đối chứng đến 19/10 chưa hoàn thành cặp hợp lệ; không có quyết định LLM trong các nhánh overload đã lưu. Lượt 14/10 đã tạo quá tải thật, nhưng chưa chạy được nhánh LLM tương ứng. Không dùng kết quả controller theo luật, forecast hoặc guard để đánh dấu yêu cầu này hoàn tất. [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md).
-- [x] **R22 — Rà lại điểm dừng, hoàn tất các bản sửa không cần thêm RAM và tránh chạy lặp.** Đã sửa tranh chấp policy file Windows, timeout observer, đọc lịch sử anomaly theo luồng và ghi hash dependency thực sự trong worker; đã lưu các lượt lỗi và điểm tiếp tục. Chi tiết commit/tests ở [mục 7](#7-các-bản-sửa-đã-hoàn-thành).
-- [ ] **R23 — Một phần: kiểm chứng bản sửa giảm RAM trên Docker.** Mã và test đã hoàn tất; phiên 23/10 vẫn dùng cùng container/image identity như trước bản sửa và thiếu hash dependency cần thiết. Phải xác minh/recreate worker trước khi nhận kết quả mới là kiểm chứng bản sửa. Chưa có số đo giảm RAM thực tế. [Provenance và giới hạn](TELEMETRY_STATUS_20261024.md).
-- [x] **R24 — Phân biệt RAM máy, RAM Docker và RAM container khi kiểm tra điều kiện chạy.** Đã bổ sung/đọc riêng các lớp; không suy ra máy còn RAM từ một chỉ số container thấp. Các lần đo được lưu theo ngày; việc dùng RAMMap hoặc giải phóng RAM không tự chứng minh đủ bộ nhớ suốt lượt thử. [Định nghĩa số đo](#5-telemetry-đã-thu-được-gì-và-còn-thiếu-gì).
+- [x] **Kiểm kê dữ liệu telemetry hiện có và đánh giá có đủ dùng không.** Đã audit lịch sử, loại phiên chưa kết thúc khỏi export và benchmark 1.732 observations của 7 phiên đã kết thúc. Đủ để đánh giá bước đầu trên workload tổng hợp, chưa đủ chứng minh hoạt động dài hạn hoặc điều tiết LLM. [Kiểm kê 23/10](TELEMETRY_STATUS_20261023.md), [kết quả 24/10](TELEMETRY_STATUS_20261024.md).
+- [ ] **Chưa hoàn thành: thu telemetry trong phiên hai giờ.** Lượt 09/10 dừng sau 58m43s; phiên bắt đầu 23/10 giờ Việt Nam chỉ có khoảng 27 phút quan sát. Kế hoạch hai giờ ngày 24/10 vẫn `prepared_not_started`; không cộng thời lượng kế hoạch thành dữ liệu thật. [Bằng chứng phiên và kế hoạch](evidence/telemetry-status-20261024.json).
+- [x] **Kiểm định dữ liệu và đối chiếu Gemini input/output.** Đã có audit skew/missingness/outlier và một record tổng hợp qua Gemini thật → parse → merge → MongoDB. Chưa xác minh chất lượng extraction toàn dataset. [Audit dữ liệu](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [phụ lục Gemini](#phụ-lục-a--bằng-chứng-gemini-ngày-24092026).
+- [x] **Benchmark các mô hình giá trên cùng tập chia.** Đã so VotingRegressor, Random Forest, Gradient Boosting và XGBoost; chỉ là chẩn đoán holdout, chưa thay model production và chưa xử lý hết leakage. [Kết quả định lượng](#4-kết-quả-thực-nghiệm), [benchmark.py](../research/benchmark.py).
+- [x] **Đo tải ba broker, thời gian phản ứng, trước/sau và tạo biểu đồ.** Có paired-v4 bằng controller theo luật, log T0–T3 và biểu đồ từ dữ liệu thật. Ingress gần đều không đồng nghĩa CPU cân bằng; recovery đo được xảy ra trong drain. [Kết quả paired-v4](#42-kết-quả-controller-theo-luật).
+- [x] **Dự báo traffic trước 5 phút ở mức thử nghiệm offline.** XGBoost được chọn bằng validation, test R² 0,699 và RMSE thấp hơn persistence 68,99%; đã export artifact local. Target là `requested_rate` tổng hợp. [Kết quả 24/10](TELEMETRY_STATUS_20261024.md).
+- [ ] **Chưa đạt: dự báo trước 10 phút.** Gradient Boosting có test R² −0,084 nên không đủ điều kiện export. [Metrics và biểu đồ](evidence/telemetry-status-20261024.json).
+- [ ] **Chưa hoàn thành: nối dự báo vào quyết định điều tiết và đo lợi ích.** Có [TrafficForecaster](../research/forecast.py) để inference có kiểm tra artifact/history; runner chưa dùng đầu ra đó để quyết định admission. Forecast tốt không tự chứng minh control tốt.
+- [ ] **Các hướng LSTM, Q-Learning/DQN và clustering chưa triển khai.** Đây là các hướng mở rộng chưa tích hợp vào hệ thống. LLM gán `light/normal/heavy` không phải mô hình clustering học từ telemetry. [Phạm vi nghiên cứu](../research/README.md).
 
-### 1.6. Thu telemetry và các mục nghiên cứu từ báo cáo trước
-
-- [x] **R25 — Kiểm kê dữ liệu telemetry hiện có và đánh giá có đủ dùng không.** Đã audit lịch sử, loại phiên chưa kết thúc khỏi export và benchmark 1.732 observations của 7 phiên đã kết thúc. Đủ để đánh giá bước đầu trên workload tổng hợp, chưa đủ chứng minh hoạt động dài hạn hoặc điều tiết LLM. [Kiểm kê 23/10](TELEMETRY_STATUS_20261023.md), [kết quả 24/10](TELEMETRY_STATUS_20261024.md).
-- [ ] **R26 — Chưa hoàn thành: thu thêm khoảng hai giờ.** Lượt 09/10 dừng sau 58m43s; phiên bắt đầu 23/10 giờ Việt Nam chỉ có khoảng 27 phút quan sát. Kế hoạch hai giờ ngày 24/10 vẫn `prepared_not_started`; không cộng thời lượng kế hoạch thành dữ liệu thật. [Bằng chứng phiên và kế hoạch](evidence/telemetry-status-20261024.json).
-- [x] **H01 — Kiểm định dữ liệu và đối chiếu Gemini input/output.** Đã có audit skew/missingness/outlier và một record tổng hợp qua Gemini thật → parse → merge → MongoDB. Chưa xác minh chất lượng extraction toàn dataset. [Audit dữ liệu](LECTURER_RESEARCH_REPORT.md), [phụ lục Gemini](#phụ-lục-a--bằng-chứng-gemini-ngày-24092026).
-- [x] **H02 — Benchmark các mô hình giá trên cùng tập chia.** Đã so VotingRegressor, Random Forest, Gradient Boosting và XGBoost; chỉ là chẩn đoán holdout, chưa thay model production và chưa xử lý hết leakage. [Kết quả định lượng](#4-kết-quả-định-lượng-có-thể-báo-cáo), [benchmark.py](../research/benchmark.py).
-- [x] **H03 — Đo tải ba broker, thời gian phản ứng, trước/sau và tạo biểu đồ.** Có paired-v4 bằng controller theo luật, log T0–T3 và biểu đồ từ dữ liệu thật. Ingress gần đều không đồng nghĩa CPU cân bằng; recovery đo được xảy ra trong drain. [Báo cáo nghiên cứu cũ](LECTURER_RESEARCH_REPORT.md).
-- [x] **H04 — Dự báo traffic trước 5 phút ở mức thử nghiệm offline.** XGBoost được chọn bằng validation, test R² 0,699 và RMSE thấp hơn persistence 68,99%; đã export artifact local. Target là `requested_rate` tổng hợp. [Kết quả 24/10](TELEMETRY_STATUS_20261024.md).
-- [ ] **H05 — Chưa đạt: dự báo trước 10 phút.** Gradient Boosting có test R² −0,084 nên không đủ điều kiện export. [Metrics và biểu đồ](evidence/telemetry-status-20261024.json).
-- [ ] **H06 — Chưa hoàn thành: nối dự báo vào quyết định điều tiết và đo lợi ích.** Có [TrafficForecaster](../research/forecast.py) để inference có kiểm tra artifact/history; runner chưa dùng đầu ra đó để quyết định admission. Forecast tốt không tự chứng minh control tốt.
-- [ ] **H07 — Các hướng LSTM, Q-Learning/DQN và clustering chưa triển khai.** Đây là hướng từng được đánh giá trong báo cáo cũ, không phải tính năng đã hoàn thành hay điều kiện bắt buộc cho vòng LLM hiện tại. LLM gán `light/normal/heavy` không phải mô hình clustering học từ telemetry. [Phạm vi nghiên cứu](../research/README.md).
-
-## 2. Hệ thống hiện có những khả năng gì?
+## 2. Chức năng hệ thống
 
 | Khả năng | Đã có trong hệ thống | Bằng chứng / giới hạn |
 | --- | --- | --- |
@@ -105,7 +96,7 @@ LLM quyết định trong phạm vi công cụ; schema, trần tốc độ, ngâ
 lease và floor bộ nhớ vẫn do code kiểm tra. Guard là cơ chế bảo vệ cần thiết,
 không được tính là quyết định của model. Model không có quyền chạy shell tùy ý.
 
-## 4. Kết quả định lượng có thể báo cáo
+## 4. Kết quả thực nghiệm
 
 ### 4.1. LLM, Docker và các lượt quá tải
 
@@ -123,7 +114,7 @@ Nguồn Git: [Gemini — phụ lục A](#phụ-lục-a--bằng-chứng-gemini-ng
 [06/10](LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](LLM_FEEDBACK_VALIDATION_20261007.md),
 [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md).
 
-### 4.2. Kết quả controller theo luật trong báo cáo cũ
+### 4.2. Kết quả controller theo luật
 
 | Chỉ số paired-v4, 21/09 | Baseline | Adaptive theo luật |
 | --- | ---: | ---: |
@@ -139,11 +130,11 @@ ra quyết định sau khi sample hoàn tất khoảng 0,986 ms, xác nhận gat
 0,498 ms; từ timestamp Kafka đến quyết định khoảng 2,111 s. Recovery khoảng
 80,017 s xảy ra trong **drain**, chưa chứng minh phục hồi khi nhu cầu cao còn tiếp tục.
 
-[Báo cáo đầy đủ](LECTURER_RESEARCH_REPORT.md) ·
+[Mã phân tích kết quả](../research/report.py) ·
 [summary.json — Local](../runtime/research/paired-v4-20260921/analysis/summary.json) ·
 [biểu đồ rate — Local](../runtime/research/paired-v4-20260921/analysis/rate_limit.png).
 
-### 4.3. Benchmark dự đoán giá và audit dữ liệu cũ
+### 4.3. Benchmark mô hình giá và kiểm định dữ liệu
 
 Cùng 3.984 train / 996 test, seed 42 và preprocessing/log target:
 
@@ -160,12 +151,12 @@ thuộc nhóm IQR outlier; outlier thống kê không tự đồng nghĩa dữ l
 Text chứa giá và duplicate giữa train/test còn gây rủi ro leakage. Các điểm số
 trên chưa đủ để thay model phục vụ hoặc tuyên bố tổng quát hóa tốt.
 
-[Audit và phân phối](LECTURER_RESEARCH_REPORT.md) ·
+[Công cụ kiểm định dữ liệu](../research/data_audit.py) ·
 [audit.json — Local](../runtime/research/data-audit/audit.json) ·
 [metrics.json — Local](../runtime/research/legacy-benchmark/metrics.json) ·
 [biểu đồ benchmark — Local](../runtime/research/legacy-benchmark/algorithm_comparison.png).
 
-## 5. Telemetry đã thu được gì và còn thiếu gì?
+## 5. Dữ liệu telemetry và kết quả dự báo
 
 ### 5.1. Số lượng, chất lượng và thời lượng
 
@@ -173,7 +164,7 @@ trên chưa đủ để thay model phục vụ hoặc tuyên bố tổng quát h
 - Phiên bắt đầu 23/10 giờ Việt Nam phát tải **1.602,453 giây**, span quan sát **1.619,140 giây**: 327 mẫu, 322 mẫu target khỏe, 3 mẫu lỗi thu thập; đoạn khỏe liên tục dài nhất khoảng 20m54s.
 - Phiên này có 49.064 offered, 48.094 ACK, 970 rejected, delivery failures 0 và final lag 0; dừng vì VM available **8,23%**. Đây là fixed baseline, không gọi LLM điều tiết.
 - Hai lịch sử passive cũ có 5.209 mẫu nhưng mọi giá trị ingress khỏe đều bằng 0; không coi số lượng đó là bằng chứng dự báo tải biến thiên.
-- Kế hoạch 24/10 dài 7.200 giây, 120 stage, rate 5–20/s, dự kiến 85.961 record vẫn **chưa chạy**. Những phiên ngắn cộng lại không thay thế xác nhận đã hoàn thành lượt hai giờ yêu cầu.
+- Kế hoạch 24/10 dài 7.200 giây, 120 stage, rate 5–20/s, dự kiến 85.961 record vẫn **chưa chạy**. Tổng thời lượng các phiên ngắn không chứng minh đã vận hành liên tục trong một phiên hai giờ.
 
 [Kiểm kê 23/10](TELEMETRY_STATUS_20261023.md) ·
 [Đánh giá 24/10](TELEMETRY_STATUS_20261024.md) ·
@@ -213,11 +204,11 @@ Docker engine chưa hoạt động. Một lần khởi động trước đó là
 0,01 GiB (0,09%), sau đó đã tắt Docker trả về trạng thái ban đầu. Đây là bằng
 chứng **ngày 24/10**, không khẳng định trạng thái máy ngày 26/10.
 
-## 6. Cấu hình và điều kiện cần có
+## 6. Cấu hình và điều kiện vận hành
 
-| Phần | Cần cung cấp / chuẩn bị | Đã có và còn thiếu |
+| Phần | Yêu cầu cấu hình | Trạng thái |
 | --- | --- | --- |
-| Model chính | `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`; model có chat completions trả JSON | Đã dùng credential để kiểm chứng model thật; báo cáo không chép `.env`/key hoặc cam kết quyền truy cập hiện tại |
+| Model chính | `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`; model có chat completions trả JSON | Đã kiểm chứng model thật; credential được quản lý qua biến môi trường, quyền truy cập model phụ thuộc tài khoản |
 | Model điều tiết riêng | Nhóm `CONTROL_LLM_*`; để trống thì kế thừa nhóm chính theo router | Có cơ chế; khai báo trọn nhóm khi dùng endpoint/tài khoản khác |
 | Model dự phòng | `LLM_FALLBACK_*` hoặc `CONTROL_LLM_FALLBACK_*`, key và quyền dùng model tương ứng | Fallback cùng provider đã thử; route miễn phí/quota độc lập chưa được xác nhận |
 | Producer/trainer nhận policy | `CONTROL_ENABLED`, source topic, policy path/mount và lease thống nhất | Đã chạy tải nhỏ; một topic được điều tiết mỗi lần, không tự bật crawler hoặc tạo workload |
@@ -240,12 +231,11 @@ miễn phí, không tự mở billing và không biến cùng một key thành q
 | Đọc lịch sử price anomaly một lượt, tránh giữ toàn bộ document | `acb8803` | 23 test anomaly/enrichment đạt; vẫn giữ percentile chính xác và đóng cursor. [price_anomaly.py](../processing/price_anomaly.py), [test_price_anomaly.py](../utils/tests/test_price_anomaly.py). Chưa đo giảm RAM Docker |
 | Ghi hash dependency thực sự đang chạy trong worker | `6bc14df` | 22 test đạt; một Docker call/worker, giữ field cũ và báo lỗi rõ nếu không đọc được. [run_experiment.py](../research/run_experiment.py), [test_worker_identity.py](../utils/tests/test_worker_identity.py) |
 
-Các số test là kết quả đã ghi tại lần sửa, không phải tuyên bố vừa chạy lại toàn
-bộ suite ngày 26/10. Phần tích hợp giới hạn cache MongoDB viết dở đã được gỡ;
-không báo cáo thành tính năng đã triển khai. Việc có image mới hoặc checkout mới
-không chứng minh container đang chạy mã mới; cần đối chiếu dependency hashes.
+Số lượng test tương ứng với từng lần sửa; chưa chạy lại toàn bộ suite ngày 26/10.
+Việc xác minh bản triển khai cần đối chiếu dependency hashes trong container
+với phiên bản mã nguồn cần kiểm chứng.
 
-## 8. Checklist còn lại và điều kiện đánh dấu hoàn thành
+## 8. Hạng mục còn lại và tiêu chí nghiệm thu
 
 - [ ] **Triển khai và xác minh bản sửa worker:** container dùng đúng image/mã, hash `price_anomaly.py` và `feature_engineering.py` khớp bản cần thử; đo RAM thực tế trước khi kết luận giảm bộ nhớ.
 - [ ] **Thu đủ lượt telemetry bổ sung:** session thực sự hoàn tất thời lượng đặt, có final status, audit chất lượng, số mẫu/đoạn khỏe và khôi phục dịch vụ; không coi plan hoặc file `running` cũ là đã chạy xong.
@@ -254,16 +244,15 @@ không chứng minh container đang chạy mã mới; cần đối chiếu depen
 - [ ] **Chạy training dưới điều tiết:** kiểm chứng hoãn/cho phép và fit hoàn tất, theo dõi stream trong lúc fit; đo chi phí tài nguyên thay vì chỉ quan sát `training_allowed=true`.
 - [ ] **Hoàn tất fallback quota/vận hành:** cấu hình route được tài khoản cho phép; xác nhận khả năng chuyển khi quota hết, giới hạn chi phí và giới hạn quota dùng chung. Test mô phỏng chỉ xác minh logic; chỉ ghi nhận failover quota thực tế khi có lỗi quota và response fallback thật. Không cần cố tình tiêu hết quota để thử.
 - [ ] **Mở rộng forecast:** dữ liệu độc lập/đa dạng hơn, đánh giá lại 5/10 phút; chỉ nối vào controller và kết luận predictive control sau thử nghiệm riêng.
-- [ ] **Nếu tiếp tục mục tiêu chất lượng giá/extraction:** mẫu gán nhãn đại diện, xử lý leakage/duplicate và chia dữ liệu phù hợp; một fixture Gemini và holdout cũ chưa đủ.
+- [ ] **Đánh giá chất lượng giá và extraction trên dữ liệu đại diện:** chuẩn bị mẫu gán nhãn, xử lý leakage/duplicate và chia dữ liệu phù hợp; một fixture Gemini và holdout cũ chưa đủ.
 
-## 9. Mở bằng chứng ở đâu?
+## 9. Danh mục bằng chứng
 
 | Nội dung | Bằng chứng đọc được trên Git | Raw artifact trên máy chạy, ngoài Git |
 | --- | --- | --- |
-| Baseline an toàn | Commit `c51b23a`, `a2c5fbb` trên `main` | Không cần runtime |
 | Gemini extraction thật | Phụ lục A dưới đây | [gemini-clean-audit.json](../runtime/research/gemini-clean-audit.json), [validation-success.json](../runtime/research/gemini-verification-runtime/validation-success.json) |
-| Audit/benchmark giá | [LECTURER_RESEARCH_REPORT](LECTURER_RESEARCH_REPORT.md) | [data audit](../runtime/research/data-audit/audit.json), [legacy metrics](../runtime/research/legacy-benchmark/metrics.json) |
-| Controller theo luật | [LECTURER_RESEARCH_REPORT](LECTURER_RESEARCH_REPORT.md) | [paired-v4 summary](../runtime/research/paired-v4-20260921/analysis/summary.json), observations/actions/biểu đồ trong cùng thư mục |
+| Audit/benchmark giá | [Kết quả kiểm định và benchmark](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu) | [data audit](../runtime/research/data-audit/audit.json), [legacy metrics](../runtime/research/legacy-benchmark/metrics.json) |
+| Controller theo luật | [Kết quả paired-v4](#42-kết-quả-controller-theo-luật) | [paired-v4 summary](../runtime/research/paired-v4-20260921/analysis/summary.json), observations/actions/biểu đồ trong cùng thư mục |
 | Docker apply/rollback | [06/10](LLM_FEEDBACK_VALIDATION_20261006.md) | [resource.apply.json](../runtime/control-validation/20261006-01/resource.apply.json), [rollback.json](../runtime/control-validation/20261006-01/rollback.json) |
 | LLM và fallback thật | [07/10](LLM_FEEDBACK_VALIDATION_20261007.md), [JSON tổng hợp](evidence/llm-feedback-20261007.json) | [summary lượt 02](../runtime/control-validation/20261007-02/summary.json), [summary lượt 03](../runtime/control-validation/20261007-03/summary.json), provider/live logs cùng thư mục |
 | Các lần overload chưa hoàn thành | [13/10](LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](LLM_OVERLOAD_VALIDATION_20261019.md), JSON tương ứng trong [evidence](evidence/) | [calibration 14/10-02](../runtime/research/llm-proof-20261014-02/calibration.json), [session 19/10](../runtime/research/llm-proof-20261019-01/session.json) |
@@ -271,18 +260,16 @@ không chứng minh container đang chạy mã mới; cần đối chiếu depen
 | Forecast 5/10 phút | [24/10](TELEMETRY_STATUS_20261024.md), hai PNG trong `docs/evidence/` | [metrics](../runtime/research/telemetry-evaluation-20261024/forecast/metrics.json), [input manifest](../runtime/research/telemetry-evaluation-20261024/observations.manifest.json), [model 5 phút](../runtime/research/telemetry-evaluation-20261024/forecast/horizon_300s/forecast.joblib) |
 | Lượt hai giờ chưa chạy | [Trạng thái 24/10](TELEMETRY_STATUS_20261024.md) | [plan.json](../runtime/research/telemetry-preparation-20261024/plan.json), [launch.json](../runtime/research/telemetry-preparation-20261024/launch.json) |
 
-Các báo cáo theo ngày được giữ nguyên như hồ sơ lịch sử. Nếu kết luận cũ như
-“chưa có vòng LLM” hoặc “chưa đánh giá được forecast” khác checklist này, đối
-chiếu ngày và phạm vi thí nghiệm. Không công bố key, header xác thực hoặc dữ liệu
-nguồn riêng tư khi chia sẻ raw artifact. Checklist này không gộp các bằng chứng
-có phạm vi khác nhau thành tuyên bố toàn hệ thống đã hoàn tất.
+Mỗi bộ bằng chứng gắn với ngày chạy, phiên bản mã và phạm vi thí nghiệm cụ thể.
+Artifact trong `runtime/` được lưu cục bộ; các báo cáo và số liệu tổng hợp trong
+repository phục vụ đối chiếu kết quả giữa các phiên bản.
 
 ## Phụ lục A — Bằng chứng Gemini ngày 24/09/2026
 
-Phần dưới giữ chi tiết INPUT/OUTPUT và quy trình từ báo cáo cũ. Tên model,
-trạng thái cấu hình sau khôi phục và số test là **snapshot ngày 24/09**, không
-phải cấu hình/runtime hiện tại. Xem checklist R16–R18 và bằng chứng 07/10 cho
-phần model router phát triển sau đó.
+Phụ lục ghi lại INPUT/OUTPUT và quy trình kiểm chứng ngày **24/09/2026**.
+Tên model, cấu hình sau khôi phục và số test tương ứng với thời điểm này.
+Cơ chế model router và chuyển dự phòng được trình bày tại
+[mục 1.3](#13-model-và-chuyển-dự-phòng), kèm bằng chứng ngày 07/10.
 
 **Đã xác minh thành công một record qua Kafka → ai-agent → Google Gemini →
 parsed extraction → MongoDB ngày 24/09/2026.** Model thực sự trả kết quả là

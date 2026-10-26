@@ -8,7 +8,7 @@ or product targets; target values are not reported as achieved runtime results.
 
 ## Start here
 
-- [`PROJECT_REPORT.md`](PROJECT_REPORT.md) - requirements checklist, implemented capabilities, completion status and dated evidence; updated 2026-10-26.
+- [`PROJECT_REPORT.md`](PROJECT_REPORT.md) - implementation progress, capabilities, experimental results and dated evidence; updated 2026-10-26.
 - [`../flow_diagram.md`](../flow_diagram.md) - normal, AI fallback and synthetic-isolation visual flows.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) - implementation/configuration map and technical details.
 - [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md) - repository map and component entry points.

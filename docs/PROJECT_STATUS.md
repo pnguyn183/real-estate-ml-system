@@ -1,6 +1,6 @@
 # Project status and verification evidence
 
-For the requirements checklist, capabilities and completion review updated on
+For implementation progress, capabilities and verification results updated on
 2026-10-26, see [PROJECT_REPORT.md](PROJECT_REPORT.md), including the real Gemini
 request/response and final-storage evidence from 2026-09-24. The credentials and
 blocker statements below describe the dated September 9–10 experiments, not
