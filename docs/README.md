@@ -8,12 +8,13 @@ or product targets; target values are not reported as achieved runtime results.
 
 ## Start here
 
+- [`PROJECT_REPORT.md`](PROJECT_REPORT.md) - requirements checklist, implemented capabilities, completion status and dated evidence; updated 2026-10-26.
 - [`../flow_diagram.md`](../flow_diagram.md) - normal, AI fallback and synthetic-isolation visual flows.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) - implementation/configuration map and technical details.
 - [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md) - repository map and component entry points.
 - [`QUICK_REFERENCE.md`](QUICK_REFERENCE.md) - ports, endpoints, roles and common commands.
 - [`RUNBOOK.md`](RUNBOOK.md) - local Compose startup, checks and recovery.
-- [`PROJECT_STATUS.md`](PROJECT_STATUS.md) - current operational status and limitations.
+- [`PROJECT_STATUS.md`](PROJECT_STATUS.md) - dated operational verification and limitations from September 9–10.
 
 ## Implementation references
 

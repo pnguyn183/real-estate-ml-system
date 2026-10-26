@@ -1,10 +1,10 @@
 # Project status and verification evidence
 
-For the current 2026-09-25 completion review, see
-[PROJECT_COMPLETION_AUDIT.md](PROJECT_COMPLETION_AUDIT.md). Real Gemini
-request/response and final-storage evidence from 2026-09-24 is documented in
-[BAO_CAO_GIANG_VIEN.md](BAO_CAO_GIANG_VIEN.md). The credentials/blocker statements
-below describe the dated September 9–10 experiments, not today's configuration.
+For the requirements checklist, capabilities and completion review updated on
+2026-10-26, see [PROJECT_REPORT.md](PROJECT_REPORT.md), including the real Gemini
+request/response and final-storage evidence from 2026-09-24. The credentials and
+blocker statements below describe the dated September 9–10 experiments, not
+today's configuration.
 
 Agent-pipeline verification: 2026-09-09. Source-trial follow-up: 2026-09-10.
 Scope: the existing single-host Docker Compose project;
