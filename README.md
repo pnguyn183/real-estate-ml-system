@@ -8,8 +8,13 @@ admission control**. The price API below remains the legacy application. See
 
 On `dev`, the [LLM feedback agent](docs/LLM_FEEDBACK_CONTROL.md) now chooses
 ingress rate, training permission and bounded CPU/RAM changes from observed
-metrics. It can persist verified allocations in `docker-compose.yml` and use a
-configured fallback model. Start with
+metrics. With `CONTROL_CONTAINER_ENABLED=true`, it can also choose to stop or
+restart an explicitly allowed auxiliary service, using measured memory and its
+record of containers it stopped. Its tests and read-only Docker observation passed;
+model-driven stop/start still needs live validation. See the
+[lifecycle checkpoint](docs/CONTAINER_LIFECYCLE_CHECKPOINT.md).
+It can persist verified allocations in `docker-compose.yml` and use a configured
+fallback model. Start with
 `python -m agents.control_agent --observe-only --once`; live execution requires
 the documented control-aware deployment.
 The two-agent reporting baseline on `main` is maintained separately.

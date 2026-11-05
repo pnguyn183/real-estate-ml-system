@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "implementation": "model-selected optional container stop/start",
+  "branch": "dev",
+  "validation_date": "2026-11-04",
+  "checkpoint_updated": "2026-11-05",
+  "tests": {
+    "command": "python -m pytest -q utils/tests/test_control_agent.py utils/tests/test_control_lifecycle.py utils/tests/test_container_lifecycle.py utils/tests/test_container_drain.py utils/tests/test_runtime_policy.py utils/tests/test_compose_resources.py utils/tests/test_model_router.py utils/tests/test_llm_experiment.py utils/tests/test_llm_runtime.py",
+    "passed": 337,
+    "failed": 0,
+    "duration_seconds": 17.57,
+    "execution": "Previously completed run; not repeated for documentation finalization"
+  },
+  "source_sha256": {
+    "agents/control_agent.py": "94aab4eb53870a6e02b10cbada581b07b3b424ed59ab688ec8ee7add3e4e838e",
+    "agents/container_lifecycle.py": "3930dea7bfd4199914880ec98018a3d24bfe5e8c07cfaed8be6d0071bb4a58ff",
+    "agents/container_drain.py": "cee592c92fd0cb7c586a6ec88602f93d9f813dabe5327023ef498f1e311eb0e3",
+    "scripts/auto_train.py": "304af273d0f63977ea3f6811c7ee64bd1cc718b8bfb133845ff727ebe98b25b8",
+    "utils/tests/test_control_agent.py": "9eabcb9bd71994af0fb828377e4c31c9d9dfda3a782483df110310fcfdc3931d",
+    "utils/tests/test_control_lifecycle.py": "acf15b642ae40a283edf7324c7b5fa20410d97ecba3d477f3930c982fdc34b1f",
+    "utils/tests/test_container_lifecycle.py": "a72308cbea331dff5d3afb329d6f16c2956ba4c683682adc70001c6d148ff292",
+    "utils/tests/test_container_drain.py": "3a6a04436c24b72af56d14dee9b44afd7489e87d50e8ec80a720c5a9cd48e2b9"
+  },
+  "live_docker_observation": {
+    "status": "observed",
+    "services": {
+      "trainer": {
+        "state": "running",
+        "health": "healthy",
+        "memory_usage_bytes": 393320857,
+        "eligible_actions": [],
+        "reason": "Trainer is not using this controlled policy directory"
+      },
+      "grafana": {
+        "state": "running",
+        "health": "healthy",
+        "memory_usage_bytes": 386819686,
+        "eligible_actions": [
+          "stop"
+        ],
+        "reason": "Optional running service"
+      },
+      "mongo-express": {
+        "state": "running",
+        "health": "none",
+        "memory_usage_bytes": 46032486,
+        "eligible_actions": [
+          "stop"
+        ],
+        "reason": "Optional running service"
+      }
+    }
+  },
+  "standard_cli_proposal": {
+    "exit_code": 2,
+    "live_docker": true,
+    "apply": false,
+    "policy_written": false,
+    "stderr_present": false,
+    "reason": "telemetry_unavailable",
+    "diagnosis": "Docker Desktop forwarded worker metrics ports to stale container IPs; internal workers healthy",
+    "published_ports": {
+      "8003": {
+        "current_container_ip": "172.18.0.2",
+        "forwarded_ip": "172.18.0.11"
+      },
+      "8004": {
+        "current_container_ip": "172.18.0.6",
+        "forwarded_ip": "172.18.0.16"
+      },
+      "8005": {
+        "current_container_ip": "172.18.0.12",
+        "forwarded_ip": "172.18.0.10"
+      }
+    },
+    "backend_log_event_utc": "2026-11-04T08:21:09Z"
+  },
+  "internal_metrics_proposal": {
+    "transport": "worker HTTP read via docker exec; Kafka/Docker/host measurements unchanged",
+    "apply": false,
+    "model_configured": true,
+    "receipt": {
+      "timestamp": 1793780642.3964055,
+      "status": "would_pause",
+      "reason": "decision_failed:provider_timeout",
+      "decision_id": "2bc007cd90394e00b460496d20b0aff9",
+      "action_origin": "guard"
+    },
+    "policy_written": false,
+    "journal_written": false,
+    "instrumentation_ready": true,
+    "errors": []
+  },
+  "conclusions": {
+    "unit_and_stateful_tests_passed": true,
+    "live_container_observation_verified": true,
+    "live_model_decision_received": false,
+    "live_container_mutation_verified": false,
+    "continuous_controller_enabled": false,
+    "overload_stability_proven": false
+  },
+  "runtime_evidence": {
+    "docker-observation.json": {
+      "path": "runtime/diagnostics/container-lifecycle-20261104/docker-observation.json",
+      "sha256": "c7f415987b9922a7f16c66366cf95f48e1b05c8d9d2d8c4e8dc22fb3ead38aed"
+    },
+    "proposal-result.json": {
+      "path": "runtime/diagnostics/container-lifecycle-20261104/proposal-result.json",
+      "sha256": "953c12d4e7c9bd221c318cc70e4bfc73f78182341988b86e8c350b0fbc03515a"
+    },
+    "pipeline-observation.json": {
+      "path": "runtime/diagnostics/container-lifecycle-20261104/pipeline-observation.json",
+      "sha256": "17938710846ad82ecdecffa9f039b360c3970139dca293043cdc1d4e08d2f9eb"
+    },
+    "internal-probe/result.json": {
+      "path": "runtime/diagnostics/container-lifecycle-20261104/internal-probe/result.json",
+      "sha256": "cb4ea3da43ad148fafdca5a03f549bb92d15c5a318fa4c7936bc229ba4897c1d"
+    }
+  }
+}

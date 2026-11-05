@@ -5,7 +5,7 @@ cùng workload, Docker limits và trạng thái training, có tính cả nhu c�
 
 `agents/control_agent.py` chạy trên máy chủ Docker. Model nhận số đo và lịch sử
 quyết định, tự chọn trạng thái `light`, `normal`, `heavy`, tốc độ đầu vào, quyền
-khởi chạy training và CPU/RAM cho các container được phép. Không có bảng luật
+khởi chạy training, CPU/RAM và dừng/bật dịch vụ phụ được phép. Không có bảng luật
 75%/85% để chọn trạng thái hoặc tốc độ thay cho model.
 
 ```text
@@ -14,6 +14,7 @@ Docker/host + Kafka + Processor metrics
     -> JSON actions được kiểm tra schema và ngân sách
     -> policy.json -> producer / trainer
     -> docker update + docker-compose.yml
+    -> dừng/bật một dịch vụ phụ + nhật ký quyền khôi phục
     -> số đo và kết quả hành động ở vòng tiếp theo
 ```
 
@@ -25,11 +26,13 @@ Docker/host + Kafka + Processor metrics
 | `agents/model_router.py` | Chuyển provider khi hết quota, rate limit, timeout, lỗi dịch vụ; cooldown riêng từng provider |
 | `agents/runtime_policy.py` | Đọc quyết định có thời hạn; giới hạn phát Kafka và quyền bắt đầu training |
 | `agents/compose_resources.py` | Kiểm tra ngân sách, cập nhật CPU/RAM thực tế, xác nhận rồi lưu giới hạn vào Compose |
+| `agents/container_lifecycle.py` | Đo dịch vụ phụ, kiểm tra hành động dừng/bật, ghi quyền khôi phục và kết quả Docker |
+| `agents/container_drain.py` | Trainer xác nhận điểm rảnh trước khi cho phép dừng container |
 | `research/telemetry.py` | Offset/lag/throughput theo topic, CPU/RAM Docker, RAM/swap VM, latency/error từ Processor |
 
 Model chỉ nhận số đo, cấu hình giới hạn và lịch sử hành động; không nhận API key,
-nội dung tin bất động sản hay quyền chạy shell. Ba trường hành động là
-`rate_per_second`, `training_allowed`, `resources`. Chúng được chuyển thành lời
+nội dung tin bất động sản hay quyền chạy shell. Các trường hành động là
+`rate_per_second`, `training_allowed`, `resources`, `containers`. Chúng được chuyển thành lời
 gọi công cụ có kiểu dữ liệu xác định, không phải thực thi mã do model sinh.
 
 Mặc định điều tiết topic `real_estate_stress_raw`; có thể chọn `real_estate_raw`.
@@ -85,8 +88,10 @@ tạm dừng đầu vào và không cho bắt đầu training; không tự rơi 
 
 ## Quan sát và xem đề xuất
 
-Docker Desktop phải chạy Linux containers; Kafka, ba Processor và trainer cần
-đang chạy. Các port Kafka/metrics là port host được publish trong Compose.
+Docker Desktop phải chạy Linux containers; Kafka và ba Processor cần đang chạy.
+Lần triển khai ban đầu cần trainer hoạt động với cùng policy. Khi chức năng dừng/bật
+dịch vụ phụ đã được bật, trainer có thể đang dừng theo nhật ký của agent.
+Các port Kafka/metrics là port host được publish trong Compose.
 
 ```powershell
 # Chỉ đọc số đo; không gọi LLM, không chỉnh policy/Compose/container.
@@ -192,6 +197,71 @@ Sau sự cố abrupt exit trong resource transaction, kiểm tra receipts/runtim
 backup trước khi xóa lock còn lại; không tự đoán rằng rollback đã xong. Resource
 limits đã áp dụng không tự reset khi controller dừng.
 
+## Agent dừng và bật lại dịch vụ phụ
+
+Chức năng này mặc định tắt và độc lập với quyền sửa CPU/RAM. Bật trong `.env`:
+
+```dotenv
+CONTROL_CONTAINER_ENABLED=true
+CONTROL_CONTAINER_SERVICES=trainer,grafana,mongo-express
+CONTROL_CONTAINER_COOLDOWN_SECONDS=60
+```
+
+Vẫn cần `CONTROL_ENABLED=true`, các participant nhận cùng policy và chạy
+`python -m agents.control_agent --apply`. Mode đề xuất chỉ ghi đề xuất;
+`--observe-only` không gọi model hay đổi trạng thái container. Không cần API key
+mới nếu model điều tiết hiện tại đã được cấu hình.
+
+Model nhận trạng thái và mức tiêu thụ từng dịch vụ phụ, RAM host/VM, lịch sử tải
+và kết quả hành động trước đó. Nó chọn một hành động như
+`"containers": {"grafana": "stop"}` hoặc `{"grafana": "start"}`; tối đa một dịch vụ
+mỗi quyết định. Danh sách cho phép, thời gian chờ giữa hai hành động và giới hạn RAM
+là phạm vi thực thi. Chúng không quy định sẵn mức tải nào phải tắt dịch vụ nào.
+Một quyết định không được vừa đổi CPU/RAM vừa dừng/bật container.
+
+- Mặc định chỉ xét `trainer`, `grafana`, `mongo-express`. `api`, `frontend`,
+  `predictor` chỉ được xét khi người vận hành thêm rõ vào danh sách; dừng chúng
+  có thể làm gián đoạn chức năng người dùng. Công cụ kiểm tra quan hệ phụ thuộc
+  trước khi thực hiện.
+- ZooKeeper, các broker Kafka, MongoDB, processor, producer, extraction agent
+  và thành phần quan sát cần thiết được bảo vệ. Agent không tự chạy `compose down`,
+  xóa/recreate container hay thay đổi số replica.
+- Dừng trainer phải ngăn fit mới và chờ fit đang chạy hoàn tất, rồi xác nhận
+  trainer đã sẵn sàng dừng. Không dùng lệnh dừng để cắt ngang một fit.
+  Cần rebuild/recreate trainer với bản mã hỗ trợ giao thức này. Nếu trainer đang
+  bận hoặc chưa xác nhận trong thời gian chờ, công cụ hoãn thao tác và giữ container
+  chạy; không suy ra trạng thái rảnh chỉ từ file `training.json` cũ.
+- Dùng `stop/start`, không dùng `docker pause` để giải phóng RAM. Sau khi thay đổi,
+  ingress tạm dừng cho đến khi có số đo mới; không giả định RAM đã được giải phóng.
+- Chỉ bật lại đúng container agent đã dừng, sau khi xác minh ID/cấu hình, thời gian
+  chờ và bộ nhớ khả dụng. Container vốn tắt hoặc do người vận hành tắt không tự
+  được bật chỉ vì model đề xuất.
+
+Khi RAM chạm ngưỡng khẩn cấp, guard vẫn ngừng phát tải và ngăn training mới. Nếu
+telemetry còn hợp lệ, model được đề xuất **dừng** dịch vụ phụ để giảm footprint;
+không được bật thêm dịch vụ hay nới rate trong vòng đó. Mất telemetry không phải
+là căn cứ để tắt tùy ý container. Dừng dịch vụ phụ cũng không bảo đảm đủ RAM nếu
+footprint của pipeline và các ứng dụng khác trên máy đã quá lớn.
+
+`runtime/control/containers.json` ghi ý định trước lệnh Docker và chỉ ghi quyền
+bật lại sau khi xác nhận container đã dừng. Nếu process chết giữa lệnh dừng và
+bước xác nhận, công cụ giữ trạng thái chưa rõ và không tự nhận quyền bật lại;
+cần đối chiếu Docker với nhật ký trước khi khôi phục. Container được người vận
+hành khởi động/dừng lại hoặc thay thế không kế thừa quyền khôi phục cũ.
+`lifecycle_actions.jsonl` cùng thư mục ghi kết quả từng hành động, còn
+`decisions.jsonl` nối chúng với quyết định model và policy thực tế. Trainer dùng
+`trainer-drain.json` / `trainer-drain-ack.json` để xác nhận đã ngừng nhận fit mới ở
+điểm rảnh; yêu cầu hết hạn không cho phép dừng container. Khi controller khởi
+động lại, nó đối chiếu nhật ký với Docker rồi tiếp tục quan sát và ra quyết định.
+Ctrl+C hoặc kết thúc controller không tự bật đồng loạt dịch vụ đã dừng, vì việc
+đó có thể gây áp lực RAM trở lại.
+
+Cơ chế này khác `collect_session --lean` và isolation trong bài thử rate-only:
+các wrapper đó dừng danh sách cố định trước phiên, rồi khôi phục lúc kết thúc.
+Không bật lifecycle động trong bài đối chứng đang yêu cầu cùng allocation/training;
+cần phép thử riêng để đo việc model chọn dừng dịch vụ, RAM thực sự giảm, luồng xử lý
+vẫn khỏe và dịch vụ được bật lại khi đủ điều kiện.
+
 ## Kiểm chứng và giới hạn hiện tại
 
 Các tests dùng model/Docker giả kiểm tra quyết định LLM, producer/trainer lease,
@@ -200,6 +270,7 @@ nguyên, xác nhận runtime, file CAS, rollback và các thay đổi đồng th
 
 ```powershell
 python -m pytest -q utils/tests/test_control_agent.py utils/tests/test_runtime_policy.py utils/tests/test_model_router.py utils/tests/test_compose_resources.py
+python -m pytest -q utils/tests/test_container_lifecycle.py utils/tests/test_container_drain.py utils/tests/test_control_lifecycle.py
 python -m pytest -q -ra
 ```
 
@@ -214,3 +285,16 @@ Lượt chạy lại ngày 07/10 đã nhận quyết định LLM, phát và xử
 [kiểm chứng vòng phản hồi và fallback](LLM_FEEDBACK_VALIDATION_20261007.md).
 Các kết quả adaptive trong nghiên cứu cũ thuộc policy cũ, không chứng minh hiệu quả
 của LLM agent này.
+
+Kiểm chứng ngày 04/11/2026: **337 tests đạt** trong nhóm controller, lifecycle,
+trainer drain, policy, resource actuator, router và LLM experiment. Đọc Docker
+thật thành công với ba dịch vụ phụ; trainer chưa dùng cấu hình control nên được
+bảo vệ khỏi thao tác dừng. CLI đề xuất dừng ở `telemetry_unavailable` vì Docker
+Desktop chuyển tiếp các cổng metrics tới IP container cũ. Lượt chẩn đoán đọc
+metrics thật từ bên trong Docker thu đủ telemetry hợp lệ, nhưng lời gọi model
+kết thúc bằng `provider_timeout`. Không ghi policy và không dừng/bật container.
+
+Chưa bật controller liên tục hoặc chứng minh LLM tự dừng/bật dịch vụ giúp giảm RAM
+và ổn định quá tải. Xem [bằng chứng](evidence/container-lifecycle-20261104.json)
+và [checkpoint triển khai](CONTAINER_LIFECYCLE_CHECKPOINT.md) để tiếp tục đúng phần
+kiểm chứng thực tế còn thiếu.

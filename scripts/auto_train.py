@@ -16,6 +16,7 @@ from modeling.price_model import RealEstatePriceModel
 from processing.price_anomaly import add_anomaly_training_filter
 from agents.safety import real_data_query
 from agents.runtime_policy import RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
+from agents.container_drain import wait_for_container_drain
 from utils.metrics import (
     model_train_duration,
     start_prometheus_server,
@@ -109,17 +110,22 @@ def main():
     )
     while True:
         try:
-            if not RuntimePolicy.from_env().read().training_allowed:
+            policy = RuntimePolicy.from_env()
+            # Only the synchronous main thread acknowledges an idle trainer.
+            # A running fit must finish before Docker can receive this receipt.
+            wait_for_container_drain(policy)
+            if not policy.read().training_allowed:
                 logger.info("Training deferred until the control agent permits a new fit")
                 next_sleep = TRAIN_RETRY_INTERVAL
             elif check_training_data():
+                wait_for_container_drain(policy)
                 training_ok = run_trainer()
                 next_sleep = TRAIN_INTERVAL if training_ok else TRAIN_RETRY_INTERVAL
             else:
                 logger.info(f"Not enough training data (need {MIN_RECORDS}), skipping training")
                 next_sleep = TRAIN_RETRY_INTERVAL
             logger.info(f"Next training check in {next_sleep}s (at {datetime.fromtimestamp(time.time() + next_sleep)})")
-            time.sleep(next_sleep)
+            wait_for_container_drain(policy, sleep_seconds=next_sleep)
         except KeyboardInterrupt:
             logger.info("Auto-trainer stopped")
             break
