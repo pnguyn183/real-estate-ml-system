@@ -1,34 +1,31 @@
 # Container lifecycle checkpoint
 
-Cập nhật: **05/11/2026**. Nhánh triển khai: `dev`; baseline `main` giữ nguyên.
+Cập nhật: **11/11/2026**. Nhánh `dev`; baseline `main` giữ nguyên.
 
 ## Đã hoàn thành
 
-- [x] Model chọn tối đa một `stop/start` mỗi quyết định, dựa trên telemetry từng dịch vụ, tài nguyên host/VM và lịch sử hành động.
-- [x] Công cụ thực thi bảo vệ Kafka, ZooKeeper, MongoDB, processor, producer, extraction và Prometheus. Mặc định chỉ cho phép trainer, Grafana và mongo-express.
-- [x] Kiểm tra dependency, ID/cấu hình, lần khởi động container, cooldown và dung lượng dự phòng trước thao tác.
-- [x] Trainer xác nhận đã rảnh trước khi dừng; fit đang chạy được hoàn tất. Yêu cầu hết hạn hoặc chưa xác nhận không cho phép dừng.
-- [x] Ghi ý định trước lệnh Docker, ghi quyền khôi phục sau khi xác nhận đã dừng. Không kế thừa quyền với container thay thế hoặc container người vận hành dừng sau đó.
-- [x] Guard RAM ngừng ingress nhưng vẫn cho model chọn dừng dịch vụ phụ khi telemetry hợp lệ. Chờ số đo mới sau thao tác trước khi mở lại tải.
-- [x] **337 kiểm thử đạt**; đã sửa và kiểm tra các race condition về drain, telemetry, thay thế/restart container và quyền khôi phục.
-- [x] Cập nhật cấu hình mẫu, hướng dẫn và Project Report.
+- [x] Triển khai tại `9ae88c9`: model chọn tối đa một `stop/start`, dựa trên telemetry và lịch sử hành động; bảo vệ dịch vụ lõi, kiểm tra dependency/identity/cooldown/RAM, journal quyền khôi phục và trainer drain.
+- [x] **337 tests đạt** ở lần kiểm chứng mã trước. Không chạy lại khi chỉ cập nhật tài liệu.
+- [x] Khôi phục HTTP metrics từ host; lượt 05/11 dùng collector chuẩn, trainer có drain và producer/trainer cùng policy. Đã đối chiếu deployment.
+- [x] Lượt `lifecycle-live-20261105-02` kết thúc: **Gemini chọn dừng Grafana và mongo-express**, Docker xác nhận cả hai. Có 23 mẫu / 205,24 giây.
+- [x] Khôi phục baseline hoàn tất ngày 11/11. Lỗi còn lại do `compose create --no-deps` dùng cờ không hỗ trợ; sửa bằng `compose up --no-start --no-deps --no-build --pull never stress-agent`. Stress trở lại `Created`, image gốc, `CONTROL_ENABLED=false`, `STRESS_ENABLED=false`; policy khớp bản trước thử. Lệnh sửa không đổi ID hoặc khởi động lại container khác.
+- [x] Lưu bằng chứng, cập nhật README, hướng dẫn và Project Report. Giữ nguyên artifact lỗi lịch sử, receipt khôi phục lưu riêng.
 
-Mã chính: [controller](../agents/control_agent.py), [công cụ lifecycle](../agents/container_lifecycle.py), [trainer drain](../agents/container_drain.py).
-Bằng chứng: [kết quả kiểm chứng 04/11](evidence/container-lifecycle-20261104.json).
+Bằng chứng: [live 05/11 và khôi phục 11/11](evidence/container-lifecycle-live-20261105.json); [kiểm thử/chẩn đoán 04/11](evidence/container-lifecycle-20261104.json).
 
-## Kiểm chứng runtime đã thực hiện
+## Giới hạn còn lại
 
-- Đọc Docker thật thành công: có footprint/trạng thái từng dịch vụ phụ. Trainer chưa dùng policy điều khiển nên được bảo vệ.
-- CLI ở chế độ đề xuất dừng với `telemetry_unavailable`: published ports của Docker Desktop trỏ tới IP worker cũ. Worker bên trong Docker vẫn trả metrics và khỏe.
-- Phép kiểm tra riêng đọc **metrics thật qua Docker exec**, giữ Kafka/Docker/host telemetry như cũ: telemetry hợp lệ, nhưng model trả `provider_timeout`.
-- Chưa thực thi stop/start trên container thật, chưa ghi policy hay bật controller liên tục. Không coi phép kiểm tra nội bộ là đã sửa published ports.
+- **0 record được phát/xử lý** trong lượt lifecycle; chưa kiểm chứng giữ throughput khi có tải. RAM host thấp nên ingress giữ 0.
+- Chưa có LLM chọn `start`; script khôi phục Grafana/mongo-express không được tính là model tự phục hồi.
+- Footprint trước dừng là 406,30 và 46,06 MiB, không phải lượng RAM host thu hồi. Sau stop Grafana, VM available tăng 62,21 → 64,26% nhưng host giảm 6,74 → 5,53%; chưa chứng minh lợi ích nhân quả.
+- Có 3 `provider_unavailable`, 2 `provider_cooldown`; một mẫu Kafka `NOT_COORDINATOR` rồi phục hồi. Không sửa timeout/guard chỉ để ép lượt thử thành công.
+- Preflight 11/11: host còn **0,94 GiB / 5,96%**, ba worker HTTP health 200. Chưa đủ điều kiện xác minh mở lại tải/bật dịch vụ. Không lặp lại phép thử stop đã có bằng chứng.
+- Chưa triển khai controller chạy thường trực. Trainer drain live, đối chứng overload và lượt telemetry liên tục hai giờ vẫn chưa hoàn tất.
 
 ## Task tiếp theo
 
-1. Khôi phục đường HTTP metrics từ host tới ba worker và xác minh telemetry qua CLI chuẩn. Không cần viết lại telemetry hoặc lifecycle.
-2. Rebuild/deploy trainer có drain handshake; cấu hình producer/trainer dùng cùng policy. Bật `CONTROL_ENABLED` và `CONTROL_CONTAINER_ENABLED` theo [hướng dẫn](LLM_FEEDBACK_CONTROL.md).
-3. Xác minh model trả quyết định trong deadline. Không tăng timeout đơn lẻ vượt giới hạn tuổi telemetry/lease.
-4. Chạy phép thử riêng: model chọn dừng dịch vụ phụ → Docker xác nhận → đo tài nguyên và sức khỏe pipeline → model khôi phục khi đủ điều kiện. Ghi cả tác dụng và chi phí gián đoạn dịch vụ.
-5. Chỉ đánh dấu kiểm chứng quá tải hoàn tất khi có bằng chứng toàn bộ vòng phản hồi trên. Kết quả unit test hiện tại không thay thế bằng chứng này.
+1. Kiểm tra lại RAM host/VM và telemetry mới; khi guard cho phép, chuẩn bị lượt riêng với run ID mới, producer/trainer cùng policy và đúng image có drain. Không chạy lại `trial-02` (ID/artifact cố định).
+2. Xác minh LLM tự chọn bật lại container do chính controller dừng, chờ health đạt và xử lý được dữ liệu. Lưu decision/receipt, footprint, RAM host/VM, lag/latency; phân biệt thao tác model với cleanup. Không hạ ngưỡng RAM, giả telemetry hay ép model chọn hành động.
+3. Kiểm chứng trainer drain dưới fit thật; sau đó tiếp tục đối chứng overload và thu hai giờ theo kế hoạch riêng. Lifecycle không trộn vào bài đối chứng cố định allocation/training.
 
-Không chạy lại 337 tests nếu chỉ cập nhật tài liệu. Nếu sửa mã tiếp, chạy các suite liên quan nêu trong hướng dẫn. Journal có ý định chưa xác nhận cần đối chiếu thủ công; controller không tự nhận quyền bật lại từ một kết quả không rõ ràng.
+Journal có ý định chưa xác nhận cần đối chiếu thủ công. Không nhận quyền bật lại từ kết quả chưa rõ hoặc journal cũ sau khi người vận hành đã khôi phục container. Lượt thử mới phải có cleanup đã sửa như trên; không build/pull lại nếu image phù hợp đã có.

@@ -10,8 +10,9 @@ On `dev`, the [LLM feedback agent](docs/LLM_FEEDBACK_CONTROL.md) now chooses
 ingress rate, training permission and bounded CPU/RAM changes from observed
 metrics. With `CONTROL_CONTAINER_ENABLED=true`, it can also choose to stop or
 restart an explicitly allowed auxiliary service, using measured memory and its
-record of containers it stopped. Its tests and read-only Docker observation passed;
-model-driven stop/start still needs live validation. See the
+record of containers it stopped. A live trial verified LLM-selected stops of
+Grafana and mongo-express; automatic restart and stability under active load
+remain unverified. See the [live evidence](docs/evidence/container-lifecycle-live-20261105.json) and
 [lifecycle checkpoint](docs/CONTAINER_LIFECYCLE_CHECKPOINT.md).
 It can persist verified allocations in `docker-compose.yml` and use a configured
 fallback model. Start with

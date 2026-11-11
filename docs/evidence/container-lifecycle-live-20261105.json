@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "implementation": "model-selected optional container stop/start",
+  "branch": "dev",
+  "source_commit": "9ae88c97125dc782d404044bca2d394e9bd2a802",
+  "validation_date": "2026-11-05",
+  "run_id": "lifecycle-live-20261105-02",
+  "scope": "bounded lifecycle functional test, not overload capacity proof",
+  "trial": {
+    "started_at_utc": "2026-11-05T06:55:06.390841+00:00",
+    "ended_at_utc": "2026-11-05T07:00:04.573242+00:00",
+    "duration_seconds": 298.18240189552307,
+    "original_status": "restore_incomplete",
+    "controller_lifetime": "Finite functional trial; not an always-on deployment",
+    "resource_resizing_enabled": false,
+    "load_configuration": {
+      "enabled": true,
+      "scenario": "normal",
+      "load_profile": "normal",
+      "multiplier": 1.0,
+      "rate": 1.0,
+      "duration": 600.0,
+      "max_records": 120,
+      "burst_rate": 1.0,
+      "burst_duration": 5.0,
+      "max_rate": 1.0,
+      "duplicate_ratio": 0.0,
+      "unstructured_ratio": 0.0,
+      "seed": 42,
+      "run_id": "lifecycle-live-20261105-02",
+      "topic": "real_estate_stress_raw",
+      "template_source": "builtin",
+      "template_limit": 100,
+      "metrics_port": 8007
+    }
+  },
+  "deployment_verification": {
+    "participants": [
+      {
+        "name": "real_estate_trainer",
+        "id": "ad44e8d90676b57aa4d75a1fe2c5368692afb259a6b9443fdbc922001ca0f557",
+        "image": "real-estate-lifecycle-trainer:20261105-02",
+        "state": "running",
+        "health": "starting",
+        "control_enabled": "true",
+        "source_topic": "real_estate_stress_raw"
+      },
+      {
+        "name": "real_estate_stress_agent",
+        "id": "55c05038408253f35a1a866f6eccdc146cfc718f6ed6842e712de69cf3052fcf",
+        "image": "real-estate-lifecycle-stress-agent:20261105-02",
+        "state": "running",
+        "health": "starting",
+        "control_enabled": "true",
+        "source_topic": "real_estate_stress_raw"
+      }
+    ],
+    "trainer_source_hash_matches": {
+      "agents/container_drain.py": true,
+      "agents/runtime_policy.py": true,
+      "scripts/auto_train.py": true
+    }
+  },
+  "model_actions": [
+    {
+      "timestamp": 1793861800.098213,
+      "decision_id": "65abb83aadb948b48bb19b0daf137128",
+      "status": "applied",
+      "decision": {
+        "state": "heavy",
+        "reason": "Emergency host memory condition active (6.7% host available memory). Keeping ingress paused and training disabled while stopping optional service grafana to free memory.",
+        "rate_per_second": 0.0,
+        "training_allowed": false,
+        "resources": {},
+        "containers": {
+          "grafana": "stop"
+        }
+      },
+      "provider": "openai_compatible",
+      "model": "gemini-3.6-flash",
+      "resources": {
+        "status": "no_change"
+      },
+      "containers": {
+        "status": "applied",
+        "action": "container_lifecycle",
+        "timestamp": 1793861800.0966518,
+        "decision_id": "65abb83aadb948b48bb19b0daf137128",
+        "service": "grafana",
+        "operation": "stop",
+        "container_id": "bd28eb66259da0519afdffa1d27e11b81c5d6474153f2e4d081589c265b69e67",
+        "before": {
+          "state": "running",
+          "running": true,
+          "health": "healthy",
+          "ready": true
+        },
+        "last_running_memory_bytes": 426036428,
+        "after": {
+          "state": "exited",
+          "running": false,
+          "health": "unhealthy",
+          "ready": false
+        },
+        "phase": "stopped",
+        "ready": false,
+        "outcome_verified": true,
+        "owned_stop": true
+      },
+      "effective_policy": {
+        "rate_per_second": 0.0,
+        "training_allowed": false
+      },
+      "awaiting_fresh_telemetry": true,
+      "action_origin": "llm"
+    },
+    {
+      "timestamp": 1793861933.3625355,
+      "decision_id": "e9f71724c7ad4d69bf0e5ccb0b845f8e",
+      "status": "applied",
+      "decision": {
+        "state": "heavy",
+        "reason": "Host memory is in emergency condition. Disabling training, setting ingress rate to 0, and stopping optional service mongo-express to release memory.",
+        "rate_per_second": 0.0,
+        "training_allowed": false,
+        "resources": {},
+        "containers": {
+          "mongo-express": "stop"
+        }
+      },
+      "provider": "openai_compatible",
+      "model": "gemini-3.6-flash",
+      "resources": {
+        "status": "no_change"
+      },
+      "containers": {
+        "status": "applied",
+        "action": "container_lifecycle",
+        "timestamp": 1793861933.359177,
+        "decision_id": "e9f71724c7ad4d69bf0e5ccb0b845f8e",
+        "service": "mongo-express",
+        "operation": "stop",
+        "container_id": "423edae7e4243862b2cec3e4fb3c0d30755fc1a168f15deee98590cf8055edd8",
+        "before": {
+          "state": "running",
+          "running": true,
+          "health": "none",
+          "ready": true
+        },
+        "last_running_memory_bytes": 48297410,
+        "after": {
+          "state": "exited",
+          "running": false,
+          "health": "none",
+          "ready": false
+        },
+        "phase": "stopped",
+        "ready": false,
+        "outcome_verified": true,
+        "owned_stop": true
+      },
+      "effective_policy": {
+        "rate_per_second": 0.0,
+        "training_allowed": false
+      },
+      "awaiting_fresh_telemetry": true,
+      "action_origin": "llm"
+    }
+  ],
+  "non_model_actions": {
+    "setup": [
+      "Stop scraper for trial isolation",
+      "Stop idle trainer and deploy controlled trial participants"
+    ],
+    "cleanup_origin": "trial_orchestrator",
+    "cleanup": [
+      {
+        "step": "stop_test_stress",
+        "status": "ok"
+      },
+      {
+        "step": "trainer_baseline_config",
+        "status": "ok"
+      },
+      {
+        "step": "remove_finished_test_stress",
+        "status": "ok"
+      },
+      {
+        "step": "grafana_baseline",
+        "status": "ok"
+      },
+      {
+        "step": "mongo-express_baseline",
+        "status": "ok"
+      },
+      {
+        "step": "scraper_original",
+        "status": "ok"
+      }
+    ],
+    "note": "Grafana and mongo-express cleanup starts are not LLM-selected start actions"
+  },
+  "telemetry": {
+    "samples": 23,
+    "first_sample_utc": "2026-11-05T06:56:20.618455+00:00",
+    "last_sample_utc": "2026-11-05T06:59:45.861681+00:00",
+    "sample_span_seconds": 205.24322652816772,
+    "metric_scope": "Kafka topic real_estate_stress_raw; selected Kafka/processor/Mongo containers; Docker-engine capacity",
+    "worker_transport": "Published HTTP metrics ports 8003/8004/8005; no substituted measurements",
+    "instrumentation_ready_samples": 23,
+    "host_memory_available_percent_range": [
+      3.06918599881257,
+      10.915981321523114
+    ],
+    "vm_memory_available_percent_range": [
+      62.213448827867964,
+      64.43447943981222
+    ],
+    "vm_swap_used_percent_max": 0.0,
+    "kafka_lag_samples": {
+      "zero": 22,
+      "unavailable": 1
+    },
+    "kafka_under_replicated_partition_samples": {
+      "zero": 22,
+      "unavailable": 1
+    },
+    "incoming_and_throughput_samples": {
+      "zero": 20,
+      "unavailable": 3
+    },
+    "latency_p95_and_error_rate_available_samples": 0,
+    "worker_outcomes": "All available interval counters handled/invalid/dlq/failed equal zero",
+    "partition_high_offset_change": {
+      "0": 0,
+      "1": 0,
+      "2": 0
+    },
+    "core_container_ids_unchanged_across_samples": true,
+    "worker_transport_error_samples": 0,
+    "collection_transport_error_samples": 0,
+    "before_after_actions": [
+      {
+        "decision_id": "65abb83aadb948b48bb19b0daf137128",
+        "service": "grafana",
+        "selection": "Nearest collected sample before and after applied-action receipt; not a controlled causal estimate",
+        "before": {
+          "timestamp": 1793861788.1276119,
+          "timestamp_utc": "2026-11-05T06:56:28.127612+00:00",
+          "host_memory_available_percent": 6.735193899153895,
+          "host_memory_available_bytes": 1136549888,
+          "vm_memory_available_percent": 62.213448827867964,
+          "vm_memory_available_bytes": 6486794240,
+          "kafka_lag": 0
+        },
+        "after": {
+          "timestamp": 1793861806.7605717,
+          "timestamp_utc": "2026-11-05T06:56:46.760572+00:00",
+          "host_memory_available_percent": 5.534389592560067,
+          "host_memory_available_bytes": 933916672,
+          "vm_memory_available_percent": 64.26316254677234,
+          "vm_memory_available_bytes": 6700511232,
+          "kafka_lag": 0
+        }
+      },
+      {
+        "decision_id": "e9f71724c7ad4d69bf0e5ccb0b845f8e",
+        "service": "mongo-express",
+        "selection": "Nearest collected sample before and after applied-action receipt; not a controlled causal estimate",
+        "before": {
+          "timestamp": 1793861920.811441,
+          "timestamp_utc": "2026-11-05T06:58:40.811441+00:00",
+          "host_memory_available_percent": 7.996097889666107,
+          "host_memory_available_bytes": 1349324800,
+          "vm_memory_available_percent": 64.1313259283266,
+          "vm_memory_available_bytes": 6686765056,
+          "kafka_lag": 0
+        },
+        "after": {
+          "timestamp": 1793861939.7485533,
+          "timestamp_utc": "2026-11-05T06:58:59.748553+00:00",
+          "host_memory_available_percent": 7.389761013946719,
+          "host_memory_available_bytes": 1247006720,
+          "vm_memory_available_percent": 63.826797481904876,
+          "vm_memory_available_bytes": 6655012864,
+          "kafka_lag": 0
+        }
+      }
+    ]
+  },
+  "decision_status_counts": {
+    "paused": 8,
+    "applied": 2,
+    "observed": 13
+  },
+  "guard_reason_counts": {
+    "telemetry_incomplete": 2,
+    "decision_failed:provider_unavailable": 3,
+    "decision_failed:provider_cooldown": 2,
+    "telemetry_unavailable": 1
+  },
+  "telemetry_failures": [
+    {
+      "timestamp": 1793861906.8725567,
+      "errors": [
+        "kafka: KafkaException: KafkaError{code=NOT_COORDINATOR,val=16,str=\"Failed to get committed offsets: Broker: Not coordinator\"}"
+      ]
+    }
+  ],
+  "telemetry_recovery": "Kafka NOT_COORDINATOR appeared in one sample; Kafka lag and partition information returned on the next sample, which required interval warmup",
+  "stress_report": {
+    "run_id": "lifecycle-live-20261105-02",
+    "scenario": "normal",
+    "status": "interrupted",
+    "generated": 0,
+    "delivered": 0,
+    "failed": 0,
+    "undelivered": 0,
+    "partitions": {},
+    "duplicates": 0,
+    "unstructured": 0,
+    "duration_seconds": 244.339381421,
+    "delivered_per_second": 0.0
+  },
+  "original_restoration": {
+    "status": "incomplete",
+    "errors": [
+      {
+        "step": "stress_baseline_created",
+        "error": "RuntimeError"
+      }
+    ],
+    "successful_steps": [
+      "stop_test_stress",
+      "trainer_baseline_config",
+      "remove_finished_test_stress",
+      "grafana_baseline",
+      "mongo-express_baseline",
+      "scraper_original"
+    ],
+    "error_detail": "Only RuntimeError was saved for stress_baseline_created; original stderr unavailable"
+  },
+  "restoration_followup": {
+    "timestamp": 1794375962.0598521,
+    "action_origin": "operator_cleanup",
+    "original_result_preserved": true,
+    "cause_verification": {
+      "command": [
+        "docker",
+        "compose",
+        "create",
+        "--no-deps",
+        "--help"
+      ],
+      "exit_code": 1,
+      "stderr": "unknown flag: --no-deps"
+    },
+    "repair_command": [
+      "docker",
+      "compose",
+      "-f",
+      "docker-compose.yml",
+      "up",
+      "--no-start",
+      "--no-deps",
+      "--no-build",
+      "--pull",
+      "never",
+      "stress-agent"
+    ],
+    "exit_code": 0,
+    "checks": {
+      "command_succeeded": true,
+      "stress_created_not_running": true,
+      "original_stress_image": true,
+      "stress_disabled": true,
+      "control_disabled": true,
+      "other_container_ids_unchanged": true,
+      "other_containers_not_restarted_by_repair": true,
+      "policy_restored": true
+    },
+    "status": "restored",
+    "restored_stress_agent": {
+      "id": "16b26ea83a4907595bd1d410d3bc19d5f62512c232ded69fcff8a47b2311a44d",
+      "image": "sha256:76378595d5f4de47a731b27035806ad79a071a16b2264589af7a0f3f7ca7168a",
+      "state": "created",
+      "started_at": "0001-01-01T00:00:00Z",
+      "health": null,
+      "control_enabled": "false",
+      "stress_enabled": "false"
+    }
+  },
+  "conclusions": {
+    "live_model_decision_received": true,
+    "live_model_selected_optional_stops_verified": 2,
+    "live_model_selected_starts_verified": 0,
+    "live_model_selected_trainer_stop_verified": false,
+    "live_ingress_policy_zero_verified": true,
+    "nonzero_load_processing_verified": false,
+    "overload_stability_proven": false,
+    "continuous_controller_enabled": false,
+    "two_hour_telemetry_collection_completed_by_this_trial": false,
+    "original_trial_cleanup_repaired": true
+  },
+  "limitations": [
+    "No stress records were generated or delivered. Zero Kafka lag does not prove processing stability under load.",
+    "Both model actions were stops. Service restarts were performed by trial cleanup, so automatic LLM recovery/start is unproven.",
+    "Grafana footprint was approximately 406.30 MiB and mongo-express footprint 46.06 MiB before stopping; these are not measurements of host RAM released.",
+    "VM available memory increased after Grafana stopped, while host available memory decreased in the adjacent sample. Host memory recovery cannot be attributed to these actions.",
+    "The model provider failed or entered cooldown in five cycles; guard policy kept admission paused.",
+    "One Kafka telemetry failure and two incomplete interval samples interrupted valid feedback observations.",
+    "Core container IDs were unchanged in collected samples; no claim is made about uninterrupted service between samples or capacity under overload.",
+    "Original cleanup failed to recreate the dormant stress-agent container. Operator cleanup repaired it on 2026-11-11 using the original image with stress and control disabled; this repair is not an LLM action.",
+    "Local runtime artifacts are ignored by Git; this committed summary retains sanitized receipts and hashes for audit."
+  ],
+  "runtime_evidence": [
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/result.json",
+      "sha256": "785174e754510d7fddf1a3d71a8816cb9545b8205531ddf323465fbb68b41e9e"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/events.jsonl",
+      "sha256": "feeeaf59e59930ee50579b1d1128552f119d104a605ce7d520672410fd7f3c1f"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/samples.jsonl",
+      "sha256": "552d2d914f61da3eae6832186f93c306e67f11c3eace6ad1f8c8861f5e84d854"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/decisions.jsonl",
+      "sha256": "67187c1c74c76fb3f15efbe71091d6eeb58c3e7757269b2763af76a8ab8bd7b3"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/lifecycle_actions.jsonl",
+      "sha256": "08c4a0640324941b49411a294a2917d0a2779cd99154368255000cbfc4ac4e55"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/deployment-verified.json",
+      "sha256": "38c187b7b501e20bb5746929e19a32b697e050934ec0765aa34596889911bc7b"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/initial.json",
+      "sha256": "67d3e1b149eabc6dbfe317bf6ad68486128414e4900452e9a69b6e6877169dd6"
+    },
+    {
+      "path": "runtime/stress/lifecycle-live-20261105-02/report.json",
+      "sha256": "78d94edb650c9140bffc05acfb751373309a19c76de1972a8699e8e98fe916f9"
+    },
+    {
+      "path": "runtime/stress/lifecycle-live-20261105-02/manifest.json",
+      "sha256": "8de542af8d97f4266030e82b15cfda971b977c91c4f867b99ea02843d51f3a16"
+    },
+    {
+      "path": "runtime/stress/lifecycle-live-20261105-02/ground_truth.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/restoration-followup-20261111.json",
+      "sha256": "7613125f8b43d738f528cce32e9cdf4ff04b66f1da6c1f781203ebe33a1f76fb"
+    },
+    {
+      "path": "runtime/diagnostics/container-lifecycle-20261105/trial-02/resume-preflight-20261111.json",
+      "sha256": "03c0f62ba4638cbc5834fe5b6d7efc7f5a44fcda213a09b35be7552e4003653b"
+    }
+  ],
+  "resume_preflight": {
+    "timestamp": 1794375984.3446574,
+    "host_available_gib": 0.9373550415039062,
+    "host_available_percent": 5.964383898139289,
+    "metrics": {
+      "8003": 200,
+      "8004": 200,
+      "8005": 200
+    },
+    "decision": "No duplicate stop trial; host headroom remained below the existing 10% admission floor, so restart and nonzero-throughput validation remain pending"
+  }
+}

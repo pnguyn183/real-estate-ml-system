@@ -294,7 +294,22 @@ Desktop chuyển tiếp các cổng metrics tới IP container cũ. Lượt ch�
 metrics thật từ bên trong Docker thu đủ telemetry hợp lệ, nhưng lời gọi model
 kết thúc bằng `provider_timeout`. Không ghi policy và không dừng/bật container.
 
-Chưa bật controller liên tục hoặc chứng minh LLM tự dừng/bật dịch vụ giúp giảm RAM
-và ổn định quá tải. Xem [bằng chứng](evidence/container-lifecycle-20261104.json)
-và [checkpoint triển khai](CONTAINER_LIFECYCLE_CHECKPOINT.md) để tiếp tục đúng phần
-kiểm chứng thực tế còn thiếu.
+Ngày 05/11/2026, lượt `lifecycle-live-20261105-02` dùng metrics HTTP thật từ host,
+trainer có drain handshake và producer/trainer cùng đọc policy. Gemini chọn dừng
+Grafana rồi mongo-express; cả hai có receipt Docker xác nhận đúng container đã dừng.
+Footprint trước dừng lần lượt 406,30 và 46,06 MiB; đây không phải lượng RAM host
+đã thu hồi. Sau lần dừng Grafana, RAM khả dụng VM tăng 62,21 → 64,26%, nhưng RAM
+khả dụng host giảm 6,74 → 5,53%; biến động đồng thời không chứng minh quan hệ nhân quả.
+
+Lượt này có 23 mẫu trong khoảng 205 giây, **0 record được phát/xử lý**, 3 lần
+`provider_unavailable`, 2 lần `provider_cooldown` và một mẫu lỗi Kafka
+`NOT_COORDINATOR` rồi phục hồi. Chưa có LLM chọn bật lại, chưa chứng minh giảm RAM
+host hoặc ổn định khi xử lý tải. Grafana/mongo-express được bật lại bởi script
+khôi phục, không phải model. Controller chỉ chạy trong phép thử hữu hạn.
+
+Ngày 11/11 đã hoàn tất bước khôi phục stress còn lỗi: `compose create --no-deps`
+không hỗ trợ cờ này; dùng `compose up --no-start --no-deps --no-build --pull never
+stress-agent` trả container về `Created`, đúng image/cấu hình gốc, không phát tải.
+Giữ nguyên kết quả lỗi lịch sử và lưu receipt sửa riêng. Xem
+[bằng chứng lượt chạy](evidence/container-lifecycle-live-20261105.json) và
+[checkpoint](CONTAINER_LIFECYCLE_CHECKPOINT.md).
