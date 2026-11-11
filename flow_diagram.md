@@ -16,7 +16,7 @@ from active selection. The optional
 [Homedy source trial](README.md#alternative-source-trial-not-scheduled-ingestion)
 only writes local files under ignored `runtime/source_trials/`; it is not
 connected to Kafka, MongoDB or training and is not a replacement data source.
-Its partial results are recorded in [project status](docs/PROJECT_STATUS.md#homedy-source-trial--2026-09-10).
+Its partial results are recorded in [source validation](docs/evidence/PIPELINE_VALIDATION_20260910.md#homedy-source-trial--2026-09-10).
 
 ## The story in plain language
 
@@ -273,7 +273,7 @@ Unimplemented guarantees: global API quota across AI replicas, atomic
 cross-collection source-version writes, automatic DLQ replay and cross-URL
 near-duplicate merging. No Spark, GPU, local LLM or additional processing team
 is introduced. Runtime verification results and environment limitations are in
-[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+[pipeline validation](docs/evidence/PIPELINE_VALIDATION_20260910.md).
 
 ## Source of truth
 

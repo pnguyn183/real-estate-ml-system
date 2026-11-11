@@ -1,16 +1,16 @@
 # Traffic prediction and adaptive admission research
 
-The separate [LLM feedback agent](../docs/LLM_FEEDBACK_CONTROL.md) on `dev`
-controls the real stress/crawl publishers and dedicated trainer. The new
+The [LLM feedback agent](../docs/LLM_FEEDBACK_CONTROL.md)
+controls the stress/crawl publishers and dedicated trainer. The
 [LLM overload experiment](../docs/LLM_OVERLOAD_EXPERIMENT.md) adds calibration and
 three paired trials with demand measured before admission. The existing
 `run_experiment` command retains the rule-based comparison; its historical
 results are not measurements of the LLM policy.
 
 The research target is incoming data traffic and sustainable Kafka processing.
-The existing property-price API remains a separate legacy application. Read
-[`docs/LECTURER_AUDIT_BEFORE.md`](../docs/LECTURER_AUDIT_BEFORE.md) for the
-pre-implementation requirement matrix.
+The property-price API is a separate application of the data pipeline. The
+[Project Report](../docs/PROJECT_REPORT.md) describes implemented capabilities,
+experimental results and remaining validation requirements.
 
 ## Reproduce
 
@@ -163,10 +163,10 @@ See [the session guide](../docs/TRAFFIC_SESSIONS.md) for commands and limitation
 
 The [Project Report](../docs/PROJECT_REPORT.md) consolidates implementation
 progress, capabilities, experimental results and evidence across the project.
-The [October 23 inventory](../docs/TELEMETRY_STATUS_20261023.md) verifies existing
-history and separates sample-count readiness from forecast validation. The next
-two-hour session is prepared but has not started; Docker is currently offline.
-The [October 24 follow-up](../docs/TELEMETRY_STATUS_20261024.md) records another
+The [October 23 inventory](../docs/evidence/TELEMETRY_VALIDATION_20261023.md) verifies existing
+history and separates sample-count readiness from forecast validation. Its
+two-hour collection plan is recorded as prepared, not as a completed run.
+The [October 24 follow-up](../docs/evidence/TELEMETRY_VALIDATION_20261024.md) records another
 interrupted session and evaluates seven finalized histories: the five-minute
 candidate passes the experimental gate, while the ten-minute candidate fails.
 

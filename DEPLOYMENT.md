@@ -127,7 +127,7 @@ docker compose logs --tail=200
 unauthenticated and must not be exposed publicly.
 Disabled AI health should return `{"alive": true, "enabled": false}`; this
 does not prove Kafka connectivity or external extraction. See
-[PROJECT_STATUS](docs/PROJECT_STATUS.md) for actual verification results.
+[pipeline validation](docs/evidence/PIPELINE_VALIDATION_20260910.md) for actual verification results.
 
 ## Local development without Compose
 

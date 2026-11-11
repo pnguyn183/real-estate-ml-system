@@ -82,7 +82,7 @@ The PRD targets R² > 0.75, MAE/RMSE limits, freshness, throughput and uptime.
 They are retained in [`REQUIREMENTS.md`](REQUIREMENTS.md) and
 [`METRICS_AND_SLA.md`](METRICS_AND_SLA.md), but no code currently evaluates all
 of them as release gates. The latest observed model metrics are documented in
-[`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+the [Project Report](PROJECT_REPORT.md).
 
 ## Operational acceptance checklist
 
@@ -113,5 +113,5 @@ Do not mark a box as passed from configuration inspection alone. Record the
 command, timestamp and environment for each run. No stakeholder sign-off or
 fabricated acceptance report is stored in this repository.
 
-See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for dated executed results rather
+See [pipeline validation](evidence/PIPELINE_VALIDATION_20260910.md) for dated executed results rather
 than interpreting this checklist as a passed release.

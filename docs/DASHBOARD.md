@@ -37,7 +37,7 @@ measured history.
 
 These are **property-price** metrics. Traffic forecasts and adaptive control
 results must be evaluated from their own chronological experiments; price R²
-does not establish agent effectiveness. See [the lecturer research report](LECTURER_RESEARCH_REPORT.md).
+does not establish agent effectiveness. See the [Project Report](PROJECT_REPORT.md).
 
 The agent operations dashboard contains AI/stress panels, and the source
 ingestion dashboard contains crawl quality, access and freshness metrics. API

@@ -72,7 +72,7 @@ message is the normalized/audited record described below and is an extension or
 audit feed, not the trainer input. The trainer reads MongoDB `training_features`.
 The configured topic has three partitions and replication factor three
 (minimum ISR two), with broker-default retention. Actual broker state must be
-verified separately; see [PROJECT_STATUS.md](PROJECT_STATUS.md).
+verified separately; see [pipeline validation](evidence/PIPELINE_VALIDATION_20260910.md).
 
 ### Agent topics
 

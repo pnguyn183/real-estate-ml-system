@@ -1,7 +1,7 @@
 # ML pipeline audit
 
 **Implementation reviewed:** 2026-09-08. Runtime/test evidence is recorded
-separately in [PROJECT_STATUS.md](PROJECT_STATUS.md).
+separately in [pipeline validation](evidence/PIPELINE_VALIDATION_20260910.md).
 
 This audit describes the code currently executed by Compose. It does not
 describe a planned Spark/data-lake architecture.

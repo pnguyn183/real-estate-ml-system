@@ -2,12 +2,11 @@
 
 ## Audit before migration — 2026-09-17
 
-The working tree already contains uncommitted Agent, Docker, monitoring and
-Airflow changes. They are retained, not reset. This document separates observed
-behavior from implementation and future verification.
+This document records the source migration, its data contracts and validation
+results. The dated baseline below provides context for the current adapters.
 
 The following findings describe the pre-migration state on 2026-09-17, not
-current operating instructions. At that checkpoint, ingestion entrypoints were
+current operating instructions. At that time, ingestion entrypoints were
 `scripts/auto_scrape.py`, the optional Airflow DAG and `scraper/kafka_producer.py`.
 The producer accepted a Batdongsan fallback; an intermediate Homedy-only adapter
 was also present. Neither provided a three-source contract. Batdongsan selectors,

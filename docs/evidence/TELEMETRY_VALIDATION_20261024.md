@@ -1,12 +1,12 @@
-# Telemetry follow-up — 2026-10-24
+# Telemetry and forecast validation — 2026-10-24
 
 **The additional two-hour collection is still incomplete.** A separate session
 started on October 23 local time recorded about 27 minutes before its Docker VM
 memory guard stopped admission. This session was discovered after the
-[October 23 inventory](TELEMETRY_STATUS_20261023.md); it does not replace that
+[October 23 inventory](TELEMETRY_VALIDATION_20261023.md); it does not replace that
 historical assessment or complete the saved collection plan.
 
-The [evidence file](evidence/telemetry-status-20261024.json) records raw artifact
+The [evidence file](telemetry-status-20261024.json) records raw artifact
 hashes, accounting, memory samples and the deployment-verification limitation.
 The raw session is
 `runtime/research/traffic-sessions/session-20261022T233647.626631Z-8f23060b`.
@@ -51,8 +51,8 @@ current requested rate will remain unchanged.
 | +5 minutes | XGBoost | 4.554 / 27.587 | 8.588 / 27.697 | 0.699 | Passed for experimental inference only |
 | +10 minutes | Gradient Boosting | 15.175 / 28.314 | 16.813 / 27.894 | -0.084 | Failed export criterion |
 
-Recorded comparison charts: [+5 minutes](evidence/telemetry-forecast-300s-20261024.png)
-and [+10 minutes](evidence/telemetry-forecast-600s-20261024.png).
+Recorded comparison charts: [+5 minutes](telemetry-forecast-300s-20261024.png)
+and [+10 minutes](telemetry-forecast-600s-20261024.png).
 
 RMSE units are records/second. The five-minute model reduces test RMSE by 68.99%
 relative to persistence. Its outer train/test sizes are 676/185, with 531/136
@@ -96,10 +96,10 @@ does not establish which image a running container used. Verify the deployed
 dependency hash before the next run, and recreate processors from the updated
 image if necessary.
 
-## Current continuation
+## Collection preflight observations
 
-During the October 24 continuation, the coordinating agent observed host RAM
-fall from about 3.25 GiB available before Docker startup to about 0.01 GiB
+The October 24 preflight recorded host RAM
+falling from about 3.25 GiB available before Docker startup to about 0.01 GiB
 (0.09%) afterward. No new workload collection was started. Docker Desktop was
 stopped successfully to return to its initial off state; available host RAM then
 recovered to 4.25 GiB (27.06%). The checks are saved in
@@ -129,5 +129,5 @@ It reduces incoming work but does not guarantee that the existing runtime fits
 in available memory. It has **not** been started, and this document does not
 count planned samples as collected data.
 
-The matched baseline-versus-LLM overload experiment remains separately pending;
-the user's current instruction excludes that RAM-intensive work.
+The matched baseline-versus-LLM overload experiment was not executed in this
+validation; it requires a separate run with sufficient resource headroom.

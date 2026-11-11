@@ -120,7 +120,7 @@ container hoặc khởi động dịch vụ vốn đã tắt.
 
 ## Điểm tiếp tục ngày 23/10/2026
 
-[Lượt 19/10](LLM_OVERLOAD_VALIDATION_20261019.md) dừng vì RAM host trước khi
+[Lượt 19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md) dừng vì RAM host trước khi
 chạy nhánh LLM; không có phép thử đối chứng nào được xác nhận đạt. Theo yêu cầu
 ngày 23/10, chưa chạy lại phần thử tải cần thêm RAM.
 
@@ -133,5 +133,5 @@ trên Docker thật. Cần build lại image processor trước khi kiểm chứ
 
 Phần tích hợp giới hạn cache MongoDB viết dở đã được gỡ; không có thay đổi cấu
 hình cache MongoDB được thực hiện. Giới hạn Docker và ngưỡng dừng giữ nguyên.
-Xem riêng [tình trạng dữ liệu telemetry](TELEMETRY_STATUS_20261023.md): thu lịch
+Xem riêng [tình trạng dữ liệu telemetry](evidence/TELEMETRY_VALIDATION_20261023.md): thu lịch
 sử dự báo không thay thế phép thử chứng minh LLM điều tiết khi quá tải.

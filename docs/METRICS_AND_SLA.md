@@ -35,7 +35,7 @@ An earlier local audit recorded an artifact trained from 4,943 candidates:
 | Median absolute percentage error | 27.5% |
 
 These are historical measurements, not a fresh verification of the mounted
-artifact or evidence of current runtime health. See `PROJECT_STATUS.md` for
+artifact or evidence of current runtime health. See [Project Report](PROJECT_REPORT.md) for
 the latest checks; the original PRD quality targets are not claimed as met.
 
 ## Product targets (not runtime guarantees)

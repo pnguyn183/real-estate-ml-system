@@ -27,10 +27,9 @@ gặp `PermissionError` khi còn handle đọc mở. Bản sửa thử lại có
 lỗi quyền truy cập này; lease hết hạn, dữ liệu sai và file mất vẫn đóng gate.
 
 Mỗi phiên đã khôi phục đủ dịch vụ đã tạm dừng với `restore_errors=[]`. Không đổi
-Compose, `.env` hoặc giới hạn Docker trong phép thử. Nhánh `main` giữ commit
-`a2c5fbb8459015c1924ed78449de41240e995e13`.
+Compose, `.env` hoặc giới hạn Docker trong phép thử.
 
-[Tổng hợp có thể kiểm tra bằng máy](evidence/llm-overload-20261013.json) lưu số
+[Tổng hợp có thể kiểm tra bằng máy](llm-overload-20261013.json) lưu số
 đếm và commit của từng phiên. Raw telemetry, event ledger, action receipts và
 manifest khôi phục nằm trong ba thư mục tương ứng dưới `runtime/research/`.
 Phiên ngày 12 dùng mã đang phát triển; phiên ngày 13 dùng commit `c2ecbcc`.
@@ -40,6 +39,6 @@ FeedbackAgent đạt sau các sửa cuối. Lượt kiểm tra toàn bộ trư�
 có 1.209 tests đạt. Fixture giả lập dùng kiểm tra logic không được tính vào bằng
 chứng chạy Docker/LLM thực tế.
 
-Xem [hướng dẫn chạy và điều kiện kết luận](LLM_OVERLOAD_EXPERIMENT.md). Cần có
+Xem [hướng dẫn chạy và điều kiện kết luận](../LLM_OVERLOAD_EXPERIMENT.md). Cần có
 RAM trống ổn định khi **Docker đang chạy**, rồi chạy lại hiệu chuẩn và đủ ba cặp
 baseline/LLM. Không hạ ngưỡng RAM hoặc loại bỏ lượt không đạt để đổi kết luận.

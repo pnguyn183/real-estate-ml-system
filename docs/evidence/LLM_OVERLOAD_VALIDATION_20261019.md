@@ -8,9 +8,8 @@ hợp lệ**, chưa tới pha quá tải 500 bản ghi/giây.
 Mã nguồn lúc chạy là `778fe1e479f995265b8bb3cea8d8c8f0bef3a914`, đã bao gồm sửa
 observer Kafka tại `e5c5664`: timeout đọc commit tăng từ 2 lên 5 giây, thời gian
 chờ đóng observer có giới hạn 11 giây và bổ sung chẩn đoán lỗi Kafka đã lọc.
-Lỗi quan sát vẫn làm phép thử không hợp lệ. Phiên làm việc trước ghi nhận 47 kiểm
-thử liên quan đạt; đây là kết quả lịch sử, không phải lượt chạy lại khi tổng hợp
-tài liệu ngày 23/10.
+Lỗi quan sát vẫn làm phép thử không hợp lệ. Bản sửa observer có 47 kiểm thử liên
+quan đạt; kết quả kiểm thử mã không thay thế kết quả đối chứng dưới tải.
 
 | Chỉ số của lượt 19/10 | Kết quả |
 | --- | --- |
@@ -53,13 +52,12 @@ Training được dừng trong phép thử; giới hạn mỗi processor giữ �
 RAM. Manifest ghi nhận bảy dịch vụ được khôi phục: frontend, mongo-express, API,
 scraper, predictor, Grafana và trainer. Không có lỗi cleanup được ghi nhận.
 
-Phần chưa hoàn thành vẫn là đối chứng ít nhất ba cặp AB/BA với quyết định model
-thật và sự phục hồi khi nhu cầu đầu vào còn cao. Theo phạm vi người dùng đặt
-ngày 23/10, lượt thử tải cần thêm RAM được để lại; tài liệu này chỉ hoàn tất
-tổng hợp bằng chứng đã có. Thu thập telemetry thụ động là công việc riêng và
-không tự thay thế đối chứng LLM.
+Tiêu chí chưa được kiểm chứng là ít nhất ba cặp AB/BA với quyết định model thật
+và sự phục hồi khi nhu cầu đầu vào còn cao. Các lượt thử tiếp theo cần đủ RAM
+để vượt qua pha khởi động và duy trì tải. Thu thập telemetry thụ động không
+thay thế đối chứng LLM.
 
-[Số liệu và nguồn artifact](evidence/llm-overload-20261019.json),
+[Số liệu và nguồn artifact](llm-overload-20261019.json),
 [các lượt ngày 14/10](LLM_OVERLOAD_VALIDATION_20261014.md),
-[quy trình đối chứng](LLM_OVERLOAD_EXPERIMENT.md).
+[quy trình đối chứng](../LLM_OVERLOAD_EXPERIMENT.md).
 Raw artifacts: `runtime/research/llm-proof-20261019-01/`.

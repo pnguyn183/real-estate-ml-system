@@ -122,7 +122,7 @@ checks all three partitions, exact duplicates, cached difficult input, malformed
 JSON, bounded timeout retry and review recovery. Afterward restore
 `AI_STRESS_ENABLED=false` and recreate the Processors. Never report this as a
 real external-provider test or a live website scrape. Actual dated results
-belong in [PROJECT_STATUS.md](PROJECT_STATUS.md).
+belong in [validation evidence](evidence/README.md).
 
 Requests are acknowledged before source commits; the AI worker persists
 extraction state and acknowledges results before request commits. Result

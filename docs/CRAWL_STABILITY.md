@@ -132,9 +132,9 @@ Kết quả lần chạy cuối được lưu tại `runtime/crawl_review/valida
 thời gian gián đoạn từng nguồn. Nếu Homedy tiếp tục lỗi, Alonhadat vẫn được xử
 lý độc lập; không dùng số liệu giả hay giảm chuẩn kiểm tra để tăng số tin.
 
-## Tệp đã thay đổi trong phần kiểm tra crawl
+## Thành phần triển khai
 
-| Tệp | Thay đổi và mục đích |
+| Tệp | Vai trò |
 |---|---|
 | `scraper/multi_source.py` | Checkpoint sau ACK, lịch đọc lại, thứ tự thử lại, ngân sách lỗi và cách ly lỗi từng nguồn |
 | `scraper/kafka_producer.py` | Tham số refresh/ngân sách lỗi; xử lý lỗi gửi Kafka đồng bộ có giới hạn |
@@ -145,20 +145,11 @@ lý độc lập; không dùng số liệu giả hay giảm chuẩn kiểm tra �
 | `scripts/check_crawl_sources.py` | Lệnh kiểm tra trực tiếp có giới hạn, xuất JSON và báo suy giảm trung thực |
 | `docker-compose.yml` | Truyền cấu hình checkpoint/refresh/ngân sách lỗi cho crawler và Airflow |
 | `.env.example` | Mặc định giữ tiến độ, đọc lại sau một ngày; ghi rõ cấu hình |
-| `.env` (local, không commit) | Áp dụng checkpoint chung và tắt fresh-start cho các lượt tự động |
 | `monitoring/alert_rules.yml` | Cảnh báo metrics không đọc được, lỗi lặp lại, nguồn không được kiểm tra, dữ liệu cũ |
 | `utils/tests/test_multi_source_runtime.py` | Kiểm tra ACK/replay, refresh, URL lỗi, metrics và state hỏng |
 | `utils/tests/test_scrape_scheduler.py` | Kiểm tra timeout/lỗi độc lập và tiếp tục nguồn sau |
 | `utils/tests/test_source_http_stability.py` | Kiểm tra retry, robots, cooldown và giới hạn lỗi HTTP |
 | `utils/tests/test_source_check.py` | Kiểm tra công cụ chẩn đoán báo đúng nguồn suy giảm/tắt |
-| `README.md` | Liên kết kết quả; hướng dẫn tránh chạy crawler đồng thời |
-| `airflow/README.md` | Sửa mô tả nguồn mặc định và điều kiện bật crawl |
-| `docs/SOURCE_MIGRATION.md` | Đánh dấu kiến trúc cũ là lịch sử, liên kết trạng thái hiện tại |
-| `docs/AUTOMATION.md` | Cập nhật retry, metrics, giới hạn lượt đầu và checkpoint |
-| `DEPLOYMENT.md` | Cập nhật mặc định 10 tin/một trang mỗi nguồn và giữ checkpoint |
-| `docs/ERROR_HANDLING_STRATEGY.md` | Cập nhật ACK, timeout từng nguồn, lịch retry và metrics |
-| `docs/CRAWL_STABILITY.md` | Bằng chứng kiểm tra, giới hạn kết luận và cách kiểm chứng lại |
 
-Báo cáo nghiên cứu trước đó được hoàn tất riêng tại
-[LECTURER_RESEARCH_REPORT.md](LECTURER_RESEARCH_REPORT.md), gồm kết quả thực nghiệm,
-biểu đồ và các yêu cầu giảng viên còn thiếu dữ liệu để kết luận.
+Kết quả thực nghiệm và các giới hạn kiểm chứng được tổng hợp trong
+[Project Report](PROJECT_REPORT.md).

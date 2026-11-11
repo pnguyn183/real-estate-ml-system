@@ -11,7 +11,7 @@ data, keeps a reproducible training history, and serves predictions to a web
 client. Product targets are R² > 0.75, bounded MAE/RMSE, fresh training data,
 99.5% availability and sub-second API responses. These values are goals for
 measurement and release policy; they are not current guarantees. Observed
-metrics are recorded in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+metrics are recorded in the [Project Report](PROJECT_REPORT.md).
 
 ## Functional requirements mapped to the repository
 
@@ -103,7 +103,7 @@ the authenticated API for single predictions and role-authorized batch/model
 operations.
 
 Implementation rows above are source-level status, not blanket live-test PASS
-claims. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for implemented-and-tested,
+claims. See the [Project Report](PROJECT_REPORT.md) for implemented-and-tested,
 untested and environment-blocked checks.
 
 **Implementation reviewed:** 2026-09-08

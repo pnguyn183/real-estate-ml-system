@@ -1,30 +1,24 @@
 # Real Estate Price Prediction System
 
-The current **research objective is traffic prediction and adaptive Kafka
-admission control**. The price API below remains the legacy application. See
-[the pre-change lecturer audit](docs/LECTURER_AUDIT_BEFORE.md),
-[reproducible research commands](research/README.md), and
-[measured findings and remaining gaps](docs/LECTURER_RESEARCH_REPORT.md).
+A real estate data platform with Kafka ingestion, MongoDB storage, machine
+learning price prediction, an authenticated FastAPI API and a React frontend.
+It includes structured extraction, synthetic load generation, traffic forecasting
+and LLM feedback control for admission rate and Docker resources.
 
-On `dev`, the [LLM feedback agent](docs/LLM_FEEDBACK_CONTROL.md) now chooses
-ingress rate, training permission and bounded CPU/RAM changes from observed
-metrics. With `CONTROL_CONTAINER_ENABLED=true`, it can also choose to stop or
-restart an explicitly allowed auxiliary service, using measured memory and its
-record of containers it stopped. A live trial verified LLM-selected stops of
-Grafana and mongo-express; automatic restart and stability under active load
-remain unverified. See the [live evidence](docs/evidence/container-lifecycle-live-20261105.json) and
-[lifecycle checkpoint](docs/CONTAINER_LIFECYCLE_CHECKPOINT.md).
-It can persist verified allocations in `docker-compose.yml` and use a configured
-fallback model. Start with
-`python -m agents.control_agent --observe-only --once`; live execution requires
-the documented control-aware deployment.
-The two-agent reporting baseline on `main` is maintained separately.
+The supported deployment is a single-host Docker Compose stack for local
+development and validation. Kafka uses three ZooKeeper-mode brokers with
+replicated, partitioned topics; the brokers share one host, so this deployment
+does not provide host-level high availability.
 
-Python/Kafka/MongoDB/scikit-learn pipeline with an authenticated FastAPI API and
-React frontend. The supported deployment is a single-host Docker Compose stack
-for local development and validation. Kafka runs as three ZooKeeper-mode
-brokers with replicated, partitioned topics; the brokers still share one host
-and are not production host-level HA.
+The [LLM feedback agent](docs/LLM_FEEDBACK_CONTROL.md) selects ingress rate,
+training permission and bounded CPU/RAM changes from measured telemetry. Optional
+container control lets it stop and restart allowed auxiliary services. Live
+validation has confirmed LLM-selected stops of Grafana and mongo-express;
+automatic restart and stability under active load remain unverified.
+
+See the [Project Report](docs/PROJECT_REPORT.md) for capabilities, measured results
+and limitations, the [documentation index](docs/README.md) for architecture and
+operations, and the [research guide](research/README.md) for reproducible experiments.
 
 ## Runtime flow
 
@@ -67,11 +61,10 @@ For the complete implementation map and detailed Mermaid diagrams, see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [flow_diagram.md](flow_diagram.md).
 
-See the [Project Report](docs/PROJECT_REPORT.md) for implementation progress,
-implemented capabilities, completed work, remaining gaps and Gemini input/output evidence.
 One synthetic record was verified through the real Gemini API on 2026-09-24;
-this does not establish dataset-wide extraction accuracy. The earlier
-[verification history](docs/PROJECT_STATUS.md) remains dated historical evidence.
+the [Project Report](docs/PROJECT_REPORT.md) includes the input/output evidence.
+This does not establish dataset-wide extraction accuracy. Earlier pipeline checks
+are preserved as [validation evidence](docs/evidence/PIPELINE_VALIDATION_20260910.md).
 Batdongsan is no longer selectable by the crawler.
 
 ## Repository structure
@@ -85,7 +78,8 @@ scripts/        scheduled scraper/trainer and health helper
 frontend/       React/TypeScript/Vite source and Nginx image
 monitoring/     Prometheus config, alert rules and Grafana provisioning
 utils/tests/    Python unit tests
-docs/           Architecture, schema, operations, targets and audits
+docs/           Architecture, schema, operations and Project Report
+docs/evidence/  Dated validation results and supporting measurements
 ```
 
 ## Quick start
@@ -195,7 +189,7 @@ Exit 0 means all requested records passed compatibility checks; exit 1 means
 real record; four sequential responses hit the size guard. Isolated retrieval
 of one affected URL returned about 605 KB, so the sequential-response problem
 is unresolved; this is **not** evidence that bulk crawling is ready. See
-[the trial evidence](docs/PROJECT_STATUS.md#homedy-source-trial--2026-09-10).
+[the trial evidence](docs/evidence/PIPELINE_VALIDATION_20260910.md#homedy-source-trial--2026-09-10).
 
 Records retain `source=homedy`, `is_synthetic=false`, source URL/ID and scrape
 time, with `verified=0`. These are asking prices in advertisements, not verified

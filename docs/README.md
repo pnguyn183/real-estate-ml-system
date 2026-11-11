@@ -8,13 +8,12 @@ or product targets; target values are not reported as achieved runtime results.
 
 ## Start here
 
-- [`PROJECT_REPORT.md`](PROJECT_REPORT.md) - implementation progress, capabilities, experimental results and dated evidence; updated 2026-10-26.
+- [Project Report](PROJECT_REPORT.md) - consolidated project scope, capabilities, experimental results, limitations and future work.
 - [`../flow_diagram.md`](../flow_diagram.md) - normal, AI fallback and synthetic-isolation visual flows.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) - implementation/configuration map and technical details.
 - [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md) - repository map and component entry points.
 - [`QUICK_REFERENCE.md`](QUICK_REFERENCE.md) - ports, endpoints, roles and common commands.
 - [`RUNBOOK.md`](RUNBOOK.md) - local Compose startup, checks and recovery.
-- [`PROJECT_STATUS.md`](PROJECT_STATUS.md) - dated operational verification and limitations from September 9–10.
 
 ## Implementation references
 
@@ -35,7 +34,7 @@ or product targets; target values are not reported as achieved runtime results.
 - [`METRICS_AND_SLA.md`](METRICS_AND_SLA.md) - exported metrics, alert thresholds and non-binding target values.
 
 These three files preserve the intended product targets, but do not claim that
-the current model or deployment has met them. See `PROJECT_STATUS.md` for the
+the current model or deployment has met them. See [Project Report](PROJECT_REPORT.md) for the
 latest observed values.
 
 ## Deployment and frontend
@@ -44,6 +43,14 @@ latest observed values.
 - [`../frontend/README.md`](../frontend/README.md) - React application development and API integration.
 - [`../scripts/README.md`](../scripts/README.md) - helper scripts and their actual defaults.
 - [`../monitoring/README.md`](../monitoring/README.md) - Prometheus/Grafana configuration.
+
+## Feedback control and validation
+
+- [LLM feedback control](LLM_FEEDBACK_CONTROL.md) - telemetry, model decisions, rate limits and Docker actuators.
+- [Overload experiments](LLM_OVERLOAD_EXPERIMENT.md) - workload design, matched comparisons and acceptance criteria.
+- [Telemetry collection](TRAFFIC_SESSIONS.md) - bounded sessions, resource guards and dataset export.
+- [Research commands](../research/README.md) - reproducible experiments and forecasting benchmarks.
+- [Validation evidence](evidence/README.md) - dated test results, measurements and artifact hashes supporting the Project Report.
 
 ## Current verification
 
@@ -56,7 +63,7 @@ repository does not contain a Spark cluster, physical lake layers, PostgreSQL,
 Redis, Elasticsearch/ELK, Jaeger, Alertmanager, Kubernetes manifests or a CI/CD
 pipeline. Do not infer those components from older planning text.
 
-Use `PROJECT_STATUS.md` for the dated verification evidence and environment
+Use [Project Report](PROJECT_REPORT.md) for the dated verification evidence and environment
 limitations; configuration alone does not prove a successful container build,
 healthy Kafka cluster or a working external provider. Re-run the commands in
 `RUNBOOK.md` after changing runtime code or configuration.

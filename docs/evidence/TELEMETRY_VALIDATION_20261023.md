@@ -5,7 +5,7 @@ forecast evaluations, but no recent forecast validation or completed comparison
 showing LLM overload control is available. Collecting for two hours alone does not
 establish either result.
 
-The [verified inventory](evidence/telemetry-status-20261023.json) records raw-file
+The [verified inventory](telemetry-status-20261023.json) records raw-file
 SHA-256 hashes, session status and structural split counts. This assessment read
 the existing files; it did not start Docker, publish traffic, call an LLM or fit
 models.
@@ -53,10 +53,9 @@ cannot establish daily/weekly patterns or production generalization.
 
 ## Additional two-hour collection
 
-At this assessment Docker is off, and the coordinating agent measured only about
-0.57 GiB of available host RAM. **No additional collection was started.** Starting
-the pipeline is deferred under the user's instruction to exclude RAM-dependent
-work. A collector pointed at stopped Docker services would only record failures.
+At the assessment time, Docker was off and available host RAM was approximately
+0.57 GiB. **No additional collection was started.** A collector pointed at stopped
+Docker services would only record failures.
 
 The saved dry-run plan is
 `runtime/research/telemetry-preparation-20261023/plan.json`; its accompanying

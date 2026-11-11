@@ -60,8 +60,8 @@ giảm tốc của model và sự phục hồi khi nhu cầu đầu vào vẫn c
 đầy đủ dữ liệu chờ hoặc bị từ chối. Không dùng việc backlog giảm sau khi guard
 dừng tải làm bằng chứng LLM điều tiết thành công.
 
-[Số liệu tổng hợp](evidence/llm-overload-20261014.json),
+[Số liệu tổng hợp](llm-overload-20261014.json),
 [các lượt trước](LLM_OVERLOAD_VALIDATION_20261013.md),
-[hướng dẫn chạy lại](LLM_OVERLOAD_EXPERIMENT.md).
+[hướng dẫn chạy lại](../LLM_OVERLOAD_EXPERIMENT.md).
 Raw artifacts: `runtime/research/llm-proof-20261014-01/`,
 `runtime/research/llm-proof-20261014-02/`, `runtime/research/llm-proof-20261014-03/`.

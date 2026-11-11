@@ -6,7 +6,7 @@ It is intentionally a local-development architecture: three Kafka brokers run
 on one Docker host, use ZooKeeper (not KRaft), and share the Compose network.
 This is an implementation reference, not a claim that every container or an
 external LLM has been exercised. Current verification evidence and environment
-limitations are in [PROJECT_STATUS.md](PROJECT_STATUS.md).
+limitations are in the [Project Report](PROJECT_REPORT.md).
 
 ## 1. System overview
 
@@ -75,7 +75,7 @@ data, not synthetic, so they must remain local until separately approved; the
 synthetic filter is not their isolation mechanism. The partial 2026-09-10
 result does not establish bulk-source readiness. See the
 [trial command and boundaries](../README.md#alternative-source-trial-not-scheduled-ingestion)
-and [evidence](PROJECT_STATUS.md#homedy-source-trial--2026-09-10).
+and [evidence](evidence/PIPELINE_VALIDATION_20260910.md#homedy-source-trial--2026-09-10).
 
 1. `scraper/multi_source.py` uses source-specific adapters and robots-aware
    bounded HTTP. It emits canonical v2 records, preserving original units and

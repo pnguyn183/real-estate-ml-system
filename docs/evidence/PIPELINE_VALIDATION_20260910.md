@@ -1,25 +1,22 @@
-# Project status and verification evidence
+# Pipeline validation — 2026-09-09–10
 
-For implementation progress, capabilities and verification results updated on
-2026-10-26, see [PROJECT_REPORT.md](PROJECT_REPORT.md), including the real Gemini
-request/response and final-storage evidence from 2026-09-24. The credentials and
-blocker statements below describe the dated September 9–10 experiments, not
-today's configuration.
+Archived technical evidence from the pipeline validation on 2026-09-09 and
+bounded Homedy source trial on 2026-09-10. Results, configuration and limitations
+refer to those test dates. Current capabilities and subsequent validation are
+summarized in [Project Report](../PROJECT_REPORT.md).
 
-Agent-pipeline verification: 2026-09-09. Source-trial follow-up: 2026-09-10.
-Scope: the existing single-host Docker Compose project;
-this is not a production-HA certification. Verification continues from the
-previous implementation, not a redesign. Architecture contracts are in
-[ARCHITECTURE.md](ARCHITECTURE.md); friendly and technical visuals are in
-[flow_diagram.md](../flow_diagram.md).
+The tests cover a single-host Docker Compose deployment; they do not establish
+availability across multiple hosts. Component contracts are documented in
+[Architecture](../ARCHITECTURE.md), with visual flows in
+[flow_diagram.md](../../flow_diagram.md).
 
 ## Homedy source trial — 2026-09-10
 
-An opt-in source trial was added without changing the scheduled Batdongsan
-scraper, Compose, Kafka, Processors, agents or training pipeline. It is **partially
-runtime-verified, not ready for bulk ingestion**. No old source was removed.
+The opt-in source trial ran independently of scheduled ingestion, Kafka,
+Processors, agents and training. In this snapshot it was **partially verified,
+not ready for bulk ingestion**.
 
-- Docker Engine 29.6.2 was available after the operator opened Docker Desktop.
+- The environment used Docker Engine 29.6.2.
   `docker compose config --quiet` and `docker compose build scraper` passed.
 - The actual command `python -m scraper.homedy_scraper --limit 5 --delay 3`
   ran in a disposable container from the existing scraper image, with ignored
@@ -43,7 +40,7 @@ runtime-verified, not ready for bulk ingestion**. No old source was removed.
   additional unique listings.
 - HTTP/robots access succeeded in this snapshot. No CAPTCHA, browser session,
   credential, proxy rotation or external LLM was used. This neither fixes nor
-  re-verifies live Batdongsan crawling, whose latest established failure is 403.
+  re-verifies live Batdongsan crawling, which returned HTTP 403 in the September 9 test.
 - Raw records, checks and reports stay in ignored `runtime/source_trials/`.
   Kafka publications = 0; Mongo writes = 0; primary-training additions = 0.
   Tests explicitly forbid Kafka/Mongo constructors during a trial. Real trial
@@ -58,7 +55,7 @@ runtime-verified, not ready for bulk ingestion**. No old source was removed.
   The fixtures contain fabricated descriptions, not copied seller data.
 
 Commands and storage boundaries are in
-[README](../README.md#alternative-source-trial-not-scheduled-ingestion).
+[README](../../README.md#alternative-source-trial-not-scheduled-ingestion).
 The trial is intentionally capped at ten details with no pagination, automatic
 scheduling or Kafka integration. Before bulk use, resolve sequential retrieval,
 evaluate a representative sample, and establish appropriate collection/reuse
@@ -71,22 +68,20 @@ three brokers and Processors were running/healthy; `ai-agent` and `stress-agent`
 were observed exited and were not started or tested. No fresh LLM, prediction,
 training or end-to-end Kafka/Mongo test is claimed by this source trial.
 
-## Completion verdict (2026-09-09 full-stack verification)
+## Validation outcome — 2026-09-09
 
-**NOT YET READY for the full requested demonstration, including a real LLM.**
 Stored-real replay, distributed processing, mock AI integration and bounded
-synthetic generation have passed. Live scraping is blocked by HTTP 403.
-The repository-root `.env` was empty (0 bytes) when checked; the configured
-model and API key were therefore unavailable. No real external API request
-was made, and mock success is not evidence of external-provider compatibility.
-A replay/mock-only demonstration is available with those limitations stated.
+synthetic generation passed. Live scraping was blocked by HTTP 403. Real
+external LLM extraction was not tested because no model or API credentials
+were configured in this environment. Mock integration results do not establish
+external-provider compatibility.
 
 | Component | Status | Evidence / boundary |
 | --- | --- | --- |
 | Kafka / three Processors / MongoDB | IMPLEMENTED AND VERIFIED | Seven replicated topics, stable three-member group, real replay and synthetic writes |
 | AI request/result handling, cache, retries, validation | IMPLEMENTED AND VERIFIED | Actual Kafka/Mongo integration with explicitly simulated provider transport |
 | AI container, disabled mode | IMPLEMENTED AND VERIFIED | Healthy, enabled=false, no key required, no API calls or Kafka consumption |
-| Real external LLM extraction | BLOCKED BY EXTERNAL LIMITATION | Local `.env` empty; no selected model/key available to the worker |
+| Real external LLM extraction | NOT VERIFIED | No selected model or API credentials configured for this test |
 | Stress Agent | IMPLEMENTED AND VERIFIED | Bounded 12-message run, all ACKed, isolated Mongo persistence |
 | Synthetic training exclusion | IMPLEMENTED AND VERIFIED | Unit tests, shared filters, zero synthetic primary features, stress candidates excluded |
 | Trainer and model artifact | IMPLEMENTED AND VERIFIED | Startup training on 4,948 eligible real candidates; artifact loaded and legacy prediction returned a finite positive price |
@@ -95,7 +90,7 @@ A replay/mock-only demonstration is available with those limitations stated.
 | Prometheus / Grafana | IMPLEMENTED AND VERIFIED | Seven scrape targets up, config and six alert rules valid, Grafana health OK |
 | Live website scraping | BLOCKED BY EXTERNAL LIMITATION | batdongsan.com.vn returns HTTP 403; scheduler running does not mean crawl success |
 
-## Final architecture
+## Pipeline exercised
 
 Normal: website → scraper → `real_estate_raw` → the same three deterministic
 Processors → MongoDB `real_estate_db` → periodic trainer → joblib price model
@@ -160,7 +155,7 @@ publish failures leaving offsets uncommitted, cache reuse, stale/forged results,
 Mongo/DLQ failures, and synthetic exclusion before model training/evaluation.
 The direct-script Processor import regression test is included in the 198.
 
-The prior runtime fix retained here aliases the Docker `__main__` Processor
+The tested Docker image aliases the `__main__` Processor
 module to its canonical import name. Otherwise the lazy AI result import
 registered metrics twice and incorrectly treated valid result envelopes as
 malformed. Three affected earlier mock envelopes were recovered by exact
@@ -260,39 +255,24 @@ Prometheus targets: processors 8003/8004/8005, trainer 8001, AI 8006, stress
 8007 and Prometheus itself. AI/stress ports are not host-published. Agent
 counters are queryable; custom Agent Grafana panels have not been added.
 
-Docker Desktop initially needed starting. Broker restarts briefly encountered
+Broker restarts briefly encountered
 ZooKeeper ephemeral-node ownership errors and topic metadata warnings; they
 recovered automatically. Prometheus briefly could not resolve `ai-agent`
 during container recreation, then all seven targets became UP. The scraper's
 HTTP 403 remains a real external failure. Historical recovered mock DLQ/log
 entries remain. Logs have not been suppressed or deleted to appear clean.
 
-## Remaining limitations and future verification
+## Limitations at validation time
 
-- Save configured provider/model/key locally using the existing `LLM_*`
-  names, then perform exactly one bounded real-API request through Kafka and
-  verify its result/receipt in the synthetic database. Never paste the key into
-  chat, print resolved Compose config, or commit `.env`. Provider/model
-  compatibility cannot be concluded until this succeeds.
-- Verify authenticated FastAPI prediction and a complete browser journey with
-  an operator-controlled account; no new account was created by this audit.
-- Restore legitimate website access before claiming live crawling success.
+- External LLM extraction and provider compatibility were not verified in
+  these tests. Subsequent real-provider results are recorded in
+  [Project Report](../PROJECT_REPORT.md).
+- Authenticated prediction through the complete browser journey was not tested.
+- Live website crawling did not succeed in the September 9 test.
 - Sustained load, quota sharing across scaled AI workers and a new performance
   baseline were not tested here. Limits are per process, not global.
 - Exactly-once Kafka/Mongo/API transactions, atomic cross-collection stale
   writes, cross-URL fuzzy merging, automatic DLQ replay and dedicated Agent
-  Grafana panels are NOT IMPLEMENTED, not promised by the current flow.
-- Brokers share a host and have no explicit persistent volumes. MongoDB and
-  legacy predictor exposure are development-only security limitations.
-
-## Scope of this completion pass
-
-No architecture was redesigned, no service/topic was added and no application
-code was changed in this final verification pass. The previously implemented
-Processor import fix was retained and tested. Documentation corrections cover
-this evidence, safe `config --quiet` commands, the seven-topic/nine-assignment
-flow, standalone-versus-Compose environment settings and actual host exposure
-of the legacy predictor. Pre-existing local changes and document deletions were
-preserved; no existing project files were deleted. Temporary Mermaid render
-inputs/output were removed after both diagrams rendered successfully; the
-editable Markdown and full-size project SVG remain in the repository.
+  Grafana panels were not implemented in the tested version.
+- The tested brokers shared a host without explicit persistent volumes.
+  MongoDB and legacy predictor exposure were development-only security limitations.

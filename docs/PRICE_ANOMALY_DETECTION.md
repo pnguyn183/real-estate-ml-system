@@ -84,5 +84,5 @@ It is controlled by `AI_ENABLED`, `AI_FALLBACK_ENABLED` and the independent
 send a normally parsed record to this extraction agent. Failed extraction goes
 to review/DLQ and never replaces the deterministic IQR algorithm.
 
-**Implementation reviewed:** 2026-09-08. See [PROJECT_STATUS.md](PROJECT_STATUS.md)
+**Implementation reviewed:** 2026-09-08. See [pipeline validation](evidence/PIPELINE_VALIDATION_20260910.md)
 for actual verification status.

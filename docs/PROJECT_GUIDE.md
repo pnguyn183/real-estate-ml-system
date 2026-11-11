@@ -8,7 +8,7 @@ points to the code and operational references for each role.
 
 ### Product / QA
 
-1. [`PROJECT_STATUS.md`](PROJECT_STATUS.md) - observed runtime state and limits.
+1. [Project Report](PROJECT_REPORT.md) - capabilities, measured results and limitations.
 2. [`REQUIREMENTS.md`](REQUIREMENTS.md) - product goals mapped to implementation.
 3. [`ACCEPTANCE_CRITERIA.md`](ACCEPTANCE_CRITERIA.md) - checks versus targets.
 4. [`METRICS_AND_SLA.md`](METRICS_AND_SLA.md) - exported metrics and target values.
@@ -143,4 +143,4 @@ single-host Compose stack; no Spark, data lake, Kubernetes, ELK, Jaeger,
 Alertmanager or CI/CD system is part of this repository.
 
 Current runtime verification and environment limitations are recorded separately
-in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+in the [Project Report](PROJECT_REPORT.md).

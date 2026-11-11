@@ -88,7 +88,7 @@ quyết định luôn tối ưu. Model giữ tốc độ khi số đo ổn đị
 
 ## Bằng chứng và vận hành lại
 
-[Tổng hợp số liệu và hash log](evidence/llm-feedback-20261007.json) được lưu cùng
+[Tổng hợp số liệu và hash log](llm-feedback-20261007.json) được lưu cùng
 báo cáo để đối chiếu các quyết định, HTTP status, cửa sổ ingress và kết quả cleanup.
 
 Các log cục bộ nằm tại `runtime/control-validation/20261007-02/` và
