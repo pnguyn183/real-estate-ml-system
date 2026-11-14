@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-14",
+  "run_id": "lifecycle-recovery-20261114-02",
+  "status": "functional_recovery_verified",
+  "scope": "One optional-service lifecycle under controlled host-memory pressure; this is not an overload-capacity comparison.",
+  "controller": {
+    "actions_enabled": true,
+    "allowed_services": ["mongo-express"],
+    "resource_resizing_enabled": false,
+    "continuous_controller_enabled": false,
+    "fallback_model_used": "gemini-3.5-flash-lite"
+  },
+  "timeline_utc": {
+    "started": "2026-11-14T04:13:44.075913+00:00",
+    "llm_stop": "2026-11-14T04:15:28.174482+00:00",
+    "llm_start": "2026-11-14T04:17:15.534342+00:00",
+    "ended": "2026-11-14T04:18:52.851556+00:00"
+  },
+  "llm_actions": [
+    {
+      "decision_id": "291e40d0089f4c86b96fb61caf5022f1",
+      "model": "gemini-3.6-flash",
+      "service": "mongo-express",
+      "operation": "stop",
+      "container_id": "423edae7e4243862b2cec3e4fb3c0d30755fc1a168f15deee98590cf8055edd8",
+      "host_memory_available_percent": 9.729886388295416,
+      "outcome_verified": true
+    },
+    {
+      "decision_id": "e62f2ae3c57f4e208f43d4f54be1791f",
+      "model": "gemini-3.5-flash-lite",
+      "service": "mongo-express",
+      "operation": "start",
+      "container_id": "423edae7e4243862b2cec3e4fb3c0d30755fc1a168f15deee98590cf8055edd8",
+      "host_memory_available_percent": 11.67264022571849,
+      "outcome_verified": true
+    }
+  ],
+  "verification": {
+    "same_controller_owned_container_restarted": true,
+    "start_followed_the_host_and_vm_memory_guards": true,
+    "post_start_llm_ingress_rate_per_second": 0.2,
+    "three_consecutive_post_start_healthy_windows": [
+      {"throughput_per_second": 0.5484531724209376, "handled": 4, "latency_p95_seconds": 0.04875, "kafka_lag": 0},
+      {"throughput_per_second": 0.4315364502694404, "handled": 3, "latency_p95_seconds": 0.04875, "kafka_lag": 0},
+      {"throughput_per_second": 0.4884450097053068, "handled": 6, "latency_p95_seconds": 0.04875, "kafka_lag": 0}
+    ],
+    "stress_pressure_helper_started": false,
+    "compose_unchanged": true,
+    "cleanup_steps_succeeded": 15,
+    "cleanup_errors": []
+  },
+  "conclusions": {
+    "llm_selected_stop_verified": true,
+    "llm_selected_same_identity_start_verified": true,
+    "post_start_processing_recovery_verified": true,
+    "host_ram_reduction_caused_by_stop_proven": false,
+    "overload_stability_proven": false,
+    "two_hour_telemetry_collection_completed": false
+  },
+  "runtime_evidence": [
+    {"path": "runtime/diagnostics/container-recovery-20261114/trial-02/result.json", "sha256": "1c66cfe710a996991985b8ec2084719cca5624adfb9bd917547d1d0741a9f0fe"},
+    {"path": "runtime/diagnostics/container-recovery-20261114/trial-02/events.jsonl", "sha256": "6b2cb9d846cfe34a644e572ebad4ae2618a5ee5da8ef4648b6bb580d0438b6bf"},
+    {"path": "runtime/diagnostics/container-recovery-20261114/trial-02/samples.jsonl", "sha256": "b54a69c1de0d567bf04b8533136172a027f9858c4e16eb08fd6905b1b13aa8fe"},
+    {"path": "runtime/diagnostics/container-recovery-20261114/trial-02/decisions.jsonl", "sha256": "368d0d0b8dd84d8035788e35b9dfabed6d951223652c04fcaed296f18640d067"},
+    {"path": "runtime/diagnostics/container-recovery-20261114/trial-02/containers.json", "sha256": "01c9cdc8332e4ed47e9e2143c2c0c0370651a399c743bdcccea9c76ecf0c2fec"}
+  ]
+}

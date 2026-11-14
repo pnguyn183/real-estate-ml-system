@@ -1,15 +1,17 @@
 # Project Report
 
-**Cập nhật: 11/11/2026 · Nhánh: `dev`.**
+**Cập nhật: 14/11/2026 · Nhánh: `dev`.**
 
 Báo cáo tổng hợp các chức năng đã triển khai, kết quả kiểm chứng, những hạn chế
 hiện tại và kế hoạch phát triển tiếp theo của hệ thống. Dữ liệu thực nghiệm
-gồm lượt kiểm chứng container ngày **05/11/2026** và xác minh khôi phục ngày **11/11/2026**.
+gồm lượt kiểm chứng container ngày **05/11/2026**, xác minh khôi phục ngày
+**11/11/2026** và vòng dừng/bật tự động ngày **14/11/2026**.
 
 **Trạng thái tổng thể:** đã có stress agent, extraction agent, vòng phản hồi LLM,
 công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã xác minh vòng LLM
-ở tải nhỏ, chuyển model khi lỗi 503 và LLM dừng hai dịch vụ phụ thật khi RAM host thấp. **Chưa chứng minh LLM tự điều tiết để giữ
-ổn định khi quá tải; chưa thu xong lượt telemetry bổ sung hai giờ.** Dự báo
+ở tải nhỏ, chuyển model khi lỗi 503, dừng/bật lại một dịch vụ phụ theo telemetry
+và khôi phục xử lý tải nhỏ. **Chưa chứng minh LLM tự điều tiết để giữ ổn định khi
+quá tải; chưa thu xong lượt telemetry bổ sung hai giờ.** Dự báo
 5 phút đạt tiêu chí thử nghiệm trên dữ liệu tổng hợp; 10 phút chưa đạt.
 
 Quy ước checklist:
@@ -37,7 +39,7 @@ Quy ước checklist:
 - [ ] **Một phần: LLM tự chọn CPU/RAM và chứng minh thay đổi đó có ích.** Công cụ đã chạy thật, nhưng các allocation của bài thử 06/10 do người thử cung cấp. Quyết định LLM 07/10 có `resources={}`. Chưa có bằng chứng LLM tự chọn allocation, áp dụng và cải thiện quá tải. Không có autoscaling số replica hoặc broker. [Phạm vi công cụ](LLM_FEEDBACK_CONTROL.md).
 - [x] **Tách tiến trình training khỏi xử lý stream và cho agent cấp quyền bắt đầu.** Trainer là service riêng, đọc `training_allowed`, có khóa tránh fit đồng thời; Airflow nhường training cho trainer khi control bật. Một fit đang chạy được phép hoàn tất. [auto_train.py](../scripts/auto_train.py), [train_model.py](../modeling/train_model.py), [runtime_policy.py](../agents/runtime_policy.py), [DAG](../airflow/dags/real_estate_pipeline.py).
 - [ ] **Một phần: kiểm chứng training hoàn tất dưới điều tiết mà stream vẫn ổn định.** Đã thấy hoãn training và cấp quyền thật, nhưng các lượt control cố ý không chạy fit để giữ model phục vụ. Tách service vẫn dùng chung host/VM; chưa phải cô lập tài nguyên tuyệt đối. [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **Một phần: LLM chọn dừng/bật dịch vụ phụ theo telemetry.** Có giới hạn một dịch vụ mỗi quyết định, kiểm tra phụ thuộc, quyền khôi phục, cooldown và RAM; trainer chờ fit hoàn tất. Nhóm kiểm thử liên quan đạt **337 tests**. Ngày 05/11, Gemini chọn dừng **Grafana và mongo-express**, Docker xác nhận cả hai; footprint trước dừng lần lượt **406,30 và 46,06 MiB**. Có 23 mẫu telemetry nhưng **0 record được phát/xử lý**. Bật lại do script khôi phục, chưa phải LLM. **Chưa chứng minh LLM tự bật lại, giảm RAM host hoặc ổn định dưới tải.** [Mã công cụ](../agents/container_lifecycle.py), [giao thức trainer](../agents/container_drain.py), [bằng chứng live](evidence/container-lifecycle-live-20261105.json), [cấu hình](LLM_FEEDBACK_CONTROL.md#agent-dừng-và-bật-lại-dịch-vụ-phụ).
+- [x] **LLM chọn dừng/bật một dịch vụ phụ theo telemetry.** Có giới hạn một dịch vụ mỗi quyết định, kiểm tra phụ thuộc, quyền khôi phục, cooldown và RAM; trainer chờ fit hoàn tất. Nhóm kiểm thử liên quan đạt **337 tests**. Ngày 14/11, LLM dừng rồi bật lại đúng cùng container `mongo-express` sau khi host memory vượt guard (9,73% → 11,67%); sau khi bật, model mở ingress 0,2 rps và có ba mẫu sạch liên tiếp: lag 0, p95 0,04875s, throughput dương. Cleanup 15/15 bước thành công. Điều này chưa chứng minh RAM host giảm do lệnh dừng hoặc ổn định khi quá tải. [Mã công cụ](../agents/container_lifecycle.py), [bằng chứng 14/11](evidence/container-lifecycle-recovery-20261114.json), [bằng chứng stop trước đó](evidence/container-lifecycle-live-20261105.json), [cấu hình](LLM_FEEDBACK_CONTROL.md#agent-dừng-và-bật-lại-dịch-vụ-phụ).
 
 ### 1.3. Model và chuyển dự phòng
 
@@ -83,7 +85,7 @@ Quy ước checklist:
 | Điều tiết theo luật | Threshold/hysteresis/cooldown/token bucket trong nghiên cứu cũ | [traffic_control.py](../agents/traffic_control.py), [paired-v4](../runtime/research/paired-v4-20260921/analysis/summary.json). Kết quả này không thuộc LLM |
 | Điều tiết bằng LLM | Đọc số đo/lịch sử, chọn trạng thái, rate, quyền training và resource action trong giới hạn | [control_agent.py](../agents/control_agent.py). Chức năng đã chạy tải nhỏ, hiệu quả quá tải còn chưa chứng minh |
 | Điều chỉnh Docker/Compose | Công cụ LLM cập nhật CPU/RAM/swap cho 3 processor và trainer, xác minh và rollback | [compose_resources.py](../agents/compose_resources.py). `resource_actuator.py` của nghiên cứu cũ là công cụ CPU riêng; không nhầm hai cơ chế |
-| Dừng/bật dịch vụ phụ theo LLM | Model chọn một dịch vụ trong danh sách được phép; lưu quyền khôi phục, chờ trainer rảnh và kiểm tra trước khi bật lại | [Bằng chứng](evidence/container-lifecycle-live-20261105.json): đã xác minh LLM dừng Grafana/mongo-express thật; chưa xác minh LLM bật lại và phục hồi xử lý tải |
+| Dừng/bật dịch vụ phụ theo LLM | Model chọn một dịch vụ trong danh sách được phép; lưu quyền khôi phục, chờ trainer rảnh và kiểm tra trước khi bật lại | [Bằng chứng 14/11](evidence/container-lifecycle-recovery-20261114.json): LLM dừng/bật lại cùng `mongo-express` và có ba cửa sổ xử lý sạch sau bật; không phải bằng chứng ổn định khi quá tải |
 | Thu lịch sử và đánh giá forecast | Session start/status/stop/export, chế độ lean, audit dữ liệu, chronological benchmark và inference thử nghiệm | [collect_session.py](../research/collect_session.py), [TRAFFIC_SESSIONS](TRAFFIC_SESSIONS.md), [forecast.py](../research/forecast.py). Chưa nối predictive control |
 
 ## 3. Ba loại bằng chứng điều tiết phải phân biệt

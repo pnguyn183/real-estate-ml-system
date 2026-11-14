@@ -45,6 +45,16 @@ def test_stop_is_model_selected_and_waits_for_new_measurement_before_resume(tmp_
     assert context["recent_actions"][0]["containers"]["actions"] == {"grafana": "stop"}
 
 
+def test_owned_stopped_service_is_an_explicit_recovery_goal(tmp_path):
+    agent, _, router, _, _ = setup(tmp_path, output=decision(rate_per_second=3.0))
+    agent.lifecycle = Lifecycle(services={"grafana": {
+        "running": False, "ready": False, "owned_stop": True, "eligible_actions": ["start"]}})
+    assert agent.tick(sample())["status"] == "applied"
+    context = json.loads(router.calls[0][0][-1]["content"])
+    assert context["goals"]["restore_controller_owned_optional_services"] is True
+    assert context["goals"]["controller_owned_start_candidates"] == ["grafana"]
+
+
 @pytest.mark.parametrize("where", ["host", "vm"])
 def test_memory_emergency_keeps_model_stop_path_but_clamps_admission(tmp_path, where):
     agent, policy, router, _, _ = setup(tmp_path, output=decision(

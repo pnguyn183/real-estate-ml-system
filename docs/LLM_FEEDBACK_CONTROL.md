@@ -307,6 +307,15 @@ Lượt này có 23 mẫu trong khoảng 205 giây, **0 record được phát/x�
 host hoặc ổn định khi xử lý tải. Grafana/mongo-express được bật lại bởi script
 khôi phục, không phải model. Controller chỉ chạy trong phép thử hữu hạn.
 
+Ngày 14/11/2026, phép thử riêng `lifecycle-recovery-20261114-02` đã xác minh
+phần còn thiếu của vòng lifecycle: model dừng `mongo-express` khi host memory
+khả dụng là 9,73%, sau đó chính model chọn bật lại **đúng cùng container ID** khi
+headroom đạt 11,67%. Model tiếp tục đặt ingress 0,2 rps; ba cửa sổ telemetry sau
+đó đều có throughput dương, lag 0 và p95 0,04875s. Đây chỉ là recovery chức năng
+ở tải nhỏ; không suy ra lệnh dừng làm giảm RAM host hoặc LLM giữ ổn định khi quá tải.
+Receipt và hash artifact cục bộ ở
+[container-lifecycle-recovery-20261114.json](evidence/container-lifecycle-recovery-20261114.json).
+
 Ngày 11/11 đã hoàn tất bước khôi phục stress còn lỗi: `compose create --no-deps`
 không hỗ trợ cờ này; dùng `compose up --no-start --no-deps --no-build --pull never
 stress-agent` trả container về `Created`, đúng image/cấu hình gốc, không phát tải.

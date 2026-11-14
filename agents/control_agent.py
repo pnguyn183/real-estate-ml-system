@@ -223,10 +223,14 @@ changes. Use actual footprint, health, dependencies, recent actions and workload
 to choose whether a service is worth stopping. Never stop core pipeline services.
 Stop gracefully to release memory; do not pause/freeze processes. Trainer stop must
 wait for its running fit to finish. Services initially stopped by someone else are
-not yours to start. Restore your stopped services when memory headroom and their
-dependencies permit, with cooldown to avoid repeated stop/start cycles. Training
-must remain false while trainer is stopped, draining or not ready. Container changes
-pause ingress until a new telemetry sample and another decision confirm recovery.
+not yours to start. Restoring a service the controller stopped is an operational
+goal when its advertised `eligible_actions` contains `start`, memory headroom and
+dependencies permit, and cooldown has elapsed. Do not indefinitely defer that
+recovery merely because ingress is healthy: choose that one start before raising
+or maintaining nonzero ingress after an emergency, unless fresh telemetry names a
+specific safety reason to defer it. Training must remain false while trainer is
+stopped, draining or not ready. Container changes pause ingress until a new
+telemetry sample and another decision confirm recovery.
 An emergency_memory value means ingress and training are already paused: you may
 only stop an eligible optional service, or wait. Do not start containers, resize,
 or resume ingress in that state. Missing/stale telemetry is never permission to act.
@@ -313,7 +317,12 @@ class FeedbackAgent:
                 return self.pause("container_observation_unavailable")
             if not allocation_ready:
                 self.pause("resource_observation_unavailable")
-            context = {"topic": self.cfg.source_topic, "goals": {"p95_latency_seconds": self.cfg.target_latency_seconds},
+            services = lifecycle_state.get("services", {})
+            owned_stops = [name for name, service in services.items()
+                           if service.get("owned_stop") and "start" in service.get("eligible_actions", [])]
+            context = {"topic": self.cfg.source_topic, "goals": {"p95_latency_seconds": self.cfg.target_latency_seconds,
+                       "restore_controller_owned_optional_services": bool(owned_stops),
+                       "controller_owned_start_candidates": owned_stops},
                        "max_rate_per_second": self.cfg.max_rate, "allowed_services": list(self.cfg.allowed_services),
                        "resource_changes_enabled": self.actuator.config.enabled and allocation_ready,
                        "resource_bounds": {k: getattr(self.actuator.config, k, None) for k in
