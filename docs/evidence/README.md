@@ -14,6 +14,7 @@ the conclusion. A saved configuration or test plan is not a completed experiment
 | Overload attempts, 2026-10-13 | [Validation](LLM_OVERLOAD_VALIDATION_20261013.md), [measurements](llm-overload-20261013.json) | Interrupted trials and policy-write failure diagnosis |
 | Overload calibration, 2026-10-14 | [Validation](LLM_OVERLOAD_VALIDATION_20261014.md), [measurements](llm-overload-20261014.json) | Measured saturation and incomplete paired comparison |
 | Memory-limited trial, 2026-10-19 | [Validation](LLM_OVERLOAD_VALIDATION_20261019.md), [measurements](llm-overload-20261019.json) | Host-memory stop before the LLM/overload phases |
+| Memory-limited calibration, 2026-11-14 | [Measurements](llm-overload-20261114.json) | 9,747 committed records at up to 300 rps; host-memory guard stopped before overload/LLM phases |
 | Container lifecycle, 2026-11-04 | [Checks](container-lifecycle-20261104.json) | Unit tests, Docker observation and provider timeout |
 | Container lifecycle, 2026-11-05 | [Live decisions and restoration](container-lifecycle-live-20261105.json) | Two LLM-selected stops; restoration verified on 2026-11-11; automatic restart and active-load stability unproven |
 | Container lifecycle recovery, 2026-11-14 | [Live stop/start recovery](container-lifecycle-recovery-20261114.json) | Same-ID LLM stop/start of mongo-express, then three healthy small-load windows; not an overload-capacity result |

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-14",
+  "run_id": "llmproof-baseline-4b8460a05383",
+  "status": "calibration_inconclusive",
+  "scope": "Baseline-only calibration of fixed Docker allocations. No LLM decision, Docker resource change, or container-lifecycle action was used.",
+  "result": {
+    "stop_reason": "emergency_host_memory",
+    "selected_overload_profile": null,
+    "paired_trials_started": 0,
+    "valid_pairs": 0,
+    "llm_actions": 0,
+    "overload_stability_proven": false
+  },
+  "load_accounting": {
+    "planned": 31200,
+    "offered_before_guard": 9747,
+    "admitted": 9747,
+    "acknowledged": 9747,
+    "committed": 9747,
+    "rejected": 0,
+    "delivery_or_enqueue_failures": 0,
+    "completion_coverage": 1.0,
+    "offered_to_commit_p95_upper_seconds": 0.3402700424194336
+  },
+  "last_unconfounded_300_rps_sample": {
+    "offered_rate": 300,
+    "incoming_rate": 300.0189160056696,
+    "throughput": 300.41445841306006,
+    "kafka_lag": 6,
+    "latency_p95_seconds": 0.0961552748885587,
+    "error_rate": 0.0,
+    "host_memory_available_percent": 10.59613740593647,
+    "vm_memory_available_percent": 37.36411202044649
+  },
+  "restoration": {
+    "status": "restored",
+    "restore_errors": [],
+    "compose_or_environment_changed": false
+  },
+  "conclusion": "The required host-memory guard stopped calibration before sustained overload evidence was observed. This result cannot be used as an LLM overload-control result.",
+  "runtime_evidence": [
+    {"path": "runtime/research/llm-proof-20261114-02/session.json", "sha256": "d4b1f18f838450e53620c4e0b8b00858509a04d5b4ba598ee70d9a52db3e4e8e"},
+    {"path": "runtime/research/llm-proof-20261114-02/isolation.json", "sha256": "964b42d18a6f44d4ccb9bdd19e5f966216192d819ef1e45d26a340c8319aeb04"},
+    {"path": "runtime/research/llm-proof-20261114-02/calibration/run.json", "sha256": "8e9b73b396c2ed2ea8d888f5fd44769f976a7c6fd82ca3fa3e2f5675ab36e911"},
+    {"path": "runtime/research/llm-proof-20261114-02/calibration/telemetry.jsonl", "sha256": "5600c00bdbd1251d9a69ae9c876aafd75ad03e5d91ab7a5a12087820da94a588"},
+    {"path": "runtime/research/llm-proof-20261114-02/calibration/actions.jsonl", "sha256": "6aaf30b1b7bdecf63578a2cc0619c9e3a66184508dc8ac65bdc854cac348c7cc"}
+  ]
+}
