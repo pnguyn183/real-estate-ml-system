@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-14",
+  "session_id": "session-20261114T052833.599204Z-a25c023e",
+  "run_id": "traffic-baseline-8d5dbbdfbdf2",
+  "status": "completed",
+  "scope": "Finite, controlled synthetic traffic-history session; this is not natural production traffic or an LLM overload-control experiment.",
+  "duration": {
+    "requested_load_seconds": 7200,
+    "load_start_utc": "2026-11-14T05:30:14.183725357+00:00",
+    "load_end_utc": "2026-11-14T07:30:09.272005320+00:00",
+    "healthy_load_span_seconds": 7195.088279,
+    "sample_seconds": 5
+  },
+  "workload": {
+    "policy": "fixed_baseline",
+    "requested_rate_range_per_second": [0.0, 57.0544],
+    "synthetic": true,
+    "lean_mode": true
+  },
+  "outcomes": {
+    "observations": 1446,
+    "healthy_target_rows": 1446,
+    "error_rows": 0,
+    "acknowledged": 219434,
+    "final_kafka_lag": 0,
+    "telemetry_recovery_events": 0,
+    "timestamp_gaps": 0,
+    "duplicate_timestamps": 0,
+    "missing_target_rows": 0,
+    "optional_service_restoration": "restored",
+    "restoration_errors": []
+  },
+  "limitations": {
+    "forecast_readiness": "Chronological horizon evaluation remains required.",
+    "llm_overload_control_proven": false,
+    "natural_traffic_representativeness_proven": false
+  },
+  "runtime_evidence": [
+    {"path": "runtime/research/traffic-sessions-20261114/session-20261114T052833.599204Z-a25c023e/session.json", "sha256": "6ec803171f28c0bdab43596f7fea620d3e79aa59839081d6d768ed5acdf73337"},
+    {"path": "runtime/research/traffic-sessions-20261114/session-20261114T052833.599204Z-a25c023e/environment.json", "sha256": "d7ce32481ec2cc5a9e3728b2eb4ffd8a89cb2da9ff12a9f5db38401928b879f9"},
+    {"path": "runtime/research/traffic-sessions-20261114/session-20261114T052833.599204Z-a25c023e/history_audit.json", "sha256": "61e3af257b384d1995f7d5e7dac5be793bb3c390e82355840957a69b737831f2"},
+    {"path": "runtime/research/traffic-sessions-20261114/session-20261114T052833.599204Z-a25c023e/baseline/report.json", "sha256": "641fad676ddfdefc38182c1af26e0906b2ac76c8b74153ffc2ce86238ce472a5"}
+  ]
+}

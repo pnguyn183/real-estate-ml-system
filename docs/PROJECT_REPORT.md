@@ -11,7 +11,7 @@ gồm lượt kiểm chứng container ngày **05/11/2026**, xác minh khôi ph�
 công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã xác minh vòng LLM
 ở tải nhỏ, chuyển model khi lỗi 503, dừng/bật lại một dịch vụ phụ theo telemetry
 và khôi phục xử lý tải nhỏ. **Chưa chứng minh LLM tự điều tiết để giữ ổn định khi
-quá tải; chưa thu xong lượt telemetry bổ sung hai giờ.** Dự báo
+quá tải.** Dự báo
 5 phút đạt tiêu chí thử nghiệm trên dữ liệu tổng hợp; 10 phút chưa đạt.
 
 Quy ước checklist:
@@ -59,7 +59,7 @@ Quy ước checklist:
 ### 1.5. Thu telemetry và đánh giá mô hình
 
 - [x] **Kiểm kê dữ liệu telemetry hiện có và đánh giá có đủ dùng không.** Đã audit lịch sử, loại phiên chưa kết thúc khỏi export và benchmark 1.732 observations của 7 phiên đã kết thúc. Đủ để đánh giá bước đầu trên workload tổng hợp, chưa đủ chứng minh hoạt động dài hạn hoặc điều tiết LLM. [Kiểm kê 23/10](evidence/TELEMETRY_VALIDATION_20261023.md), [kết quả 24/10](evidence/TELEMETRY_VALIDATION_20261024.md).
-- [ ] **Chưa hoàn thành: thu telemetry trong phiên hai giờ.** Lượt 09/10 dừng sau 58m43s; phiên bắt đầu 23/10 giờ Việt Nam chỉ có khoảng 27 phút quan sát. Kế hoạch hai giờ ngày 24/10 vẫn `prepared_not_started`; không cộng thời lượng kế hoạch thành dữ liệu thật. [Bằng chứng phiên và kế hoạch](evidence/telemetry-status-20261024.json).
+- [x] **Thu telemetry trong phiên hai giờ.** Ngày 14/11, phiên controlled-synthetic chạy đủ 7.200 giây tải, có 1.446 mẫu hợp lệ, 219.434 ACK, không có sample lỗi/gap timestamp và lag cuối bằng 0; lean-mode khôi phục dịch vụ phụ không lỗi. Dữ liệu đủ làm đầu vào đánh giá chronology nhưng chưa đại diện traffic tự nhiên, chưa tự chứng minh forecast hay LLM control. [Bằng chứng phiên](evidence/telemetry-session-20261114.json).
 - [x] **Kiểm định dữ liệu và đối chiếu Gemini input/output.** Đã có audit skew/missingness/outlier và một record tổng hợp qua Gemini thật → parse → merge → MongoDB. Chưa xác minh chất lượng extraction toàn dataset. [Audit dữ liệu](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [phụ lục Gemini](#phụ-lục-a--bằng-chứng-gemini-ngày-24092026).
 - [x] **Benchmark các mô hình giá trên cùng tập chia.** Đã so VotingRegressor, Random Forest, Gradient Boosting và XGBoost; chỉ là chẩn đoán holdout, chưa thay model production và chưa xử lý hết leakage. [Kết quả định lượng](#4-kết-quả-thực-nghiệm), [benchmark.py](../research/benchmark.py).
 - [x] **Đo tải ba broker, thời gian phản ứng, trước/sau và tạo biểu đồ.** Có paired-v4 bằng controller theo luật, log T0–T3 và biểu đồ từ dữ liệu thật. Ingress gần đều không đồng nghĩa CPU cân bằng; recovery đo được xảy ra trong drain. [Kết quả paired-v4](#42-kết-quả-controller-theo-luật).

@@ -26,6 +26,7 @@ the conclusion. A saved configuration or test plan is not a completed experiment
 | History inventory, 2026-10-23 | [Assessment](TELEMETRY_VALIDATION_20261023.md), [manifest](telemetry-status-20261023.json) | Existing sessions, file hashes and usable chronological splits |
 | Collection and forecasts, 2026-10-24 | [Validation](TELEMETRY_VALIDATION_20261024.md), [measurements](telemetry-status-20261024.json) | Memory-limited collection, five-minute forecast result and ten-minute forecast limitations |
 | Forecast plots, 2026-10-24 | [Five minutes](telemetry-forecast-300s-20261024.png), [ten minutes](telemetry-forecast-600s-20261024.png) | Held-out predictions from the documented benchmark |
+| Two-hour telemetry session, 2026-11-14 | [Measurements](telemetry-session-20261114.json) | 1,446 healthy synthetic-traffic observations, 219,434 ACKs and clean restoration; chronological evaluation still required |
 
 Raw records and experiment outputs referenced under `runtime/` remain local and
 are excluded from Git. JSON summaries retain relevant measurements, action
