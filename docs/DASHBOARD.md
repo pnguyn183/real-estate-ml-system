@@ -20,6 +20,9 @@ docker compose up -d prometheus grafana processor processor-2 processor-3 traine
 - **Processor Throughput**: consumed, processed and failed Kafka message rates.
 - **Kafka Consumer Lag**: exported processor consumer lag.
 - **Processing and Training Duration**: average histogram-derived durations.
+- **Processor Tail Latency**: p95/p99 admitted-to-commit latency approximated
+  from histogram buckets. It excludes pre-admission waiting in controlled trials,
+  so read it with offered/admitted/deferred/rejected counts.
 - **Price Model Error**: latest holdout MAE and RMSE in VND; lower is better.
 - **Price Model Training Samples**: sample count of the latest training run.
 - **Price Model R2**: latest holdout R²; higher is better, and negative values are
@@ -65,7 +68,7 @@ Prometheus loads `monitoring/alert_rules.yml` (evaluation interval 30 seconds):
 | Alert | Trigger |
 | --- | --- |
 | `HighProcessingErrorRate` | failed/consumed rate > 5% for 5m |
-| `HighKafkaConsumerLag` | lag > 1000 for 5m |
+| `HighKafkaConsumerLag` | latest processor-observed per-partition lag sample > 1000 for 5m; not summed group lag |
 | `ProcessingDurationAnomaly` | average processing duration > 5s for 5m |
 | `ModelTrainingFailed` | any failed trainer run in the last hour, held 10m |
 | `ModelTrainingStale` | no successful training for 12h, held 15m |
@@ -85,6 +88,8 @@ rate(kafka_messages_consumed_total[5m])
 rate(kafka_messages_processed_total[5m])
 rate(kafka_messages_failed_total[5m])
 kafka_consumer_lag
+histogram_quantile(0.95, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))
+histogram_quantile(0.99, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))
 rate(processing_duration_seconds_sum[5m]) / rate(processing_duration_seconds_count[5m])
 model_mae_vnd{job="trainer"} and on(job, instance) (trainer_last_success_timestamp_seconds{job="trainer"} > 0)
 model_rmse_vnd{job="trainer"} and on(job, instance) (trainer_last_success_timestamp_seconds{job="trainer"} > 0)

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/real-estate-ml-system/extraction-ground-truth.schema.json",
+  "title": "Human-adjudicated extraction ground truth row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_id", "annotation_status", "reviewer_ids", "adjudicator_id", "source_text", "source_sha256", "ground_truth"],
+  "properties": {
+    "record_id": {"type": "string", "minLength": 1},
+    "annotation_status": {"const": "adjudicated"},
+    "reviewer_ids": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "adjudicator_id": {"type": "string", "minLength": 1},
+    "source_text": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ground_truth": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "price_vnd": {"type": ["number", "null"]},
+        "area_m2": {"type": ["number", "null"]},
+        "bedroom_count": {"type": ["integer", "null"]},
+        "bathroom_count": {"type": ["integer", "null"]},
+        "floor_count": {"type": ["integer", "null"]},
+        "front_width_m": {"type": ["number", "null"]},
+        "road_width_m": {"type": ["number", "null"]},
+        "property_type": {"type": ["string", "null"]},
+        "listing_type": {"type": ["string", "null"]},
+        "direction": {"type": ["string", "null"]},
+        "legal": {"type": ["string", "null"]},
+        "furniture": {"type": ["string", "null"]},
+        "province": {"type": ["string", "null"]},
+        "district": {"type": ["string", "null"]},
+        "address": {"type": ["string", "null"]}
+      }
+    },
+    "numeric_tolerances": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "price_vnd": {"$ref": "#/$defs/tolerance"},
+        "area_m2": {"$ref": "#/$defs/tolerance"},
+        "bedroom_count": {"$ref": "#/$defs/tolerance"},
+        "bathroom_count": {"$ref": "#/$defs/tolerance"},
+        "floor_count": {"$ref": "#/$defs/tolerance"},
+        "front_width_m": {"$ref": "#/$defs/tolerance"},
+        "road_width_m": {"$ref": "#/$defs/tolerance"}
+      }
+    }
+  },
+  "$defs": {
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "absolute": {"type": "number", "minimum": 0},
+        "relative": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

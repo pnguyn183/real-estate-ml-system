@@ -26,6 +26,7 @@ or product targets; target values are not reported as achieved runtime results.
 - [`DASHBOARD.md`](DASHBOARD.md) - provisioned Grafana panels and queries.
 - [`ML_PIPELINE_AUDIT.md`](ML_PIPELINE_AUDIT.md) - model features, training and leakage review.
 - [`PRICE_ANOMALY_DETECTION.md`](PRICE_ANOMALY_DETECTION.md) - historical IQR anomaly detector and review metadata.
+- [`EXTRACTION_EVALUATION.md`](EXTRACTION_EVALUATION.md) - human-label protocol and offline extraction evaluator; no representative accuracy result is claimed.
 
 ## Product and quality targets
 

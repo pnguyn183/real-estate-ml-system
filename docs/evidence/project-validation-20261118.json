@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-11-18",
+  "branch": "dev",
+  "base_commit": "eb9468986bd6d1f20921184d304a4b8e15d4cfac",
+  "environment": {
+    "python": "3.12.10",
+    "node": "24.19.0",
+    "npm": "11.17.0",
+    "docker_compose": "5.3.1"
+  },
+  "validation": [
+    {
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "result": "1405 passed, 5617 warnings in 70.19s"
+    },
+    {
+      "command": "npm.cmd run type-check && npm.cmd run lint && npm.cmd run build",
+      "working_directory": "frontend",
+      "status": "passed",
+      "result": "TypeScript passed; ESLint passed; Vite transformed 1587 modules and produced the production bundle"
+    },
+    {
+      "command": "python -m compileall -q agents processing research modeling scripts scraper utils",
+      "status": "passed"
+    },
+    {
+      "command": "docker compose config --quiet",
+      "status": "passed"
+    },
+    {
+      "command": "Parse modified evidence/schema/Grafana JSON with PowerShell ConvertFrom-Json",
+      "status": "passed",
+      "result": "6 files parsed"
+    },
+    {
+      "command": "Vite local development preview plus HTTP GET http://127.0.0.1:3000/",
+      "status": "passed",
+      "result": "HTTP 200; root element present; preview process stopped"
+    },
+    {
+      "command": "Resolve local Markdown targets in docs/PROJECT_REPORT.md",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check and trailing-whitespace scan",
+      "status": "passed"
+    }
+  ],
+  "warnings": [
+    "The Python suite reports existing FastAPI/Starlette/Pydantic/joblib/NumPy deprecation or runtime warnings; no test failed.",
+    "Promtool live-container validation was skipped because the Docker Desktop Linux daemon was not running; Compose syntax validation passed."
+  ],
+  "forecast_provenance_check": {
+    "research_benchmark_sha256": "88050af51fe144f6329746c5f2b05cf1ffafe76f8bfbdec7b002e30fa137cb88",
+    "forecast_metrics_sha256": "17b0816b593de59b3b49e25c6c3e22aeaab6753fe773eeee1671b28c987c2c62",
+    "matches_forecast_summary": true
+  }
+}

@@ -14,13 +14,14 @@ flowchart LR
   Trainer[trainer :8001] --> Prom
   AI[ai-agent :8006<br/>DNS-discovered replicas] --> Prom
   Stress[stress-agent :8007] --> Prom
+  Scraper[scraper :8008] --> Prom
   Prom --> Grafana[Grafana :3001]
 ```
 
 Prometheus loads `monitoring/prometheus.yml`, scrapes every 15 seconds and
 loads rules from `monitoring/alert_rules.yml`. Targets are
 `processor:8003`, `processor-2:8004`, `processor-3:8005`, `trainer:8001`,
-`stress-agent:8007`, DNS-discovered `ai-agent` addresses on port 8006 and
+`scraper:8008`, `stress-agent:8007`, DNS-discovered `ai-agent` addresses on port 8006 and
 `localhost:9090`. Agent ports are not published to the host. AI DNS discovery
 refreshes every 15 seconds, allowing multiple AI consumer replicas.
 
@@ -75,6 +76,15 @@ the downstream Processor already persisted its result. `ai_dlq_total` counts
 worker-published malformed-request failures, not every Processor-side rejection.
 Confidence is provider-reported and not calibrated accuracy.
 
+### Source ingestion
+
+The scraper exporter on internal port 8008 reads bounded per-source state and
+publishes access, parse, failure, acknowledged-listing and freshness metrics,
+including `source_metrics_available`, `source_crawl_enabled`,
+`crawl_failure_total`, `source_last_checked_timestamp` and
+`source_last_success_timestamp`. These metrics do not replace a Compose
+healthcheck or prove that every listing is complete/correct.
+
 ### Stress generator
 
 Implemented in `agents/stress_metrics.py`:
@@ -102,8 +112,8 @@ sum(rate(stress_delivered_messages_total[5m]))
 sum(rate(ai_extraction_failure_total[5m])) by (reason)
 ```
 
-The API, scraper and legacy predictor do not expose Prometheus metrics. Docker
-healthchecks independently probe API/predictor health; the scraper has no
+The API and legacy predictor do not expose Prometheus metrics. Docker
+healthchecks independently probe API/predictor health; the scraper exports source metrics but has no
 Compose healthcheck and must be inspected through logs and actual output.
 
 ## Configured alert rules
@@ -113,23 +123,28 @@ Rules and exact expressions live in `monitoring/alert_rules.yml`:
 | Alert | Condition | For |
 | --- | --- | --- |
 | `HighProcessingErrorRate` | failed/consumed rate > 5% | 5m |
-| `HighKafkaConsumerLag` | `kafka_consumer_lag > 1000` | 5m |
+| `HighKafkaConsumerLag` | latest processor-observed per-partition `kafka_consumer_lag > 1000`; not total group lag | 5m |
 | `ProcessingDurationAnomaly` | average processing duration > 5s | 5m |
 | `ModelTrainingFailed` | any failed trainer run in the last hour | 10m |
 | `ModelTrainingStale` | no successful training for 12h | 15m |
 | `DatabaseWriteFailures` | database write failure rate > 0 | 5m |
+| `CrawlSourceMetricsUnavailable` | enabled source metric state unreadable | 10m |
+| `CrawlSourceRepeatedFailures` | at least two crawl failures in 2h | 5m |
+| `CrawlSourceNotChecked` | no successful source check for 2h | 10m |
+| `CrawlSourceDataStale` | no valid acknowledged listing for 2d | 15m |
 
 No notification receiver is configured. Alerts are visible in Prometheus and
 the provisioned Grafana dashboard; external paging requires a separately
 approved Alertmanager/notification integration.
-The existing dashboard and six rules have not been extended with dedicated AI
-or stress panels/alerts. Agent series are nevertheless scraped and queryable.
+Three dashboards are provisioned: pipeline, Agent Operations and Source Ingestion.
+The ten rules cover pipeline/trainer/database and crawl-source health; there are
+no dedicated extraction/stress alert rules or external notification receiver.
 
 ## Access and verification
 
 - Prometheus: `http://localhost:9090`, including `/targets` and `/alerts`.
-- Grafana: `http://localhost:3001`; the dashboard is provisioned from
-  `monitoring/grafana/dashboards/real_estate_pipeline.json`.
+- Grafana: `http://localhost:3001`; three dashboards are provisioned from
+  `monitoring/grafana/dashboards/`.
 - Processor metrics: `http://localhost:8003/metrics`,
   `http://localhost:8004/metrics`, `http://localhost:8005/metrics`.
 - Trainer metrics: `http://localhost:8001/metrics`.

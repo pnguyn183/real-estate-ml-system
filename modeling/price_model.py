@@ -285,6 +285,12 @@ class RealEstatePriceModel:
             "model_path": str(versioned_path),
             "sample_count": int(len(frame)),
             "metrics": metrics,
+            "evaluation": {
+                "split_strategy": "random_holdout_80_20",
+                "random_seed": 42,
+                "test_fraction": 0.2,
+                "mdape_unit": "fraction",
+            },
             "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "residual_quantiles_vnd": {
                 "p50": float(np.quantile(residuals, 0.50)) if len(residuals) else 0.0,

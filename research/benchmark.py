@@ -39,14 +39,27 @@ def versions():
     return result
 
 
-def scores(actual, predicted):
-    actual = np.asarray(actual)
+def scores(actual, predicted, *, include_mdape=False):
+    actual = np.asarray(actual, dtype=float)
+    predicted = np.asarray(predicted, dtype=float)
     # R² divides by target variance. sklearn's default replaces undefined
     # constant-target scores with 0/1; neither is evidence of forecast skill.
     r2_defined = len(actual) > 1 and np.any(actual != actual[0])
-    return {"r2": float(r2_score(actual, predicted)) if r2_defined else None,
-            "mae": float(mean_absolute_error(actual, predicted)),
-            "rmse": float(np.sqrt(mean_squared_error(actual, predicted)))}
+    result = {"r2": float(r2_score(actual, predicted)) if r2_defined else None,
+              "mae": float(mean_absolute_error(actual, predicted)),
+              "rmse": float(np.sqrt(mean_squared_error(actual, predicted)))}
+    if include_mdape:
+        # Percentage error is undefined for a zero actual value. MdAPE is a
+        # price-diagnostic metric here, not a traffic-forecast score.
+        percentage_mask = np.isfinite(actual) & np.isfinite(predicted) & (actual != 0)
+        result["mdape_percent"] = None
+        if percentage_mask.any():
+            absolute_percentage_errors = (
+                np.abs(actual[percentage_mask] - predicted[percentage_mask])
+                / np.abs(actual[percentage_mask])
+            )
+            result["mdape_percent"] = float(np.median(absolute_percentage_errors) * 100)
+    return result
 
 
 def estimators(seed=42, trees=100, jobs=2):
@@ -69,15 +82,19 @@ def comparison_plot(results: dict, path: Path, title: str):
     usable = {k: v for k, v in results.items() if v.get("status") == "measured"}
     if not usable:
         return None
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for ax, metric in zip(axes, ("r2", "mae", "rmse")):
+    metrics = ["r2", "mae", "rmse"]
+    if all("mdape_percent" in value for value in usable.values()):
+        metrics.append("mdape_percent")
+    fig, axes = plt.subplots(1, len(metrics), figsize=(5 * len(metrics), 5))
+    for ax, metric in zip(np.atleast_1d(axes), metrics):
         values = [v[metric] for v in usable.values()]
         ax.bar(list(usable), [value if value is not None else np.nan for value in values])
         for index, value in enumerate(values):
             if value is None:
                 ax.text(index, .05, "undefined", transform=ax.get_xaxis_transform(),
                         ha="center", rotation=90)
-        ax.set(ylabel=metric.upper(), xlabel="Model")
+        label = "MdAPE (%)" if metric == "mdape_percent" else metric.upper()
+        ax.set(ylabel=label, xlabel="Model")
         ax.tick_params(axis="x", rotation=30)
         ax.axhline(0, color="black", linewidth=.6)
     fig.suptitle(title)
@@ -120,7 +137,7 @@ def legacy_benchmark(records: list[dict], output: Path, *, trees=100, jobs=2):
         try:
             model.fit(x_train, np.log1p(y.iloc[train].to_numpy()))
             predicted = np.expm1(model.predict(x_test))
-            results[name] = {"status": "measured", **scores(y.iloc[test], predicted), "fit_predict_seconds": time.perf_counter() - started, "parameters": model.get_params(deep=False)}
+            results[name] = {"status": "measured", **scores(y.iloc[test], predicted, include_mdape=True), "fit_predict_seconds": time.perf_counter() - started, "parameters": model.get_params(deep=False)}
             # Estimator objects in voting parameters are represented explicitly as strings.
             results[name]["parameters"] = {k: v if isinstance(v, (str, int, float, bool, type(None))) else repr(v) for k, v in results[name]["parameters"].items()}
             predictions[name] = predicted

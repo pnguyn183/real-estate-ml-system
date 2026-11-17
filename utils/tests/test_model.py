@@ -33,6 +33,13 @@ def test_train_and_predict(tmp_path):
     assert model_path.exists()
     assert metrics_path.exists()
     loaded = RealEstatePriceModel.load(str(model_path))
+    assert loaded.metadata["evaluation"] == {
+        "split_strategy": "random_holdout_80_20",
+        "random_seed": 42,
+        "test_fraction": 0.2,
+        "mdape_unit": "fraction",
+    }
+    assert 0 <= loaded.metadata["metrics"]["median_absolute_percentage_error"]
     pred = loaded.predict(records[0])
     assert "predicted_price_vnd" in pred
     assert pred["predicted_price_vnd"] > 0

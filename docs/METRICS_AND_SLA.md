@@ -11,15 +11,16 @@ Prometheus details are in [`MONITORING_AND_ALERTING.md`](MONITORING_AND_ALERTING
 | Trainer (`:8001`) | Training duration, MAE/RMSE/R2/sample gauges, run/failure counters, last-run and last-success timestamps |
 | AI agent (internal `:8006`) | Extraction outcomes/duration, provider calls, retry/rate/circuit state, cache hits, request committed-offset lag |
 | Stress agent (internal `:8007`) | Generated/delivered/failed counters, duplicate/unstructured counts, bounded run/rate/duration gauges |
-| API, scraper, predictor | No Prometheus metrics in this repository; use HTTP health and logs |
+| Scraper (internal `:8008`) | Per-source access/parse/failure, acknowledged listings, enabled state and freshness timestamps |
+| API, predictor | No Prometheus metrics in this repository; use HTTP health and logs |
 
 Prometheus scrapes every 15 seconds. Alert expressions and hold durations are
 defined only in `monitoring/alert_rules.yml`: failed/consumed rate >5%, lag
 >1000, average processing >5 seconds, trainer failure/staleness and Mongo write
 failures.
 Exact implemented names and semantics are listed in
-[`MONITORING_AND_ALERTING.md`](MONITORING_AND_ALERTING.md). The six existing
-alerts and provisioned dashboard panels are not agent-specific. Processor
+[`MONITORING_AND_ALERTING.md`](MONITORING_AND_ALERTING.md). Ten alerts and three
+dashboards are provisioned; extraction/stress panels exist but have no dedicated alerts. Processor
 throughput combines real, synthetic and AI-result traffic; it must not be
 reported as primary-training ingestion throughput without separate measurement.
 
@@ -61,6 +62,8 @@ rate(kafka_messages_processed_total[5m])
 rate(kafka_messages_failed_total[5m])
 kafka_consumer_lag
 rate(processing_duration_seconds_sum[5m]) / rate(processing_duration_seconds_count[5m])
+histogram_quantile(0.95, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))
+histogram_quantile(0.99, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))
 model_mae_vnd
 model_rmse_vnd
 model_r2

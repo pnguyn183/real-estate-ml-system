@@ -6,6 +6,7 @@ import ModelInfo from './components/ModelInfo';
 import PredictionForm from './components/PredictionForm';
 import ResultsDisplay from './components/ResultsDisplay';
 import StatsCard from './components/StatsCard';
+import SystemDemo from './components/SystemDemo';
 import UserAdminPanel from './components/UserAdminPanel';
 import {
   AuthResponse,
@@ -32,6 +33,7 @@ export default function App() {
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publicView, setPublicView] = useState<'demo' | 'access'>('demo');
 
   const canViewModel = user?.role === 'manager' || user?.role === 'admin';
 
@@ -129,7 +131,22 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-950">
         <Header />
-        <AuthPanel onAuthenticated={handleAuthenticated} />
+        {publicView === 'demo' ? (
+          <SystemDemo onOpenWorkspace={() => setPublicView('access')} />
+        ) : (
+          <>
+            <div className="mx-auto max-w-5xl px-4 pt-6">
+              <button
+                type="button"
+                className="text-sm font-medium text-cyan-700 hover:text-cyan-900"
+                onClick={() => setPublicView('demo')}
+              >
+                &larr; Quay lại demo hệ thống
+              </button>
+            </div>
+            <AuthPanel onAuthenticated={handleAuthenticated} />
+          </>
+        )}
       </div>
     );
   }

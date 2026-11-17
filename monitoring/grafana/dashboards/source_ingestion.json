@@ -2,7 +2,7 @@
   "uid": "source-ingestion",
   "title": "Source Ingestion — Quality & Access",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "15s",
   "timezone": "browser",
   "time": {
@@ -33,7 +33,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "none"},
         "overrides": []
       },
       "options": {}
@@ -61,7 +61,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "s"},
         "overrides": []
       },
       "options": {}
@@ -93,7 +93,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "ops"},
         "overrides": []
       },
       "options": {}
@@ -131,7 +131,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "ops"},
         "overrides": []
       },
       "options": {}
@@ -163,7 +163,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "ops"},
         "overrides": []
       },
       "options": {}
@@ -191,7 +191,7 @@
         "uid": "Prometheus"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {"unit": "s"},
         "overrides": []
       },
       "options": {}

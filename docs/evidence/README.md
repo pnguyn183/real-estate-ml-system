@@ -16,7 +16,7 @@ the conclusion. A saved configuration or test plan is not a completed experiment
 | Memory-limited trial, 2026-10-19 | [Validation](LLM_OVERLOAD_VALIDATION_20261019.md), [measurements](llm-overload-20261019.json) | Host-memory stop before the LLM/overload phases |
 | Memory-limited calibration, 2026-11-14 | [Measurements](llm-overload-20261114.json) | 9,747 committed records at up to 300 rps; host-memory guard stopped before overload/LLM phases |
 | Container lifecycle, 2026-11-04 | [Checks](container-lifecycle-20261104.json) | Unit tests, Docker observation and provider timeout |
-| Container lifecycle, 2026-11-05 | [Live decisions and restoration](container-lifecycle-live-20261105.json) | Two LLM-selected stops; restoration verified on 2026-11-11; automatic restart and active-load stability unproven |
+| Container lifecycle, 2026-11-05 | [Live decisions and restoration](container-lifecycle-live-20261105.json) | Two LLM-selected stops; restoration verified by script on 2026-11-11; LLM restart and active-load stability were unproven in this run |
 | Container lifecycle recovery, 2026-11-14 | [Live stop/start recovery](container-lifecycle-recovery-20261114.json) | Same-ID LLM stop/start of mongo-express, then three healthy small-load windows; not an overload-capacity result |
 
 ## Telemetry and forecasting
@@ -26,7 +26,16 @@ the conclusion. A saved configuration or test plan is not a completed experiment
 | History inventory, 2026-10-23 | [Assessment](TELEMETRY_VALIDATION_20261023.md), [manifest](telemetry-status-20261023.json) | Existing sessions, file hashes and usable chronological splits |
 | Collection and forecasts, 2026-10-24 | [Validation](TELEMETRY_VALIDATION_20261024.md), [measurements](telemetry-status-20261024.json) | Memory-limited collection, five-minute forecast result and ten-minute forecast limitations |
 | Forecast plots, 2026-10-24 | [Five minutes](telemetry-forecast-300s-20261024.png), [ten minutes](telemetry-forecast-600s-20261024.png) | Held-out predictions from the documented benchmark |
-| Two-hour telemetry session, 2026-11-14 | [Measurements](telemetry-session-20261114.json) | 1,446 healthy synthetic-traffic observations, 219,434 ACKs and clean restoration; chronological evaluation still required |
+| Two-hour telemetry session, 2026-11-14 | [Measurements](telemetry-session-20261114.json) | 1,446 healthy synthetic-traffic observations, 219,434 ACKs and clean restoration |
+| Two-hour offline forecast evaluation, 2026-11-17 | [Measurements and hashes](telemetry-forecast-2h-20261117.json) | Chronological 5/10-minute forecasts beat persistence on one scripted synthetic run; no production/predictive-control claim |
+
+## Model and extraction evaluation
+
+| Validation | Evidence | Scope |
+| --- | --- | --- |
+| Legacy price MdAPE derivation, 2026-11-17 | [Measurements and prediction hash](price-benchmark-mdape-20261117.json) | Derived from 996 saved holdout predictions without refitting; leakage and local-only source artifact remain |
+| Extraction evaluation readiness | [Protocol](../EXTRACTION_EVALUATION.md), [label schema](../templates/extraction-ground-truth.schema.json) | Evaluator is implemented; no representative human-labelled accuracy result exists |
+| Project validation, 2026-11-18 | [Command/results summary](project-validation-20261118.json) | 1,405 tests plus frontend/build/config/preview checks; Docker-dependent promtool check skipped |
 
 Raw records and experiment outputs referenced under `runtime/` remain local and
 are excluded from Git. JSON summaries retain relevant measurements, action

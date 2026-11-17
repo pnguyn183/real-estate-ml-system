@@ -8,6 +8,9 @@ build time.
 
 ## User-facing behavior
 
+- Before authentication, show a public Vietnamese system demo covering data
+  flow, Four Golden Signals, the recorded LLM lifecycle trial and explicit
+  evidence limitations. Values are dated snapshots, not simulated live metrics.
 - Register and sign in with bearer-token authentication. The first account is
   promoted to `admin` by the backend.
 - Submit a single property prediction and view the returned estimate,
@@ -58,7 +61,9 @@ src/
 │   ├── PredictionForm.tsx
 │   ├── ResultsDisplay.tsx
 │   ├── StatsCard.tsx
+│   ├── SystemDemo.tsx
 │   └── UserAdminPanel.tsx
+├── data/projectEvidence.ts
 ├── App.tsx
 ├── main.tsx
 └── index.css
@@ -103,4 +108,4 @@ the feature fields.
   and then `npm run type-check`/`npm run build`. Do not remove the lockfile as
   part of normal troubleshooting.
 
-**Last reviewed:** 2026-09-25
+**Last reviewed:** 2026-11-18

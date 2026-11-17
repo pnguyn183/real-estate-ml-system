@@ -16,7 +16,7 @@ export default function Header({ user, onLogout }: HeaderProps) {
           </span>
           <div>
             <h1 className="text-lg font-semibold">Real Estate ML System</h1>
-            <p className="text-xs text-slate-500">Vietnam property price prediction</p>
+            <p className="text-xs text-slate-500">Luồng dữ liệu, dự đoán và điều tiết tải</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

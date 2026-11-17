@@ -75,6 +75,16 @@ def test_varying_target_retains_measured_r2():
     assert result == {"r2": 1.0, "mae": 0.0, "rmse": 0.0}
 
 
+def test_mdape_is_percent_and_ignores_zero_actual_values():
+    result = scores([0, 100, 200], [999, 90, 240], include_mdape=True)
+    assert result["mdape_percent"] == pytest.approx(15.0)
+
+
+def test_mdape_is_undefined_when_every_actual_value_is_zero():
+    result = scores([0, 0], [1, 2], include_mdape=True)
+    assert result["mdape_percent"] is None
+
+
 def test_model_plot_accepts_undefined_r2_without_inventing_score(tmp_path):
     results = {"persistence": {"status": "measured", **scores([20, 20], [20, 20])}}
     output = tmp_path / "constant_target.png"

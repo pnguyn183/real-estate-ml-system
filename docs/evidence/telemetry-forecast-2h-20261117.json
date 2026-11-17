@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-11-17T15:07:07.015883+00:00",
+  "status": "offline_chronological_evaluation_completed",
+  "scope": "Forecast requested synthetic offered demand within one controlled two-hour run; not natural production traffic and not predictive-control evidence.",
+  "input": {
+    "session_id": "session-20261114T052833.599204Z-a25c023e",
+    "run_id": "traffic-baseline-8d5dbbdfbdf2",
+    "workload_seed": 926027668,
+    "observations": 1446,
+    "sample_interval_median_seconds": 5.000232457,
+    "timestamp_gaps": 0,
+    "duplicate_timestamps_removed": 0,
+    "unavailable_telemetry_rows": 0,
+    "target": "requested_rate",
+    "path": "runtime/research/traffic-sessions-20261114/session-20261114T052833.599204Z-a25c023e/baseline/observations.jsonl",
+    "sha256": "8153411d27975d35b8b45f545051afbcd14ac0abf01bb95a1d533cd064636264",
+    "git_tracked": false
+  },
+  "method": {
+    "split": "chronological selection-train/validation/test with purging so future labels never overlap the next observation window",
+    "lag_seconds": [60, 120],
+    "model_random_seed": 42,
+    "trees": 100,
+    "jobs": 2,
+    "selection": "lowest validation RMSE; the selected model is frozen before test evaluation",
+    "baseline": "persistence",
+    "minimum_relative_rmse_improvement": 0.05
+  },
+  "horizons": {
+    "300_seconds": {
+      "raw_rows": 1446,
+      "supervised_rows": 1356,
+      "selection_train_size": 759,
+      "validation_size": 205,
+      "train_size": 1024,
+      "test_size": 272,
+      "purged_rows": 60,
+      "selected_model": "xgboost",
+      "test": {"mae_records_per_second": 4.527937968725317, "rmse_records_per_second": 5.569276965576074, "r2": 0.8484092278281565},
+      "persistence_test": {"mae_records_per_second": 23.61599117647059, "rmse_records_per_second": 26.233152215727515, "r2": -2.3633811895922676},
+      "relative_rmse_improvement": 0.7877008100369602,
+      "artifact_eligibility": "passed_for_experimental_inference_only",
+      "artifact_sha256": "d73bf5ac42be0840d374a34ce02b100f4f1b1e7cdd1b875e12d7075e084b4f26"
+    },
+    "600_seconds": {
+      "raw_rows": 1446,
+      "supervised_rows": 1296,
+      "selection_train_size": 612,
+      "validation_size": 184,
+      "train_size": 916,
+      "test_size": 260,
+      "purged_rows": 120,
+      "selected_model": "gradient_boosting",
+      "test": {"mae_records_per_second": 6.386678048445085, "rmse_records_per_second": 7.616096267172145, "r2": 0.7244954996906379},
+      "persistence_test": {"mae_records_per_second": 22.201555384615386, "rmse_records_per_second": 24.40003916412052, "r2": -1.827775285332324},
+      "relative_rmse_improvement": 0.6878654080862554,
+      "artifact_eligibility": "passed_for_experimental_inference_only",
+      "artifact_sha256": "75765aa209f14a3400728cd3bdb75c8eb423933ea05296ec3e01366d60e937e5"
+    }
+  },
+  "runtime_output": {
+    "path": "runtime/research/forecast-2h-20261117/metrics.json",
+    "sha256": "17b0816b593de59b3b49e25c6c3e22aeaab6753fe773eeee1671b28c987c2c62",
+    "git_tracked": false
+  },
+  "limitations": [
+    "The single scripted run has target lag-1 autocorrelation 0.9920709045826717; independent daily/weekly seasonality is not established.",
+    "Both the observations and runtime model artifacts are local ignored files; the committed summary records their hashes but is not independently retrainable from Git alone.",
+    "Passing the offline gate does not show that forecast-driven control improves throughput, latency, lag or recovery.",
+    "No forecast is connected to the production controller."
+  ]
+}

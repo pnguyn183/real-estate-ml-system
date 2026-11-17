@@ -6,17 +6,19 @@ ELK, Elasticsearch, Jaeger, Alertmanager or notification integrations.
 ## Files
 
 - `prometheus.yml`: 15-second scrape interval, targets and rule file.
-- `alert_rules.yml`: six implemented alert rules.
+- `alert_rules.yml`: ten implemented alert rules.
 - `grafana/provisioning/datasources/prometheus.yml`: Prometheus datasource.
 - `grafana/provisioning/dashboards/pipeline.yml`: dashboard provisioning.
 - `grafana/dashboards/real_estate_pipeline.json`: processor/trainer dashboard.
 - `grafana/dashboards/agent_operations.json`: dedicated AI, stress and safety
 	dashboard for the agent demo.
+- `grafana/dashboards/source_ingestion.json`: crawl access, quality and freshness dashboard.
 
 ## Scrape targets
 
 | Target | Exposes |
 | --- | --- |
+| `scraper:8008` | Per-source access, parse, acknowledged-listing, freshness and runtime-state metrics |
 | `processor:8003` | Worker 1 Kafka consumption/processing, lag, Mongo write and duration metrics |
 | `processor-2:8004` | Worker 2 metrics; same consumer group |
 | `processor-3:8005` | Worker 3 metrics; same consumer group |
@@ -25,8 +27,9 @@ ELK, Elasticsearch, Jaeger, Alertmanager or notification integrations.
 | `stress-agent:8007` | Generation, broker-acknowledged delivery, failures, duration and run state |
 | `localhost:9090` | Prometheus self-scrape |
 
-The API, scraper, MongoDB and legacy predictor do not expose Prometheus metrics
-in the current implementation.
+The API, MongoDB and legacy predictor do not expose Prometheus metrics in the
+current implementation. The scraper exports per-source metrics but still has no
+Compose healthcheck; inspect its output/logs as well.
 AI and stress ports are internal-only. Both agents expose health/metrics while
 disabled; disabled AI deliberately has no Kafka group membership or API calls.
 AI DNS discovery refreshes every 15 seconds to cover scalable service replicas.
@@ -37,11 +40,15 @@ See [the metric inventory](../docs/MONITORING_AND_ALERTING.md) for exact names.
 | Alert | Expression summary | Hold |
 | --- | --- | --- |
 | `HighProcessingErrorRate` | failed/consumed rate > 5% | 5m |
-| `HighKafkaConsumerLag` | lag > 1000 | 5m |
+| `HighKafkaConsumerLag` | latest processor-observed per-partition lag sample > 1000 | 5m |
 | `ProcessingDurationAnomaly` | average processing > 5s | 5m |
 | `ModelTrainingFailed` | failed trainer run in previous hour | 10m |
 | `ModelTrainingStale` | no successful run for 12h | 15m |
 | `DatabaseWriteFailures` | write failure rate > 0 | 5m |
+| `CrawlSourceMetricsUnavailable` | enabled source state unreadable | 10m |
+| `CrawlSourceRepeatedFailures` | at least 2 failures in 2h | 5m |
+| `CrawlSourceNotChecked` | no successful source check for 2h | 10m |
+| `CrawlSourceDataStale` | no valid acknowledged listing for 2d | 15m |
 
 Prometheus evaluates the rule group every 30 seconds. Alerts are visible at
 `/alerts` and in Grafana; no receiver sends them elsewhere.

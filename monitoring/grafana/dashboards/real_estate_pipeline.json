@@ -110,6 +110,7 @@
         }
       ],
       "title": "Kafka Consumer Lag",
+      "description": "Latest per-partition lag sample observed by each processor. This gauge is not the summed consumer-group backlog; controlled experiments compute total lag separately.",
       "type": "timeseries"
     },
     {
@@ -329,6 +330,50 @@
       ],
       "title": "Trainer Freshness",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))",
+          "legendFormat": "p95 admitted-to-commit",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(processor_input_end_to_end_seconds_bucket[5m])))",
+          "legendFormat": "p99 admitted-to-commit",
+          "refId": "B"
+        }
+      ],
+      "title": "Processor Tail Latency",
+      "description": "Approximate p95/p99 from Prometheus histogram buckets. For controlled load trials the timestamp starts after admission, so this excludes time waiting before the gate; read it with offered/admitted/deferred/rejected counts.",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -348,6 +393,6 @@
   "timezone": "browser",
   "title": "Real Estate Pipeline",
   "uid": "real-estate-pipeline",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
