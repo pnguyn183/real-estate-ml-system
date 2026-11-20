@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-20",
+  "run_id": "llmproof-baseline-af8a864d3dd9",
+  "status": "calibration_inconclusive",
+  "scope": "Two baseline-only calibration attempts on the isolated fixed-allocation core. No LLM decision was requested or credited.",
+  "result": {
+    "stop_reason": "emergency_host_memory",
+    "selected_overload_profile": null,
+    "paired_trials_started": 0,
+    "valid_pairs": 0,
+    "llm_actions": 0,
+    "highest_stage_rate_records_per_second": 300,
+    "offered": 8154,
+    "admitted": 8154,
+    "acknowledged": 8154,
+    "committed": 8154,
+    "rejected": 0,
+    "enqueue_failed": 0,
+    "delivery_failed": 0,
+    "host_memory_available_percent_initial_sample": 15.72482985915411,
+    "host_memory_available_percent_at_first_guard_sample": 9.951910543707957,
+    "minimum_observed_host_memory_available_percent": 9.951910543707957,
+    "vm_memory_available_percent_at_first_guard_sample": 30.680518688719594,
+    "kafka_lag_at_guard_sample": 1,
+    "latency_p95_seconds_at_guard_sample": 0.04907035175879396,
+    "resource_fingerprint": "e87ddc70626f4bef7da8a00f414ef6a609d1dfc9137705fc3d1fb74c8be77d71"
+  },
+  "earlier_attempt": {
+    "run_id": "llmproof-baseline-7f61bdb94bad",
+    "stop_reason": "emergency_host_memory",
+    "highest_stage_rate_records_per_second": 10,
+    "offered_and_committed": 66,
+    "host_memory_available_percent_at_first_guard_sample": 9.068571409153114,
+    "minimum_observed_host_memory_available_percent": 8.18712556027906,
+    "resource_fingerprint": "ca97862bce581d5bb757670139d8d1205c2063adb4eca157deceee2a9acbc972"
+  },
+  "restoration": {
+    "status": "restored",
+    "restore_error_count": 0,
+    "post_validation_note": "After the first attempt restored the full initial state, optional frontend/grafana/mongo-express/api/predictor/scraper/prometheus and the idle trainer were stopped manually. The second attempt began and ended with those services stopped. This is not Agent evidence."
+  },
+  "llm_route_preflight": {
+    "enabled": true,
+    "provider": "openai_compatible",
+    "model": "gemini-3.6-flash",
+    "network_call_made": false,
+    "reason": "The experiment protocol does not call the LLM until calibration produces a valid overload profile."
+  },
+  "conclusion": "The second attempt reached 300 rps with low lag and latency but the mandatory host-memory guard stopped it before the 600 rps stage and before sustained overload evidence existed. Neither attempt contains an LLM decision, overload profile or valid A/B pair.",
+  "runtime_evidence": [
+    {"path": "runtime/research/llm-proof-20261120-calibration-01/session.json", "sha256": "d992e21ba0f313eaaf65d2997431f04a6b7c68eb0b4ee65e944ae84a44fedbe1"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-01/isolation.json", "sha256": "a2dd75e7de5f93ac963fcc5e37dd310708cea05804571673585f6dd41dd9d0e3"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-01/calibration/run.json", "sha256": "b651796438aca99e28df10c846aaf04a25a3c579edd753dad68716204c8d4e92"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-01/calibration/telemetry.jsonl", "sha256": "2e31be589008ad6e9be1ab49e4e8d98e41bff4016957b200cb59f3cc35482c9b"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-01/calibration/actions.jsonl", "sha256": "a4e8deda9d205139d322e2eea1ae2499ca03b315ce12cce349b6c3e3ef56eaa0"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-02/session.json", "sha256": "90dc9177c52b6c4751d67716b40480de765cf490ccc7103523ac005fda30f7a6"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-02/isolation.json", "sha256": "3b44fd9dc4257249dd10dd9ab5b61d5664fb070afbaad2e763cfe859c1e22a80"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-02/calibration/run.json", "sha256": "9e413badb78a194363d826de1085265a32b9225099eb2efced6d84515cda4a13"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-02/calibration/telemetry.jsonl", "sha256": "62979d88f55b0da0202ac2f51592330d154f9afb69140dfd645da447195c57d2"},
+    {"path": "runtime/research/llm-proof-20261120-calibration-02/calibration/actions.jsonl", "sha256": "8d8a2349c6b9804b1807d89836f8d10fca626aec711c3756fc14c027fd3dcce8"}
+  ]
+}

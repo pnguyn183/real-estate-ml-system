@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-18",
+  "promtool": {
+    "status": "passed",
+    "prometheus_config": "SUCCESS",
+    "alert_rules": 10,
+    "scope": "promtool check config inside the running Prometheus container"
+  },
+  "trainer_drain": {
+    "status": "live_probe_observed_not_durable_enough_for_continuous_claim",
+    "deployed_container_control_enabled": false,
+    "old_image_issue": "agents.container_drain missing from the previously deployed trainer image",
+    "rebuilt_image_probe": "Three matching request-ID/hostname acknowledgements were observed in an isolated probe; the console-only acknowledgements were not retained as a durable result artifact.",
+    "conclusion": "Functional acknowledgement was observed, but a controlled running-fit drain and production-container deployment remain unverified."
+  },
+  "container_lifecycle": {
+    "status": "one_stop_start_cycle_verified",
+    "service": "predictor",
+    "same_container_id": true,
+    "last_running_memory_bytes": 118069657,
+    "stop_outcome_verified": true,
+    "start_outcome_verified": true,
+    "post_start_health_observed": "healthy",
+    "completed_cycles": 1,
+    "causal_host_ram_effect_verified": false,
+    "runtime_actions": {
+      "path": "runtime/control/lifecycle-repeat-probe/lifecycle_actions.jsonl",
+      "sha256": "463712b7d816e12cf294c3fb7af1a8d902244c21b47d07078d53610c9d3bc7b3"
+    }
+  },
+  "limitations": [
+    "No lifecycle action in this probe was an LLM decision.",
+    "Three repeated lifecycle cycles and a matched causal RAM comparison were not completed.",
+    "Optional services were manually stopped after validation when host RAM fell below the 10% safety floor; this is not Agent evidence."
+  ]
+}

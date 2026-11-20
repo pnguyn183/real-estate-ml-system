@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "original_gate_date_utc": "2026-11-18",
+  "reevaluated_at_utc": "2026-11-20T09:16:31.1303703Z",
+  "status": "blocked_before_trial",
+  "production_controller_integrated": false,
+  "blockers": [
+    "forecast_support_hash_missing",
+    "forecast_split_hash_missing",
+    "capacity_calibration_not_completed",
+    "measured_overload_rate_missing",
+    "capacity_resource_fingerprint_missing"
+  ],
+  "forecast": {
+    "artifact_sha256": "d73bf5ac42be0840d374a34ce02b100f4f1b1e7cdd1b875e12d7075e084b4f26",
+    "target": "requested_rate",
+    "target_semantics": "offered demand before admission",
+    "horizon_seconds": 300,
+    "training_support": {
+      "count": 1024,
+      "unique_count": 86,
+      "min_records_per_second": 5.0,
+      "max_records_per_second": 57.0544,
+      "support_sha256": "12df8e22c60bbe54c9bf6ad6ac0d31c27586fc47e48ae58021450e617e49c46f",
+      "split_sha256": "a5907583776abd93d1928d64aa3eeed5caf3092fd057d45765be3e43ab6b699e"
+    }
+  },
+  "required_trial": {
+    "minimum_pairs": 3,
+    "order": "AB/BA alternating",
+    "arms": ["reactive_controller", "experimental_forecast_controller"],
+    "required_accounting": ["offered", "admitted", "committed", "deferred", "rejected"]
+  },
+  "conclusion": "The historical forecast manifest does not bind its support/split hashes and capacity calibration is incomplete. The forecast remains outside the production controller; readiness is blocked before any causal predictive-control experiment.",
+  "runtime_output": {
+    "path": "runtime/research/predictive-control-readiness-20261118.json",
+    "sha256": "a3a076d44223ef4a263c6a71bcbc2f658b0a242b4a798fca0317c77547a42528",
+    "git_tracked": false
+  }
+}

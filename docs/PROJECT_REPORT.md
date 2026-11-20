@@ -1,12 +1,16 @@
 # Project Report
 
-**Cập nhật: 18/11/2026 · Nhánh: `dev`.**
+**Cập nhật: 20/11/2026 · Nhánh: `dev`.**
 
 Báo cáo tổng hợp các chức năng đã triển khai, kết quả kiểm chứng, những hạn chế
 hiện tại và kế hoạch phát triển tiếp theo của hệ thống. Dữ liệu thực nghiệm
 gồm lượt kiểm chứng container ngày **05/11/2026**, xác minh khôi phục ngày
 **11/11/2026**, lượt lifecycle hữu hạn có kiểm soát ngày **14/11/2026** và
 đánh giá forecast từ phiên telemetry hai giờ ngày **17/11/2026**.
+Ngày **18/11/2026** bổ sung panel extraction, chuẩn bị sạch dataset giá,
+predictive-control gate và tái kiểm chứng Prometheus/lifecycle/overload guard.
+Ngày **20/11/2026** siết provenance gate và thử calibration lại; lượt core-only
+đi tới 300 rps nhưng safety guard vẫn chặn trước A/B khi RAM host xuống dưới 10%.
 
 **Trạng thái tổng thể:** đã có stress agent, extraction agent, vòng phản hồi LLM,
 công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã xác minh vòng LLM
@@ -36,7 +40,7 @@ liệu đã xử lý xong. Hệ thống hiện tại giải quyết các phần 
 | Ingestion/Kafka | Nhận dữ liệu có checkpoint, tách topic synthetic, hấp thụ chênh lệch tốc độ | High availability nhiều máy và khả năng chịu lỗi production |
 | Processing | Chuẩn hóa, validate, enrich, lưu raw/valid/invalid/DLQ; ba processor cùng group | Tính đúng sự thật của nội dung tin đăng |
 | Extraction | LLM bổ sung field thiếu với schema/evidence guard; một fixture provider thật đã đi hết pipeline | Precision/recall/F1 trên mẫu crawl đại diện |
-| Price forecasting | Mô hình giá có API và metric holdout | Giá giao dịch thực, tổng quát hóa ngoài snapshot đang có leakage |
+| Price forecasting | Mô hình giá có API; pipeline mới chặn target-text leakage và group split | Giá giao dịch thực, score sạch mới và tổng quát hóa ngoài snapshot |
 | Workload forecasting | Forecast 5/10 phút vượt persistence trên một phiên synthetic hai giờ | Nhu cầu tự nhiên theo ngày/tuần và lợi ích predictive control |
 | Monitoring | Quan sát traffic, tail latency, lỗi, lag và CPU/RAM theo phạm vi | Golden Signals end-to-end cho toàn API và USE đầy đủ cho disk/network/queue |
 | Agent control | LLM đã phân loại tải, cấp rate lease và chọn stop/start dịch vụ phụ trong lượt hữu hạn | Mức cải thiện khi quá tải, tự chọn allocation có lợi và vận hành liên tục |
@@ -73,9 +77,9 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 | Self-hosted so với Cloud | Chưa có | Compose/resource limits | Thiếu TCO và điều kiện lựa chọn | Bổ sung mục 0.2, không tự tạo giá | Documented; monetary TCO not verified |
 | Cơ sở metrics | Một phần | `research/telemetry.py`, Prometheus/Grafana | Thiếu mapping Golden/USE và nguồn | Bổ sung mục 5.4 và References | Implemented một phần; controlled telemetry experimentally verified |
 | Luồng xử lý/điều tiết | Đã có code/test; LLM overload chưa kiểm chứng | controller, harness, evidence 07/10–14/11 | Thiếu A/B LLM hợp lệ | Giữ trạng thái chưa kiểm chứng; bổ sung p95/p99 dashboard | Implemented/tested; LLM overload improvement not verified |
-| Đánh giá model giá | Một phần | production metrics và legacy benchmark | Legacy thiếu MdAPE; leakage/group split chưa xử lý | Tính MdAPE từ prediction đã lưu; giữ kết luận diagnostic | Metrics implemented/tested; diagnostic verified; generalization not verified |
-| Dự báo tải | Offline 5 phút đạt, 10 phút cũ không đạt | benchmark/forecast artifact | Chưa đánh giá phiên hai giờ, chưa tích hợp control | Chạy chronology 5/10 phút trên phiên mới; không nối controller | 5/10 phút offline synthetic verified; predictive control not implemented |
-| Extraction | Pipeline đầy đủ, một fixture provider thật | schema/worker/router/Kafka/Mongo/DLQ | Chưa có benchmark nhãn người | Thêm protocol, schema và evaluator; chưa tạo ground truth | Pipeline implemented/tested; one fixture verified; dataset accuracy not verified |
+| Đánh giá model giá | Một phần | production metrics và legacy benchmark | Legacy thiếu MdAPE; leakage/group split chưa xử lý | Thêm MdAPE; redaction giá, dedup, group split và benchmark sạch | Clean single-holdout diagnostic verified; deployment/generalization not verified |
+| Dự báo tải | Offline 5 phút đạt, 10 phút cũ không đạt | benchmark/forecast artifact | Chưa đánh giá phiên hai giờ, chưa tích hợp control | Chạy chronology 5/10 phút; thêm fail-closed predictive gate, không nối controller | 5/10 phút offline synthetic verified; predictive-control trial blocked/not implemented |
+| Extraction | Pipeline đầy đủ, một fixture provider thật | schema/worker/router/Kafka/Mongo/DLQ | Chưa có benchmark nhãn người | Thêm protocol/evaluator và panel 34 record cho hai reviewer + adjudication | Panel prepared; human labels và dataset accuracy not verified |
 | Đánh giá Agent | Harness có; chưa có cặp overload LLM hợp lệ | `llm_experiment.py`, lifecycle evidence | Không có improvement % của LLM | Không lấy guard/drain làm thành tích; giữ `not verified` | Harness implemented/tested; LLM improvement not verified |
 
 ## 1. Tiến độ triển khai và kiểm chứng
@@ -96,7 +100,7 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 - [ ] **Một phần: LLM tự chọn CPU/RAM và chứng minh thay đổi đó có ích.** Công cụ đã chạy thật, nhưng các allocation của bài thử 06/10 do người thử cung cấp. Quyết định LLM 07/10 có `resources={}`. Chưa có bằng chứng LLM tự chọn allocation, áp dụng và cải thiện quá tải. Không có autoscaling số replica hoặc broker. [Phạm vi công cụ](LLM_FEEDBACK_CONTROL.md).
 - [x] **Tách tiến trình training khỏi xử lý stream và cho agent cấp quyền bắt đầu.** Trainer là service riêng, đọc `training_allowed`, có khóa tránh fit đồng thời; Airflow nhường training cho trainer khi control bật. Một fit đang chạy được phép hoàn tất. [auto_train.py](../scripts/auto_train.py), [train_model.py](../modeling/train_model.py), [runtime_policy.py](../agents/runtime_policy.py), [DAG](../airflow/dags/real_estate_pipeline.py).
 - [ ] **Một phần: kiểm chứng training hoàn tất dưới điều tiết mà stream vẫn ổn định.** Đã thấy hoãn training và cấp quyền thật, nhưng các lượt control cố ý không chạy fit để giữ model phục vụ. Tách service vẫn dùng chung host/VM; chưa phải cô lập tài nguyên tuyệt đối. [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md).
-- [x] **LLM chọn dừng/bật một dịch vụ phụ theo telemetry.** LLM chọn hành động; guard tạm dừng admission và actuator kiểm tra quyền, dependency, cooldown, host/VM memory cùng byte reserve trước khi gọi Docker. Trainer drain đã có code/test nhưng chưa kiểm chứng live. Nhóm kiểm thử lịch sử liên quan đạt **337 tests**. Ngày 14/11, LLM dừng rồi bật lại đúng cùng container `mongo-express`: RAM host khả dụng tại hai quyết định lần lượt 9,73% và 11,67%; sau khi bật, model mở ingress 0,2 rps và có ba cửa sổ sạch liên tiếp với lag 0, p95 tối đa 0,04875s và throughput dương. Cleanup 15/15 bước thành công. Đây là lượt hữu hạn có kiểm soát, không phải controller luôn bật; không chứng minh lệnh dừng gây tăng RAM hoặc giữ ổn định khi quá tải. [Mã công cụ](../agents/container_lifecycle.py), [bằng chứng 14/11](evidence/container-lifecycle-recovery-20261114.json), [bằng chứng stop trước đó](evidence/container-lifecycle-live-20261105.json), [cấu hình](LLM_FEEDBACK_CONTROL.md#agent-dừng-và-bật-lại-dịch-vụ-phụ).
+- [x] **LLM chọn dừng/bật một dịch vụ phụ theo telemetry.** LLM chọn hành động; guard tạm dừng admission và actuator kiểm tra quyền, dependency, cooldown, host/VM memory cùng byte reserve trước khi gọi Docker. Nhóm kiểm thử lịch sử liên quan đạt **337 tests**. Ngày 14/11, LLM dừng rồi bật lại đúng cùng container `mongo-express`: RAM host khả dụng tại hai quyết định lần lượt 9,73% và 11,67%; sau khi bật, model mở ingress 0,2 rps và có ba cửa sổ sạch liên tiếp với lag 0, p95 tối đa 0,04875s và throughput dương. Cleanup 15/15 bước thành công. Ngày 18/11, actuator cũng hoàn tất một chu kỳ stop/start cùng-ID cho predictor và isolated trainer probe quan sát ba drain ACK, nhưng các hành động probe này không phải LLM; ACK chỉ có console capture và trainer production cũ chưa recreate với image mới. Chưa có ba chu kỳ lặp hoặc tác động RAM nhân quả. [Mã công cụ](../agents/container_lifecycle.py), [bằng chứng 14/11](evidence/container-lifecycle-recovery-20261114.json), [ops 18/11](evidence/ops-validation-20261118.json), [cấu hình](LLM_FEEDBACK_CONTROL.md#agent-dừng-và-bật-lại-dịch-vụ-phụ).
 
 ### 1.3. Model và chuyển dự phòng
 
@@ -108,7 +112,7 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 
 - [x] **Kiểm chứng tích hợp trên Docker, Kafka/Mongo và provider thật.** Đã có dữ liệu Kafka/Mongo thật, gọi model thật và thử actuator thật; kết quả được ghi theo từng lượt, gồm cả thất bại. [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md), [13/10](evidence/LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [lifecycle 14/11](evidence/container-lifecycle-recovery-20261114.json).
 - [x] **Xây dựng bộ thử đối chứng điều tiết LLM.** Đã xây harness baseline/LLM, hiệu chuẩn quá tải, workload cùng seed, tách nhu cầu trước gate khỏi lượng được nhận, lưu quyết định/ingress/commit/lag/latency/lỗi và trạng thái khôi phục. [llm_experiment.py](../research/llm_experiment.py), [llm_report.py](../research/llm_report.py), [tiêu chí đối chứng](LLM_OVERLOAD_EXPERIMENT.md).
-- [ ] **Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Các lượt đối chứng đến 14/11 chưa hoàn thành cặp hợp lệ; không có quyết định LLM trong các nhánh overload đã lưu. Hiệu chuẩn 14/11 xử lý/commit 9.747 record, nhưng guard RAM host dừng ở pha 300 rps trước khi có quá tải đo được, nên không chạy nhánh LLM. [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [14/11](evidence/llm-overload-20261114.json).
+- [ ] **Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Các lượt đối chứng đến 20/11 chưa hoàn thành cặp hợp lệ; không có quyết định LLM trong các nhánh overload đã lưu. Lượt core-only thứ hai bắt đầu với RAM host 15,72%, qua 10/30/100 rps và tới 300 rps; tại mẫu guard RAM còn 9,95%, lag 1 và p95 0,049s. Cả 8.154 record đã commit, nhưng chưa xuất hiện overload bền vững và stage 600 rps không được phép chạy, nên nhánh LLM/A-B không bắt đầu. [14/11](evidence/llm-overload-20261114.json), [18/11](evidence/llm-overload-20261118.json), [20/11](evidence/llm-overload-20261120.json).
 - [x] **Cải thiện độ ổn định và khả năng truy vết.** Đã sửa tranh chấp policy file Windows, timeout observer, đọc lịch sử anomaly theo luồng và ghi hash dependency thực sự trong worker. Chi tiết commit/tests ở [mục 7](#7-các-bản-sửa-đã-hoàn-thành).
 - [ ] **Một phần: kiểm chứng bản sửa giảm RAM trên Docker.** Mã và test đã hoàn tất; phiên 23/10 vẫn dùng cùng container/image identity như trước bản sửa và thiếu hash dependency cần thiết. Phải xác minh/recreate worker trước khi nhận kết quả mới là kiểm chứng bản sửa. Chưa có số đo giảm RAM thực tế. [Provenance và giới hạn](evidence/TELEMETRY_VALIDATION_20261024.md).
 - [x] **Theo dõi riêng RAM host, Docker VM và container.** Các số đo được lưu cùng thời điểm và phạm vi đo, giúp xác định áp lực bộ nhớ ở từng lớp. RAM container thấp không đồng nghĩa host hoặc VM còn đủ bộ nhớ. [Định nghĩa số đo](#5-dữ-liệu-telemetry-và-kết-quả-dự-báo).
@@ -118,11 +122,11 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 - [x] **Kiểm kê dữ liệu telemetry hiện có và đánh giá có đủ dùng không.** Đã audit lịch sử, loại phiên chưa kết thúc khỏi export và benchmark 1.732 observations của 7 phiên đã kết thúc. Đủ để đánh giá bước đầu trên workload tổng hợp, chưa đủ chứng minh hoạt động dài hạn hoặc điều tiết LLM. [Kiểm kê 23/10](evidence/TELEMETRY_VALIDATION_20261023.md), [kết quả 24/10](evidence/TELEMETRY_VALIDATION_20261024.md).
 - [x] **Thu telemetry trong phiên hai giờ.** Ngày 14/11, phiên controlled-synthetic được yêu cầu chạy 7.200 giây, healthy load span 7.195,088 giây, có 1.446 mẫu hợp lệ, 219.434 ACK, không có sample lỗi/gap timestamp và lag cuối bằng 0; lean-mode khôi phục dịch vụ phụ không lỗi. Dữ liệu đủ làm đầu vào đánh giá chronology nhưng chưa đại diện traffic tự nhiên và không tự chứng minh LLM control. [Bằng chứng phiên](evidence/telemetry-session-20261114.json).
 - [x] **Kiểm định dữ liệu và đối chiếu Gemini input/output.** Đã có audit skew/missingness/outlier và một record tổng hợp qua Gemini thật → parse → merge → MongoDB. Chưa xác minh chất lượng extraction toàn dataset. [Audit dữ liệu](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [phụ lục Gemini](#phụ-lục-a--bằng-chứng-gemini-ngày-24092026).
-- [x] **Benchmark các mô hình giá trên cùng tập chia.** Đã so VotingRegressor, Random Forest, Gradient Boosting và XGBoost; chỉ là chẩn đoán holdout, chưa thay model production và chưa xử lý hết leakage. [Kết quả định lượng](#4-kết-quả-thực-nghiệm), [benchmark.py](../research/benchmark.py).
+- [x] **Benchmark các mô hình giá trên cùng tập chia sạch.** Đã so VotingRegressor, Random Forest, Gradient Boosting và XGBoost sau redaction giá, bỏ exact duplicate và chia 70/15/15 theo block bất động sản không chứa URL/giá/free text. Run sạch 18/11 hoàn tất nhưng chỉ là một fixed holdout diagnostic, chưa thay model production. [Kết quả định lượng](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [evidence sạch](evidence/price-benchmark-grouped-20261118.json), [benchmark.py](../research/benchmark.py).
 - [x] **Đo tải ba broker, thời gian phản ứng, trước/sau và tạo biểu đồ.** Có paired-v4 bằng controller theo luật, log T0–T3 và biểu đồ từ dữ liệu thật. Ingress gần đều không đồng nghĩa CPU cân bằng; recovery đo được xảy ra trong drain. [Kết quả paired-v4](#42-kết-quả-controller-theo-luật).
 - [x] **Dự báo traffic trước 5 phút ở mức thử nghiệm offline.** Lượt 24/10 đã đạt; đánh giá mới trên phiên synthetic hai giờ chọn XGBoost bằng validation, test MAE 4,528 record/s, RMSE 5,569, R² 0,848 và RMSE thấp hơn persistence 78,77%. Artifact chỉ dành cho inference thử nghiệm. [Bằng chứng 17/11](evidence/telemetry-forecast-2h-20261117.json).
 - [x] **Dự báo traffic trước 10 phút đạt gate offline trên phiên hai giờ.** Lượt ngắn 24/10 từng không đạt (R² −0,084); lượt 17/11 chọn Gradient Boosting bằng validation, test MAE 6,387 record/s, RMSE 7,616, R² 0,724 và RMSE thấp hơn persistence 68,79%. Đây vẫn là một run synthetic có autocorrelation cao, không phải bằng chứng traffic tự nhiên. [Bằng chứng 17/11](evidence/telemetry-forecast-2h-20261117.json).
-- [ ] **Chưa hoàn thành: nối dự báo vào quyết định điều tiết và đo lợi ích.** Có [TrafficForecaster](../research/forecast.py) để inference có kiểm tra artifact/history; runner chưa dùng đầu ra đó để quyết định admission. Forecast tốt không tự chứng minh control tốt.
+- [ ] **Chưa hoàn thành: nối dự báo vào quyết định điều tiết và đo lợi ích.** Có [TrafficForecaster](../research/forecast.py) và [predictive-control readiness gate](../research/predictive_control_experiment.py), nhưng gate chặn trước trial vì artifact lịch sử chưa bind hash support/split và chưa có overload calibration/fingerprint hợp lệ. Miền train artifact hiện chỉ 5–57,0544 rps. Export mới sẽ ghi hai hash; chưa có experimental forecast controller hoặc ba cặp AB/BA nên production controller giữ nguyên. [Kết quả gate](evidence/predictive-control-readiness-20261118.json).
 - [ ] **Các hướng LSTM, Q-Learning/DQN và clustering chưa triển khai.** Đây là các hướng mở rộng chưa tích hợp vào hệ thống. LLM gán `light/normal/heavy` không phải mô hình clustering học từ telemetry. [Phạm vi nghiên cứu](../research/README.md).
 
 ## 2. Chức năng hệ thống
@@ -205,8 +209,9 @@ ra quyết định sau khi sample hoàn tất khoảng 0,986 ms, xác nhận gat
 
 ### 4.3. Benchmark mô hình giá và kiểm định dữ liệu
 
-Cùng 3.984 train / 996 test, random holdout seed 42 và preprocessing/log target.
-MdAPE được tính lại từ đúng 996 prediction đã lưu, không refit model:
+Bảng legacy dưới đây dùng 3.984 train / 996 test, random holdout seed 42 và
+preprocessing/log target cũ. MdAPE được tính lại từ đúng 996 prediction đã lưu,
+không refit model:
 
 | Model giá | R² | MAE, tỷ VND | RMSE, tỷ VND | MdAPE |
 | --- | ---: | ---: | ---: | ---: |
@@ -215,19 +220,37 @@ MdAPE được tính lại từ đúng 996 prediction đã lưu, không refit mo
 | Gradient Boosting | 0,446412 | 4,910597 | 14,772045 | 30,411% |
 | XGBoost | 0,592611 | 4,261827 | 12,672202 | 25,769% |
 
+Run sạch ngày 18/11 dùng 3.491 train / 750 validation / 731 test, seed 42;
+mọi model dùng cùng preprocessing và log target:
+
+| Model giá — grouped holdout sạch | R² | MAE, tỷ VND | RMSE, tỷ VND | MdAPE |
+| --- | ---: | ---: | ---: | ---: |
+| VotingRegressor hiện có | 0,330272 | 6,715332 | 25,703392 | 28,906% |
+| Random Forest | 0,242547 | 7,194976 | 27,335002 | 31,800% |
+| Gradient Boosting | 0,336119 | 7,067361 | 25,590945 | 32,655% |
+| XGBoost | 0,362721 | 6,668967 | 25,072983 | 28,539% |
+
 Dữ liệu có skew giá 7,021, diện tích 9,871; thiếu bedrooms 52,44%, bathrooms
 54,79%, latitude/longitude 100% trong snapshot đã audit. Có 687 giá trị giá
 thuộc nhóm IQR outlier; outlier thống kê không tự đồng nghĩa dữ liệu sai.
-Text chứa giá trong 4.917/4.980 candidate text, duplicate snapshot còn tồn tại và
-cross-split overlap gồm 9 title, 2 description, 2 `text_features`; fingerprint
-hiện chứa URL và target nên chưa group được cùng bất động sản. Các điểm số trên
-chưa đủ để thay model phục vụ hoặc tuyên bố tổng quát hóa tốt. Artifact production
+Audit cũ thấy text chứa giá trong 4.917/4.980 candidate, duplicate và cross-split
+overlap. Pipeline mới xử lý snapshot này thành **4.972 dòng sau khi loại 8 exact
+duplicate**, redaction giá ở 4.927 dòng và tạo **4.683 block bất động sản** độc lập
+với URL, giá và free text. Split seed 42 có 3.491/750/731 dòng train/validation/test,
+group overlap bằng 0. Block vị trí + thuộc tính vật lý là heuristic bảo thủ: có thể
+gộp hai bất động sản giống nhau hoặc bỏ sót relisting đổi metadata; zero key overlap
+không chứng minh property entity leakage bằng 0. XGBoost tốt nhất về số học trên bốn
+metric của run sạch này, nhưng dùng test để so bốn model không phải protocol chọn model
+production; không có cross-validation, confidence interval hoặc tập thời gian/nguồn độc lập.
+Vì vậy cả bảng legacy lẫn run mới chưa đủ để tuyên bố tổng quát hóa. Artifact production
 5.219 mẫu là population khác, không so trực tiếp với bảng legacy 4.980 mẫu.
 
 [Công cụ kiểm định dữ liệu](../research/data_audit.py) ·
 [audit.json — Local](../runtime/research/data-audit/audit.json) ·
 [metrics.json — Local](../runtime/research/legacy-benchmark/metrics.json) ·
 [MdAPE và hash prediction — Git](evidence/price-benchmark-mdape-20261117.json) ·
+[chuẩn bị sạch và split hash — Git](evidence/price-dataset-preparation-20261118.json) ·
+[grouped benchmark sạch — Git](evidence/price-benchmark-grouped-20261118.json) ·
 [biểu đồ benchmark — Local](../runtime/research/legacy-benchmark/algorithm_comparison.png).
 
 ### 4.4. Extraction: mức triển khai và khả năng đánh giá
@@ -238,14 +261,17 @@ chưa đủ để thay model phục vụ hoặc tuyên bố tổng quát hóa t�
 | Router/retry/rate limit/circuit/cache/audit | Implemented + tested | Có metric success/failure/duration/retry; confidence không phải accuracy đã hiệu chuẩn |
 | Kafka request/result, Mongo receipt, invalid/DLQ | Implemented + tested | Có idempotency và validation lặp lại trước storage |
 | Provider thật end-to-end | Experimentally verified cho 1 fixture synthetic | Phụ lục A; không đại diện dữ liệu crawl |
-| Accuracy trên dataset đại diện | Not verified | Chưa có mẫu ground truth do người gán và sampling protocol |
+| Accuracy trên dataset đại diện | Not verified | Đã chuẩn bị panel 34 record thật được xác định rõ provenance; hai reviewer và adjudicator người thật chưa hoàn tất |
 
 Đã bổ sung [protocol gán nhãn](EXTRACTION_EVALUATION.md),
 [JSON Schema](templates/extraction-ground-truth.schema.json) và
 [evaluator](../research/extraction_evaluation.py). Evaluator chỉ nhận file nhãn
 `adjudicated` tách khỏi prediction và tính field precision/recall/F1, exact/tolerance,
 completeness, invalid output, evidence validity, success, latency và retry. Không có
-số accuracy nào được báo cáo cho đến khi có dataset nhãn người đại diện.
+số accuracy nào được báo cáo cho đến khi hai reviewer độc lập và adjudicator hoàn
+tất panel. 4.946/4.980 record nguồn không có provenance synthetic rõ nên bị loại;
+panel hiện là toàn bộ frame 34 record `is_synthetic=false`, chưa đại diện toàn corpus.
+[Manifest panel](evidence/extraction-panel-20261118/manifest.json).
 
 ## 5. Dữ liệu telemetry và kết quả dự báo
 
@@ -359,11 +385,13 @@ miễn phí, không tự mở billing và không biến cùng một key thành q
 | Đọc lịch sử price anomaly một lượt, tránh giữ toàn bộ document | `acb8803` | 23 test anomaly/enrichment đạt; vẫn giữ percentile chính xác và đóng cursor. [price_anomaly.py](../processing/price_anomaly.py), [test_price_anomaly.py](../utils/tests/test_price_anomaly.py). Chưa đo giảm RAM Docker |
 | Ghi hash dependency thực sự đang chạy trong worker | `6bc14df` | 22 test đạt; một Docker call/worker, giữ field cũ và báo lỗi rõ nếu không đọc được. [run_experiment.py](../research/run_experiment.py), [test_worker_identity.py](../utils/tests/test_worker_identity.py) |
 
-Ngày 18/11, full suite hiện tại đạt **1.405 tests**; frontend type-check, ESLint,
-production build, Python compileall, Compose config, JSON parse, HTTP preview và
-Markdown link check đều đạt. Có 5.617 warning từ dependency/deprecation/runtime
-đã biết, không có test fail. Promtool trong container không chạy được vì Docker
-daemon đang tắt; Compose syntax vẫn đã kiểm tra. [Validation summary](evidence/project-validation-20261118.json).
+Full suite ngày 20/11 đạt **1.422 tests**; Python compileall và Compose config đạt.
+Frontend type-check/ESLint/build/HTTP preview và promtool không đổi từ lượt 18/11,
+trong đó promtool đã xác nhận Prometheus config cùng **10 alert rules** hợp lệ.
+Có 5.617 warning dependency/deprecation/runtime đã biết, không có test fail.
+[Validation 20/11](evidence/project-validation-20261120.json),
+[validation 18/11](evidence/project-validation-20261118.json),
+[ops revalidation](evidence/ops-validation-20261118.json).
 Việc xác minh bản triển khai live vẫn cần đối chiếu dependency hashes trong
 container với phiên bản mã nguồn cần kiểm chứng.
 
@@ -372,29 +400,31 @@ container với phiên bản mã nguồn cần kiểm chứng.
 - [ ] **Triển khai và xác minh bản sửa worker:** container dùng đúng image/mã, hash `price_anomaly.py` và `feature_engineering.py` khớp bản cần thử; đo RAM thực tế trước khi kết luận giảm bộ nhớ.
 - [ ] **Chứng minh điều tiết LLM quá tải:** ít nhất 3 cặp hợp lệ, có cả thứ tự baseline→LLM và LLM→baseline, cùng seed/workload/allocation/training. Model phải thật sự giảm rate; ingress/lag/latency phục hồi với throughput dương **khi offered demand vẫn cao**; báo cáo cả lỗi, deferred và rejected. Guard/drain không được nhận công cho LLM.
 - [ ] **Chứng minh LLM tự đổi allocation:** có quyết định model, receipt Docker+Compose và phép đo hiệu quả; đây là thử nghiệm riêng vì bài đối chứng rate hiện cố định resource limits.
-- [ ] **Mở rộng kiểm chứng lifecycle:** stop/start cùng container và tải nhỏ sau start đã đạt ngày 14/11. Còn kiểm chứng trainer drain live, lặp lại/continuous operation, tác động RAM nhân quả và ổn định khi overload; guard/script không được nhận công cho LLM.
+- [ ] **Mở rộng kiểm chứng lifecycle:** stop/start cùng container và tải nhỏ sau start đã đạt ngày 14/11; ngày 18/11 thêm một chu kỳ predictor stop/start cùng-ID và isolated trainer probe quan sát ba ACK. Còn deploy/recreate trainer production với image mới, lưu ACK durable khi fit đang chạy, ba chu kỳ lặp/continuous operation, tác động RAM nhân quả và ổn định overload; probe/script không được nhận công cho LLM.
 - [ ] **Chạy training dưới điều tiết:** kiểm chứng hoãn/cho phép và fit hoàn tất, theo dõi stream trong lúc fit; đo chi phí tài nguyên thay vì chỉ quan sát `training_allowed=true`.
 - [ ] **Hoàn tất fallback quota/vận hành:** cấu hình route được tài khoản cho phép; xác nhận khả năng chuyển khi quota hết, giới hạn chi phí và giới hạn quota dùng chung. Test mô phỏng chỉ xác minh logic; chỉ ghi nhận failover quota thực tế khi có lỗi quota và response fallback thật. Không cần cố tình tiêu hết quota để thử.
-- [ ] **Mở rộng forecast:** 5/10 phút đã đạt gate trên một run synthetic hai giờ; còn dữ liệu độc lập nhiều ngày/tự nhiên. Chỉ nối controller và kết luận predictive control sau thử nghiệm A/B riêng.
-- [ ] **Đánh giá chất lượng model giá:** tạo property-group key không chứa URL/target, deduplicate/group split, loại target token khỏi text, lưu dataset hash/split IDs/policy/hyperparameters và đánh giá lại trước khi chọn model.
-- [ ] **Đánh giá extraction trên dữ liệu đại diện:** protocol/schema/evaluator đã có; còn lấy mẫu độc lập, hai người gán nhãn/adjudicate và chạy benchmark. Một fixture Gemini không đủ.
+- [ ] **Mở rộng forecast:** 5/10 phút đã đạt gate offline trên một run synthetic hai giờ; readiness gate fail-closed vì manifest lịch sử chưa bind support/split, thiếu capacity calibration và miền tải phù hợp. Còn re-export artifact có provenance binding, dữ liệu độc lập nhiều ngày/tự nhiên, experimental forecast controller và ba cặp AB/BA. Chỉ nối production sau trial đạt.
+- [ ] **Đánh giá chất lượng model giá:** redaction target, dedup, conservative property-group split, dataset/split hash, hyperparameters, predictions và clean diagnostic đã có evidence. Còn đánh giá heuristic entity grouping bằng nhãn property, cross-validation hoặc tập thời gian/nguồn độc lập và protocol chọn model không dùng test trước khi deploy.
+- [ ] **Đánh giá extraction trên dữ liệu đại diện:** protocol/schema/evaluator và panel 34 record đã có; còn hai người thật gán nhãn, adjudicator độc lập, đánh giá representativeness và chạy benchmark. Một fixture Gemini không đủ.
 
 ## 9. Danh mục bằng chứng
 
 | Nội dung | Bằng chứng đọc được trên Git | Raw artifact trên máy chạy, ngoài Git |
 | --- | --- | --- |
 | Gemini extraction thật | Phụ lục A dưới đây | [gemini-clean-audit.json](../runtime/research/gemini-clean-audit.json), [validation-success.json](../runtime/research/gemini-verification-runtime/validation-success.json) |
-| Audit/benchmark giá | [Kết quả kiểm định và benchmark](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [MdAPE và hash](evidence/price-benchmark-mdape-20261117.json) | [data audit](../runtime/research/data-audit/audit.json), [legacy metrics/predictions](../runtime/research/legacy-benchmark/metrics.json) |
+| Audit/benchmark giá | [Kết quả kiểm định và benchmark](#43-benchmark-mô-hình-giá-và-kiểm-định-dữ-liệu), [MdAPE cũ](evidence/price-benchmark-mdape-20261117.json), [dataset/split sạch](evidence/price-dataset-preparation-20261118.json), [grouped metrics](evidence/price-benchmark-grouped-20261118.json) | [data audit](../runtime/research/data-audit/audit.json), grouped metrics/split/predictions/chart ở `runtime/research/price-grouped-20261118/` |
 | Controller theo luật | [Kết quả paired-v4](#42-kết-quả-controller-theo-luật) | [paired-v4 summary](../runtime/research/paired-v4-20260921/analysis/summary.json), observations/actions/biểu đồ trong cùng thư mục |
 | Docker apply/rollback | [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md) | [resource.apply.json](../runtime/control-validation/20261006-01/resource.apply.json), [rollback.json](../runtime/control-validation/20261006-01/rollback.json) |
 | LLM và fallback thật | [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md), [JSON tổng hợp](evidence/llm-feedback-20261007.json) | [summary lượt 02](../runtime/control-validation/20261007-02/summary.json), [summary lượt 03](../runtime/control-validation/20261007-03/summary.json), provider/live logs cùng thư mục |
 | LLM container lifecycle | [Lượt 05/11](evidence/container-lifecycle-live-20261105.json), [stop/start và recovery 14/11](evidence/container-lifecycle-recovery-20261114.json) | Raw result/decisions/samples/receipts ở `runtime/diagnostics/container-lifecycle-*`; hash ghi trong summary Git |
-| Các lần overload chưa hoàn thành | [13/10](evidence/LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [calibration 14/11](evidence/llm-overload-20261114.json) | Raw calibration/session ở `runtime/research/llm-proof-*`; chưa có cặp A/B LLM hợp lệ |
+| Các lần overload chưa hoàn thành | [13/10](evidence/LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [14/11](evidence/llm-overload-20261114.json), [18/11](evidence/llm-overload-20261118.json), [20/11](evidence/llm-overload-20261120.json) | Raw calibration/session ở `runtime/research/llm-proof-*`; chưa có cặp A/B LLM hợp lệ hoặc quyết định LLM trong overload |
 | Kiểm kê và phiên telemetry | [23/10](evidence/TELEMETRY_VALIDATION_20261023.md), [24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [phiên 2h 14/11](evidence/telemetry-session-20261114.json) | Session/observations/history audit ở `runtime/research/traffic-sessions*`; hash ghi trong summaries Git |
-| Forecast 5/10 phút | [Đánh giá cũ 24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [đánh giá phiên 2h 17/11](evidence/telemetry-forecast-2h-20261117.json) | Metrics, predictions, split và model trong `runtime/research/telemetry-evaluation-20261024/` và `runtime/research/forecast-2h-20261117/` |
-| Extraction evaluation readiness | [Protocol](EXTRACTION_EVALUATION.md), [schema nhãn](templates/extraction-ground-truth.schema.json), [evaluator](../research/extraction_evaluation.py) | Chưa có dataset nhãn người hoặc metrics accuracy đại diện |
+| Forecast 5/10 phút | [Đánh giá cũ 24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [đánh giá phiên 2h 17/11](evidence/telemetry-forecast-2h-20261117.json), [predictive readiness gốc 18/11, re-evaluate 20/11](evidence/predictive-control-readiness-20261118.json) | Metrics, predictions, split và model trong `runtime/research/telemetry-evaluation-20261024/` và `runtime/research/forecast-2h-20261117/`; control trial chưa bắt đầu |
+| Extraction evaluation readiness | [Protocol](EXTRACTION_EVALUATION.md), [schema nhãn](templates/extraction-ground-truth.schema.json), [panel/manifest](evidence/extraction-panel-20261118/manifest.json), [evaluator](../research/extraction_evaluation.py) | Hai reviewer/adjudicator chưa điền nhãn; chưa có metrics accuracy đại diện |
+| Ops revalidation 18/11 | [Promtool/drain/lifecycle scope](evidence/ops-validation-20261118.json) | Raw lifecycle receipt ở `runtime/control/lifecycle-repeat-probe/`; drain ACK chỉ console capture, không có claim continuous/causal RAM |
 | Demo công khai | [SystemDemo](../frontend/src/components/SystemDemo.tsx), [evidence constants](../frontend/src/data/projectEvidence.ts) | Hiển thị artifact tĩnh đã gắn nhãn; không giả làm live dashboard |
-| Validation 18/11 | [Command/results summary](evidence/project-validation-20261118.json) | Full suite, frontend, compile/config/JSON, preview và link checks; promtool live-container bị skip vì Docker daemon tắt |
+| Validation 18/11 | [Command/results summary](evidence/project-validation-20261118.json), [ops follow-up](evidence/ops-validation-20261118.json) | Full suite snapshot, frontend, compile/config/JSON, preview/link checks và promtool follow-up đạt |
+| Validation 20/11 | [Final code/safety checks](evidence/project-validation-20261120.json) | Full suite 1.422 tests; predictive gate fail-closed và overload calibration bị RAM guard dừng an toàn |
 
 Mỗi bộ bằng chứng gắn với ngày chạy, phiên bản mã và phạm vi thí nghiệm cụ thể.
 Artifact trong `runtime/` được lưu cục bộ; các báo cáo và số liệu tổng hợp trong
@@ -404,12 +434,12 @@ repository phục vụ đối chiếu kết quả giữa các phiên bản.
 
 | Chức năng | Thành phần quyết định | Baseline phù hợp | Trạng thái evidence |
 | --- | --- | --- | --- |
-| Extraction | LLM provider/router; schema/evidence/merge là code | Cùng tập nhãn người, không extraction hoặc provider/model khác | Một fixture thật; accuracy chưa kiểm chứng |
+| Extraction | LLM provider/router; schema/evidence/merge là code | Cùng panel adjudicated, không extraction hoặc provider/model khác | Panel 34 record đang chờ hai reviewer/adjudicator; accuracy chưa kiểm chứng |
 | Stress generation | Generator có seed/rule, không phải LLM control | Không áp dụng improvement hệ thống | Implemented/tested |
 | Load classification/rate/training permission | LLM đề xuất; guard giới hạn | Fixed-rate hoặc cùng controller không LLM | Tải nhỏ đã chạy; overload A/B chưa đạt |
 | Resource allocation | LLM có schema đề xuất; actuator deterministic | Cùng workload và allocation cố định | Tool thật đã chạy; allocation do người chọn |
 | Container lifecycle | LLM chọn stop/start; guard/actuator thi hành | Cùng telemetry/workload, lifecycle disabled | Functional recovery đạt; không có A/B overload |
-| Workload forecast | ML offline, chưa phải Agent controller | Persistence | 5/10 phút đạt trên một run synthetic; chưa có control benefit |
+| Workload forecast | ML offline, chưa phải Agent controller | Persistence cho forecast; reactive controller cho control trial | 5/10 phút đạt trên một run synthetic; readiness gate bị chặn, chưa có control benefit |
 
 Kết quả paired-v4 theo luật giảm peak lag 74,88% và peak p95 65,74%, nhưng
 committed throughput thấp hơn và rejected tăng mạnh. Đây **không phải** phần trăm

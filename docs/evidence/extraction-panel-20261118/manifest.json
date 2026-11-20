@@ -1,0 +1,62 @@
+{
+  "annotation": {
+    "accuracy_claim_allowed": false,
+    "adjudication_file": "adjudication.jsonl",
+    "contact_redaction": "Contact segments, Vietnamese-format phone numbers and email addresses are replaced before review; source listing IDs are hashed",
+    "independent_review_files": [
+      "reviewer-a.jsonl",
+      "reviewer-b.jsonl"
+    ],
+    "packet_sha256": {
+      "adjudication.jsonl": "358f3736fe1bc6a11cbbc88d456a49c6c25700e427e18a0b1471ae4f6e93922c",
+      "candidates.jsonl": "84f3af05dd6203b8613b41b4c4733e468042214fee1b4c74ed76834d1fe201e5",
+      "reviewer-a.jsonl": "379350feba21d1de55a2fb6c53c05db6917c976b2c5b9864e89ace3a8d9e09bd",
+      "reviewer-b.jsonl": "ec60f377ff139040847755fe99bcd33ed67116337804087ba49812a7838013be"
+    },
+    "predictions_visible_to_reviewers": false,
+    "reviewer_ids": [
+      "reviewer-a",
+      "reviewer-b"
+    ]
+  },
+  "dataset_id": "extraction-real-panel-20261118",
+  "storage": {
+    "git": "manifest only",
+    "local_packets": "runtime/research/extraction-panel-20261118/",
+    "reason": "Avoid publishing listing text and precise addresses in the repository."
+  },
+  "input": {
+    "path": "runtime/research/data-audit/candidates.jsonl",
+    "provenance_counts": {
+      "explicit_real": 34,
+      "unknown": 4946
+    },
+    "row_count": 4980,
+    "sha256": "85b31405edcf7bd0b96a3b69e37c41b6345a7d463772c5fcc83fb491a63a4eda"
+  },
+  "limitations": [
+    "Only records explicitly marked is_synthetic=false are eligible.",
+    "Rows with unknown provenance are excluded and may make the panel unrepresentative of the full corpus.",
+    "No accuracy metric is valid until both human reviews and adjudication are completed.",
+    "Reviewer packets remain local and must be distributed only to the assigned reviewers."
+  ],
+  "selection": {
+    "eligible_unique_explicit_real_count": 34,
+    "excluded_duplicate_text_count": 0,
+    "excluded_empty_text_count": 0,
+    "method": "complete_explicit_real_unique_frame",
+    "seed": 20261118,
+    "selected_count": 34,
+    "stratum_counts": {
+      "alonhadat|apartment": 3,
+      "alonhadat|house": 18,
+      "alonhadat|land": 7,
+      "alonhadat|villa_townhouse": 2,
+      "batdongsan|house": 1,
+      "batdongsan|land": 1,
+      "homedy|house": 1,
+      "homedy|land": 1
+    }
+  },
+  "status": "awaiting_two_human_reviews_and_adjudication"
+}

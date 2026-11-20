@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-11-18",
+  "run_id": "llmproof-baseline-df5fc0c0b110",
+  "status": "calibration_inconclusive",
+  "scope": "Baseline-only calibration on the isolated fixed-allocation core. No LLM decision was requested or credited.",
+  "result": {
+    "stop_reason": "emergency_host_memory",
+    "selected_overload_profile": null,
+    "paired_trials_started": 0,
+    "valid_pairs": 0,
+    "llm_actions": 0,
+    "first_stage_rate_records_per_second": 10,
+    "offered": 7,
+    "admitted": 7,
+    "acknowledged": 7,
+    "committed": 7,
+    "host_memory_available_percent_at_first_guard_sample": 9.48191450989873,
+    "resource_fingerprint": "8a482473b8ae909b0027692652c9cd34d024dcf8bef1668cf9513dafd724a7d5"
+  },
+  "restoration": {
+    "status": "restored",
+    "restore_errors": []
+  },
+  "conclusion": "The mandatory host-memory guard stopped calibration before overload could be measured. This is not an LLM-control result and does not permit an A/B trial.",
+  "runtime_evidence": [
+    {"path": "runtime/research/llm-proof-20261118-calibration-01/session.json", "sha256": "8b713c96e34d580b56f2ea4e81fb9a2676101dec03b9021d9e22b3482a71fa2d"},
+    {"path": "runtime/research/llm-proof-20261118-calibration-01/isolation.json", "sha256": "d374e6c6efa37a6cb7ef3aa55ef18f9ae3a048c9efa822edf2a85ddbc33bb202"},
+    {"path": "runtime/research/llm-proof-20261118-calibration-01/calibration/run.json", "sha256": "1d57a301d9a5be8bda9f7634f51b2428c3ac5ecc26e898c6429d0502e47b5274"},
+    {"path": "runtime/research/llm-proof-20261118-calibration-01/calibration/telemetry.jsonl", "sha256": "db7614e5d9e0ef6473d37df66505fbebcd32b1a0b1ec876ad88d68216b073115"},
+    {"path": "runtime/research/llm-proof-20261118-calibration-01/calibration/actions.jsonl", "sha256": "2437d47848f9335d37098f933f284aad0ce9177874390f7a4b64bab4d8b0fa19"}
+  ]
+}

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "date_local": "2026-11-18",
   "branch": "dev",
-  "base_commit": "eb9468986bd6d1f20921184d304a4b8e15d4cfac",
+  "base_commit": "34634d33b1073af2253f7686fabe93e7533e395a",
   "environment": {
     "python": "3.12.10",
     "node": "24.19.0",
@@ -13,7 +13,7 @@
     {
       "command": "python -m pytest -q",
       "status": "passed",
-      "result": "1405 passed, 5617 warnings in 70.19s"
+      "result": "1419 passed, 5617 warnings in 80.23s"
     },
     {
       "command": "npm.cmd run type-check && npm.cmd run lint && npm.cmd run build",
@@ -32,7 +32,7 @@
     {
       "command": "Parse modified evidence/schema/Grafana JSON with PowerShell ConvertFrom-Json",
       "status": "passed",
-      "result": "6 files parsed"
+      "result": "21 evidence/schema JSON files parsed"
     },
     {
       "command": "Vite local development preview plus HTTP GET http://127.0.0.1:3000/",
@@ -44,17 +44,39 @@
       "status": "passed"
     },
     {
+      "command": "python -m research.benchmark legacy --input runtime/research/data-audit/candidates.jsonl --output runtime/research/price-grouped-20261118 --trees 100 --jobs 2",
+      "status": "passed",
+      "result": "4 models measured on grouped 3491/750/731 split; metrics SHA-256 9ec4db1b5273086d1437b411c3a376443774dddf707bd5f4556078296068d1ae"
+    },
+    {
+      "command": "python -m research.predictive_control_experiment --artifact ... --capacity-evidence docs/evidence/llm-overload-20261114.json",
+      "status": "expected_blocked",
+      "result": "Fail-closed before trial: capacity calibration incomplete, overload rate and resource fingerprint missing"
+    },
+    {
+      "command": "Verify extraction packet hashes and scan redacted candidate text for phone/email patterns",
+      "status": "passed",
+      "result": "4 packet hashes matched; 0 contact-pattern matches"
+    },
+    {
+      "command": "promtool check config and alert rules inside the Prometheus container",
+      "status": "passed",
+      "result": "Prometheus config valid; 10 alert rules valid"
+    },
+    {
       "command": "git diff --check and trailing-whitespace scan",
       "status": "passed"
     }
   ],
   "warnings": [
     "The Python suite reports existing FastAPI/Starlette/Pydantic/joblib/NumPy deprecation or runtime warnings; no test failed.",
-    "Promtool live-container validation was skipped because the Docker Desktop Linux daemon was not running; Compose syntax validation passed."
+    "Docker later stopped after the memory-constrained live probes; promtool had already passed while the daemon was available."
   ],
   "forecast_provenance_check": {
-    "research_benchmark_sha256": "88050af51fe144f6329746c5f2b05cf1ffafe76f8bfbdec7b002e30fa137cb88",
+    "forecast_recorded_research_benchmark_sha256": "88050af51fe144f6329746c5f2b05cf1ffafe76f8bfbdec7b002e30fa137cb88",
+    "research_benchmark_sha256_at_20261118_validation": "ac52c6ea22fb35391456c07783cf146196b6e1674bbf234f908655876a3a1b8c",
     "forecast_metrics_sha256": "17b0816b593de59b3b49e25c6c3e22aeaab6753fe773eeee1671b28c987c2c62",
-    "matches_forecast_summary": true
+    "matches_forecast_summary": false,
+    "explanation": "The forecast summary remains tied to its recorded source hash; by the 18/11 validation benchmark.py had changed for grouped price evaluation, so that checkout must not be presented as the exact forecast-producing source."
   }
 }

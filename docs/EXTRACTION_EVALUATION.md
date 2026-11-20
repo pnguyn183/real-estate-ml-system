@@ -4,6 +4,39 @@ The extraction pipeline is implemented and tested, but one successful real-provi
 fixture is not a representative accuracy benchmark. This protocol requires a
 separate, human-adjudicated ground-truth file before any accuracy result is reported.
 
+## Prepared annotation panel (18/11/2026)
+
+`runtime/research/extraction-panel-20261118/` contains the local blinded annotation
+panel and three independent work files; Git retains only
+`docs/evidence/extraction-panel-20261118/manifest.json` to avoid publishing listing
+text and precise addresses:
+
+- `candidates.jsonl`: 34 unique listings explicitly marked `is_synthetic=false`;
+- `reviewer-a.jsonl` and `reviewer-b.jsonl`: separate pending review packets;
+- `adjudication.jsonl`: a separate pending adjudicator packet;
+- `manifest.json`: source SHA-256, seed, selection rule, strata and limitations.
+
+Contact segments, phone numbers and email addresses are redacted from reviewer
+packets because they are irrelevant to the extraction schema; source listing IDs
+are hashed. The candidate keeps both the original source-text hash and the
+redacted annotation-text hash for auditability against the local source export.
+
+This is the complete explicitly-real frame available in the local audit export, not
+proof that the panel represents the full corpus: 4,946/4,980 source rows had unknown
+synthetic provenance and were excluded. The panel therefore prepares the requested
+two-reviewer workflow but is **not an accuracy benchmark yet**. Two humans and an
+independent adjudicator must complete the packets before any metric is reported.
+
+Regenerate the same panel from the recorded input with:
+
+```bash
+python -m research.extraction_dataset prepare \
+  --input runtime/research/data-audit/candidates.jsonl \
+  --output-dir runtime/research/extraction-panel-20261118 \
+  --dataset-id extraction-real-panel-20261118 \
+  --reviewer-a reviewer-a --reviewer-b reviewer-b --seed 20261118
+```
+
 ## Prepare labels
 
 1. Sample listings independently of model success/failure and preserve the sampling
@@ -16,6 +49,22 @@ separate, human-adjudicated ground-truth file before any accuracy result is repo
    `docs/templates/extraction-ground-truth.schema.json` to validate the JSONL objects.
 4. Put only fields actually reviewed in `ground_truth`. Use `null` when a reviewed
    field is absent. Set numeric tolerances before looking at model predictions.
+
+Each reviewer changes only their own packet to `review_status: completed`. The
+adjudicator compares both completed packets without seeing predictions, records the
+exact `disagreement_fields`, resolves the values, and sets
+`adjudication_status: completed`. The adjudicator ID must differ from both reviewer
+IDs. Finalization rejects missing records, altered source hashes, incomplete reviews,
+non-independent identities, undeclared disagreements and invalid extraction fields:
+
+```bash
+python -m research.extraction_dataset finalize \
+  --candidates runtime/research/extraction-panel-20261118/candidates.jsonl \
+  --reviewer-a runtime/research/extraction-panel-20261118/reviewer-a.jsonl \
+  --reviewer-b runtime/research/extraction-panel-20261118/reviewer-b.jsonl \
+  --adjudication runtime/research/extraction-panel-20261118/adjudication.jsonl \
+  --output runtime/research/extraction-panel-20261118/adjudicated-ground-truth.jsonl
+```
 
 Predictions are a separate JSONL file. Each row contains `record_id`, `status`,
 `attempts`, `latency_seconds`, and, for a successful record, the provider's parsed
@@ -37,6 +86,5 @@ numeric tolerance accuracy, completeness, evidence validity, processing success,
 invalid-output and retry rates, plus mean/p95 latency. A mismatched non-null value is
 both a false positive and a false negative. Missing predictions count as failures.
 
-No representative human-labelled dataset is committed at present, so these metrics
-remain **not experimentally verified** until that dataset and its sampling protocol
-exist.
+No completed human-labelled dataset is committed at present, so extraction accuracy
+remains **not experimentally verified** until both reviews and adjudication finish.

@@ -251,9 +251,13 @@ error and action plots from these files. Missing series never become demo data.
 duplicate counts, quantiles, skewness, IQR outliers, and real distribution plots.
 `research.benchmark legacy` compares the existing voting ensemble, Random
 Forest, Gradient Boosting and XGBoost using the same fitted preprocessing,
-log target and original shuffled split. This diagnoses the legacy result;
-price text and duplicate contamination prevent a clean generalization claim.
-No production model is overwritten.
+log target and deterministic 70/15/15 property-group split. Exact listing
+duplicates are removed before splitting, property groups cannot cross splits,
+and currency/explicit price amounts are redacted before TF-IDF and local text
+embeddings. Legacy rows without a durable property ID use a conservative
+location/physical-attribute block that may over-group similar properties or miss
+relistings with changed metadata, so the result remains a diagnostic rather
+than a universal generalization claim. No production model is overwritten.
 
 `research.benchmark traffic` uses past-only lag/rolling features, timestamp/run/
 gap boundaries, chronological holdout and a label-horizon purge. It compares
@@ -270,3 +274,11 @@ with its matching hash and returns unavailable on flagged telemetry or history
 discontinuities. It is an experimental inference component; the runner does not
 use its output for admission decisions. Predictive control and its causal benefit
 remain pending a suitable dataset and an independently evaluated control policy.
+Before implementing an experimental forecast controller, run the fail-closed
+readiness gate documented in
+[`docs/PREDICTIVE_CONTROL_EXPERIMENT.md`](../docs/PREDICTIVE_CONTROL_EXPERIMENT.md).
+The gate checks the artifact plus support/split hashes bound into its manifest,
+train-only demand support and an independently measured overload calibration.
+The 17/11 historical manifest predates support/split binding and therefore fails
+closed; newly exported artifacts record both hashes. Passing the gate authorizes only an
+isolated AB/BA trial, never production integration.

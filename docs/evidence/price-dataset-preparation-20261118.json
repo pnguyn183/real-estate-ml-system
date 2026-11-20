@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-11-18T03:38:58.4153216Z",
+  "scope": "price-model dataset preparation and group-split validation only",
+  "source": {
+    "path": "runtime/research/data-audit/candidates.jsonl",
+    "bytes": 22779376,
+    "last_write_time_utc": "2026-09-21T04:40:22.9282881Z",
+    "sha256": "85b31405edcf7bd0b96a3b69e37c41b6345a7d463772c5fcc83fb491a63a4eda"
+  },
+  "preparation": {
+    "input_rows": 4980,
+    "valid_candidate_rows": 4980,
+    "duplicates_removed": 8,
+    "output_rows": 4972,
+    "property_group_count": 4683,
+    "rows_with_price_text_redacted": 4927,
+    "prepared_dataset_sha256": "fd281d5552ab9c8a87d4237b203df3e9a7bba8f72a33e5dc9a4e85e2347ce9d4",
+    "target_leakage_control": "Currency and explicitly price-labelled amounts are redacted before TF-IDF and local text embeddings.",
+    "duplicate_policy": "Exact target/content duplicates are collapsed, retaining the last occurrence.",
+    "property_group_policy": "Explicit property ID, address signature, conservative location/physical-attribute block, then source/listing identity; URL, price and free text are excluded from the group key."
+  },
+  "split": {
+    "strategy": "deterministic property-group holdout 70/15/15",
+    "seed": 42,
+    "rows": {"train": 3491, "validation": 750, "test": 731},
+    "groups": {"train": 3278, "validation": 702, "test": 703},
+    "cross_split_group_overlap": 0
+  },
+  "validation": {
+    "targeted_tests": "18 passed across model, extraction-panel and predictive-gate tests",
+    "command": "python -m pytest -q utils/tests/test_model.py utils/tests/test_extraction_dataset.py utils/tests/test_predictive_control_experiment.py",
+    "compile": "python -m compileall -q modeling/price_model.py research/benchmark.py",
+    "diff_check": "passed"
+  },
+  "limitations": [
+    "This artifact covers preparation only; clean diagnostic scores are reported separately in price-benchmark-grouped-20261118.json.",
+    "Legacy rows without durable property IDs use a conservative location/physical-attribute block that may merge distinct similar properties or miss relistings with changed metadata.",
+    "The source snapshot contains asking prices, not independently verified transaction prices."
+  ]
+}

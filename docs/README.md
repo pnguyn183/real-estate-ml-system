@@ -49,6 +49,7 @@ latest observed values.
 
 - [LLM feedback control](LLM_FEEDBACK_CONTROL.md) - telemetry, model decisions, rate limits and Docker actuators.
 - [Overload experiments](LLM_OVERLOAD_EXPERIMENT.md) - workload design, matched comparisons and acceptance criteria.
+- [Predictive-control experiment gate](PREDICTIVE_CONTROL_EXPERIMENT.md) - prerequisites before forecast may enter an isolated controller trial.
 - [Telemetry collection](TRAFFIC_SESSIONS.md) - bounded sessions, resource guards and dataset export.
 - [Research commands](../research/README.md) - reproducible experiments and forecasting benchmarks.
 - [Validation evidence](evidence/README.md) - dated test results, measurements and artifact hashes supporting the Project Report.

@@ -20,7 +20,6 @@ from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from research.data_audit import write_json, parse_utc_timestamp, profile_records, plots
@@ -106,18 +105,40 @@ def comparison_plot(results: dict, path: Path, title: str):
 
 
 def legacy_benchmark(records: list[dict], output: Path, *, trees=100, jobs=2):
-    from agents.safety import real_records
-    from modeling.price_model import build_feature_frame, build_regression_pipeline, NUMERIC_FEATURES, CATEGORICAL_FEATURES, TEXT_FEATURE, TARGET
-    from processing.price_anomaly import get_anomaly_training_policy
-    records = real_records(records)
-    records = [r for r in records if r.get("is_model_candidate", True) and r.get(TARGET) is not None and r[TARGET] > 0
-               and not (get_anomaly_training_policy() == "EXCLUDE" and r.get("is_price_anomaly"))]
-    if len(records) < 200:
-        return {"status": "insufficient_data", "rows": len(records), "required": 200}
-    frame = build_feature_frame(records)
+    from modeling.price_model import (
+        build_regression_pipeline,
+        group_train_validation_test_split,
+        prepare_price_dataset,
+        NUMERIC_FEATURES,
+        CATEGORICAL_FEATURES,
+        PRICE_GROUP_COLUMN,
+        TEXT_FEATURE,
+        TARGET,
+    )
+    frame, data_audit = prepare_price_dataset(records)
+    if len(frame) < 200:
+        return {"status": "insufficient_data", "rows": len(frame), "required": 200, "data_audit": data_audit}
     X, y = frame[NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TEXT_FEATURE]], frame[TARGET].astype(float)
-    train, test = train_test_split(np.arange(len(frame)), test_size=.2, random_state=42)
-    write_json(output / "split.json", {"train_indices": train.tolist(), "test_indices": test.tolist(), "seed": 42, "strategy": "legacy random 80/20 diagnostic, unsuitable for forecasting"})
+    split = group_train_validation_test_split(frame)
+    train, validation, test = split["train"], split["validation"], split["test"]
+    write_json(output / "split.json", {
+        "train_indices": train.tolist(),
+        "validation_indices": validation.tolist(),
+        "test_indices": test.tolist(),
+        "seed": 42,
+        "strategy": "property-group holdout 70/15/15",
+        "property_group_counts": {
+            name: int(frame.iloc[indexes][PRICE_GROUP_COLUMN].nunique())
+            for name, indexes in split.items()
+        },
+        "property_group_ids": {
+            name: sorted(set(frame.iloc[indexes][PRICE_GROUP_COLUMN]))
+            for name, indexes in split.items()
+        },
+        "group_overlap_count": 0,
+            "test_usage": "one-time diagnostic comparison across fixed models; never used for fitting or tuning",
+            "production_model_selected": False,
+    })
     template = build_regression_pipeline()
     prep = Pipeline(template.steps[:-1])
     start = time.perf_counter()
@@ -147,14 +168,17 @@ def legacy_benchmark(records: list[dict], output: Path, *, trees=100, jobs=2):
     predictions.to_csv(output / "predictions.csv", index=False)
     overlaps = {}
     for key in ("url", "title", "description", "text_features"):
-        overlaps[key] = len({records[i].get(key) for i in train if records[i].get(key)} & {records[i].get(key) for i in test if records[i].get(key)})
+        overlaps[key] = len(
+            set(frame.iloc[train][key].dropna()) & set(frame.iloc[test][key].dropna())
+        ) if key in frame else 0
     chart = comparison_plot(results, output / "algorithm_comparison.png", "Legacy PROPERTY PRICE diagnostic; MAE/RMSE in VND")
-    return {"status": "measured" if all(r["status"] == "measured" for r in results.values()) else "partial", "purpose": "legacy_price_diagnostic_only", "target": TARGET,
-            "target_transform": "log1p/expm1 for every model", "sample_count": len(records), "train_size": len(train), "test_size": len(test),
+    return {"status": "measured" if all(r["status"] == "measured" for r in results.values()) else "partial", "purpose": "price_model_group_holdout_diagnostic", "target": TARGET,
+            "target_transform": "log1p/expm1 for every model", "sample_count": len(frame), "train_size": len(train), "validation_size": len(validation), "test_size": len(test),
             "features": list(X.columns), "transformed_feature_count": x_train.shape[1], "preprocessing_seconds": preprocessing_seconds,
-            "split": "same random 80/20 seed 42 as existing code; NOT a generalization claim for future traffic",
+            "split": "property-group holdout 70/15/15 seed 42; test groups are isolated and used only for a one-time diagnostic comparison, not fitting, tuning or deployment selection",
+            "data_audit": data_audit,
             "cross_split_content_overlap": overlaps,
-            "limitations": ["The historical 0.236 artifact has no saved training snapshot; this reruns the current snapshot, not the historical dataset.", "Unredacted listing text may contain target prices.", "Legacy source/location inconsistencies and duplicate text are retained to reproduce the existing pipeline; no improved model is deployed.", "Single fixed holdout, no hyperparameter search or confidence interval."],
+            "limitations": ["The historical 0.236 artifact has no saved training snapshot; this reruns the current snapshot, not the historical dataset.", "Legacy rows without a durable property ID use a conservative location/physical-attribute block that may over-group similar properties or miss relistings with changed metadata.", "Single fixed group holdout, no hyperparameter search or confidence interval."],
             "models": results, "charts": [chart] if chart else []}
 
 
@@ -334,6 +358,8 @@ def traffic_benchmark(records, output, *, horizons=(300, 600), target="requested
                             versions=versions(), target_semantics="offered demand before admission" if target == "requested_rate" else "admitted throughput, not offered demand",
                             train_start=str(train.timestamp.min()), train_end=str(train.timestamp.max()), last_train_label=str(train.label_timestamp.max()),
                             test_start=str(test.timestamp.min()), test_end=str(test.timestamp.max()),
+                            support_sha256=hashlib.sha256((directory / "supervised.csv").read_bytes()).hexdigest(),
+                            split_sha256=hashlib.sha256((directory / "split.json").read_bytes()).hexdigest(),
                             limitations="Experimental fit on recorded workload; held-out skill does not demonstrate causal benefit of predictive control or natural traffic generalization.")
             eligibility["artifact"] = save_forecast_artifact(pipelines[selected], directory, manifest)
         chart = comparison_plot(models, directory / "algorithm_comparison.png", f"Observed traffic forecast at +{horizon}s; MAE/RMSE messages/s") if render_plots else None

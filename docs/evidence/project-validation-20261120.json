@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-11-20",
+  "branch": "dev",
+  "base_commit": "34634d33b1073af2253f7686fabe93e7533e395a",
+  "source_sha256": {
+    "research/benchmark.py": "7ac99eeace5a77dffe1136f17a9a41ae76810d39efd781d715a7ea1b31726bd1",
+    "modeling/price_model.py": "83d7ae532fdebac7398a88c228b58cc5f9d1a672c0babef7313f6ba86e939bc3",
+    "research/extraction_dataset.py": "9d6ec97ad263a91b867e53b41cde6a3d3cb40bfde859719b4abd300afa45304d",
+    "research/predictive_control_experiment.py": "7f29c1feab2f64afa5095f2a8d4dbe47edb1dafcebf3fdf7c6c4fb3af5a68244"
+  },
+  "validation": [
+    {
+      "command": "python -m pytest -q utils/tests/test_model.py utils/tests/test_extraction_dataset.py utils/tests/test_predictive_control_experiment.py",
+      "status": "passed",
+      "result": "18 passed, 373 warnings in 12.72s"
+    },
+    {
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "result": "1422 passed, 5617 warnings in 60.86s"
+    },
+    {
+      "command": "python -m compileall -q agents processing research modeling scripts scraper utils",
+      "status": "passed"
+    },
+    {
+      "command": "docker compose config --quiet",
+      "status": "passed"
+    },
+    {
+      "command": "python -m research.predictive_control_experiment ...",
+      "status": "expected_blocked",
+      "result": "Historical forecast manifest lacks support/split hash binding; capacity calibration, overload rate and resource fingerprint are missing. Production controller unchanged."
+    },
+    {
+      "command": "python -m research.llm_experiment --calibrate-only --output runtime/research/llm-proof-20261120-calibration-{01,02}",
+      "status": "safely_stopped",
+      "result": "Two guarded attempts: latest reached 300 rps and committed 8154/8154 records, but host RAM crossed below 10% before sustained overload/600 rps; no LLM decision or A/B pair."
+    },
+    {
+      "command": "Build CONTROL_LLM router from .env and print only provider/model identity",
+      "status": "passed",
+      "result": "Route enabled: openai_compatible / gemini-3.6-flash. No provider call was made because calibration did not produce a valid overload profile."
+    },
+    {
+      "command": "Parse docs/evidence, docs/templates and monitoring/grafana JSON with PowerShell ConvertFrom-Json",
+      "status": "passed",
+      "result": "26 JSON files parsed"
+    },
+    {
+      "command": "Resolve local Markdown targets in docs/PROJECT_REPORT.md",
+      "status": "passed",
+      "result": "185 local links resolved"
+    },
+    {
+      "command": "git diff --check and untracked-file trailing-whitespace scan",
+      "status": "passed",
+      "result": "Tracked diff passed; 13 relevant untracked files scanned"
+    }
+  ],
+  "runtime_state": {
+    "docker_daemon": "running at last check",
+    "host_memory_available_percent_after_latest_restoration": 10.51,
+    "live_trial_allowed": false,
+    "manual_optional_stop_not_agent_evidence": true
+  },
+  "warnings": [
+    "The Python suite reports existing dependency/deprecation/runtime warnings; no test failed.",
+    "Starting Docker and exact experiment restoration triggered the existing auto-trainer. Logs show completed fits for 5231 and 5247 candidates; these are not controlled drain evidence and were not evaluated as model improvements.",
+    "After the second restoration host RAM recovered only slightly above the 10% floor; because calibration itself crossed below the floor, no A/B load trial was attempted.",
+    "Frontend type-check/lint/build and promtool were not repeated because their files were unchanged; their successful 18/11 results remain in project-validation-20261118.json and ops-validation-20261118.json."
+  ]
+}
