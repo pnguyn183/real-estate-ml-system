@@ -10,7 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agents.runtime_policy import RateGate, RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
+from agents.runtime_policy import (RateGate, RuntimePolicy, TrainingDeferred,
+    mark_training_fitting, require_training_permission, training_lease)
 
 
 class Clock:
@@ -202,9 +203,11 @@ def test_training_lock_excludes_other_process_and_recovers(controlled):
         assert child.returncode == 0, child.stderr
         assert child.stdout.strip() == "False"
         assert json.loads(policy.path.with_name("training.json").read_text())["status"] == "running"
+        mark_training_fitting(policy)
     assert json.loads(policy.path.with_name("training.json").read_text())["status"] == "completed"
     with training_lease(policy) as allowed:
         assert allowed
+        mark_training_fitting(policy)
 
 
 def test_training_deferred_and_failure_release_lock(controlled):
@@ -226,13 +229,39 @@ def test_training_deferred_and_failure_release_lock(controlled):
     assert json.loads(policy.path.with_name("training.json").read_text())["status"] == "deferred"
 
 
+def test_training_state_machine_persists_run_identity_and_fit_boundary(controlled):
+    policy, _ = controlled
+    with training_lease(policy) as allowed:
+        assert allowed
+        preparing = json.loads(policy.path.with_name("training.json").read_text())
+        assert preparing["status"] == "running" and preparing["phase"] == "preparing"
+        mark_training_fitting(policy, sample_count=17)
+        fitting = json.loads(policy.path.with_name("training.json").read_text())
+        assert fitting["status"] == "running" and fitting["phase"] == "fitting"
+        assert fitting["run_id"] == preparing["run_id"] and fitting["sample_count"] == 17
+    completed = json.loads(policy.path.with_name("training.json").read_text())
+    events = [json.loads(line) for line in
+              policy.path.with_name("training_events.jsonl").read_text().splitlines()]
+    assert completed["status"] == completed["phase"] == "completed"
+    assert [event["phase"] for event in events] == ["preparing", "fitting", "completed"]
+    assert {event["run_id"] for event in events} == {preparing["run_id"]}
+    assert all(event["schema_version"] == 1 for event in events)
+
+
+def test_fit_transition_requires_the_active_controlled_lease(controlled):
+    policy, _ = controlled
+    with pytest.raises(RuntimeError, match="active controlled training lease"):
+        mark_training_fitting(policy, sample_count=1)
+
+
 def test_training_lock_is_released_after_process_crashes(controlled):
     policy, _ = controlled
     source = (
         "import os, sys; from pathlib import Path; "
-        "from agents.runtime_policy import RuntimePolicy, training_lease; "
+        "from agents.runtime_policy import RuntimePolicy, mark_training_fitting, training_lease; "
         "p=RuntimePolicy(True, Path(sys.argv[1]), wall_clock=lambda:100); "
         "ctx=training_lease(p); allowed=ctx.__enter__(); "
+        "mark_training_fitting(p) if allowed else None; "
         "os._exit(0 if allowed else 1)"
     )
     child = subprocess.run([sys.executable, "-c", source, str(policy.path)],
@@ -242,7 +271,34 @@ def test_training_lock_is_released_after_process_crashes(controlled):
     assert json.loads(policy.path.with_name("training.json").read_text())["status"] == "running"
     with training_lease(policy) as allowed:
         assert allowed
+        mark_training_fitting(policy)
     assert json.loads(policy.path.with_name("training.json").read_text())["status"] == "completed"
+    events = [json.loads(line) for line in
+              policy.path.with_name("training_events.jsonl").read_text().splitlines()]
+    assert [event["phase"] for event in events] == [
+        "preparing", "fitting", "interrupted", "preparing", "fitting", "completed"]
+    assert events[2]["run_id"] == events[0]["run_id"]
+    assert events[2]["reason"] == "stale_state_after_lock_recovery"
+
+
+def test_reconcile_uses_terminal_event_if_snapshot_replacement_was_interrupted(controlled):
+    policy, _ = controlled
+    run_id = "a" * 32
+    active = {"schema_version": 1, "run_id": run_id, "decision_id": "decision-1",
+              "source_topic": policy.source_topic, "status": "running", "phase": "fitting",
+              "pid": 1, "hostname": "old", "updated_at": 99.0, "started_at": 90.0}
+    completed = {**active, "status": "completed", "phase": "completed", "updated_at": 100.0}
+    policy.path.with_name("training.json").write_text(json.dumps(active))
+    policy.path.with_name("training_events.jsonl").write_text(json.dumps(completed) + "\n")
+
+    with training_lease(policy) as allowed:
+        assert allowed
+        mark_training_fitting(policy)
+
+    events = [json.loads(line) for line in
+              policy.path.with_name("training_events.jsonl").read_text().splitlines()]
+    assert [event["phase"] for event in events] == ["completed", "preparing", "fitting", "completed"]
+    assert not any(event.get("reason") == "stale_state_after_lock_recovery" for event in events)
 
 
 def test_scraper_pause_stop_closes_iterator_without_ack_checkpoint(controlled):
@@ -367,7 +423,7 @@ def test_auto_trainer_defers_before_mongo(controlled, monkeypatch):
     assert auto_train.run_trainer() is None
 
 
-@pytest.mark.parametrize("enabled,revoked", [(False, False), (True, True)])
+@pytest.mark.parametrize("enabled,revoked", [(False, False), (True, True), (True, False)])
 def test_auto_trainer_rechecks_permission_after_data_load_and_preserves_legacy(controlled, monkeypatch, enabled, revoked):
     from scripts import auto_train
     policy, _ = controlled
@@ -393,7 +449,14 @@ def test_auto_trainer_rechecks_permission_after_data_load_and_preserves_legacy(c
     else:
         assert auto_train.run_trainer() is True
         model.train.assert_called_once()
-        assert not policy.path.with_name("training.json").exists()
+        if enabled:
+            state = json.loads(policy.path.with_name("training.json").read_text())
+            events = [json.loads(line) for line in
+                      policy.path.with_name("training_events.jsonl").read_text().splitlines()]
+            assert state["status"] == "completed"
+            assert [event["phase"] for event in events] == ["preparing", "fitting", "completed"]
+        else:
+            assert not policy.path.with_name("training.json").exists()
     mongo.close.assert_called_once()
 
 

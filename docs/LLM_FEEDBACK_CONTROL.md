@@ -161,8 +161,10 @@ Airflow được skip, container trainer riêng chịu trách nhiệm fit. Với
 chỉ chạy một trong hai scheduler Airflow và scraper. Một fit đang chạy được phép
 hoàn tất; quyền mới chỉ điều khiển việc bắt đầu fit tiếp theo. Shared OS lock tránh
 hai tiến trình fit đồng thời; khóa được hệ điều hành nhả khi process kết thúc.
-`training.json` là trạng thái cuối đã ghi, không phải heartbeat chứng minh process
-còn sống sau một crash.
+`training.json` là snapshot atomic với `run_id`, `decision_id` và phase
+`preparing/fitting/terminal`; `training_events.jsonl` là lịch sử append+fsync.
+Khi lấy lại OS lock sau crash, trạng thái active cũ được ghi `interrupted`.
+Các file này vẫn không phải heartbeat chứng minh process còn sống.
 
 Ctrl+C dừng controller và ghi lease tạm dừng đầu vào/training trước khi nhả khóa.
 Khi process bị kill hoặc mất điện, lease tự hết hạn sau `CONTROL_LEASE_SECONDS`.
@@ -231,6 +233,9 @@ Một quyết định không được vừa đổi CPU/RAM vừa dừng/bật co
   Cần rebuild/recreate trainer với bản mã hỗ trợ giao thức này. Nếu trainer đang
   bận hoặc chưa xác nhận trong thời gian chờ, công cụ hoãn thao tác và giữ container
   chạy; không suy ra trạng thái rảnh chỉ từ file `training.json` cũ.
+  ACK hợp lệ được rút gọn thành proof không chứa hostname, append+fsync vào
+  `lifecycle_actions.jsonl` trước lệnh Docker stop; policy training-disabled được
+  kiểm tra lại và gắn `decision_id`. Không ghi được proof thì fail-closed.
 - Dùng `stop/start`, không dùng `docker pause` để giải phóng RAM. Sau khi thay đổi,
   ingress tạm dừng cho đến khi có số đo mới; không giả định RAM đã được giải phóng.
 - Chỉ bật lại đúng container agent đã dừng, sau khi xác minh ID/cấu hình, thời gian
@@ -315,6 +320,17 @@ headroom đạt 11,67%. Model tiếp tục đặt ingress 0,2 rps; ba cửa sổ
 ở tải nhỏ; không suy ra lệnh dừng làm giảm RAM host hoặc LLM giữ ổn định khi quá tải.
 Receipt và hash artifact cục bộ ở
 [container-lifecycle-recovery-20261114.json](evidence/container-lifecycle-recovery-20261114.json).
+
+Ngày 22/11/2026, lượt calibration-only mới dừng an toàn ở stage 10 rps khi RAM
+host giảm còn 5,38%. Có 42/42 record commit, không có LLM call/capacity profile/A-B
+pair; bảy dịch vụ phụ bị cô lập đều được khôi phục đúng container, không có lỗi.
+Sau phát hiện này, harness yêu cầu RAM host trên 25% trước khi bắt đầu thử tải,
+trong khi emergency guard runtime vẫn giữ 10%; 73 test experiment/runtime đạt.
+Promtool cũng xác nhận lại config và 10 alert rules. Xem
+[evidence 22/11](evidence/llm-overload-20261122.json).
+Lượt kiểm tra gate với code mới sau đó không phát workload: sau khi dừng bảy dịch
+vụ phụ, RAM host chỉ đạt 21,10% (3,32 GiB), thấp hơn gate 25% khoảng 0,61 GiB;
+harness khôi phục đủ bảy container và không có lỗi.
 
 Ngày 11/11 đã hoàn tất bước khôi phục stress còn lỗi: `compose create --no-deps`
 không hỗ trợ cờ này; dùng `compose up --no-start --no-deps --no-build --pull never

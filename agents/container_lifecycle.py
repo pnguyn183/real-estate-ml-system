@@ -413,9 +413,12 @@ class ContainerLifecycleActuator:
             raise LifecycleDeferred("Trainer cannot acknowledge safe shutdown")
         try:
             policy = json.loads(self.config.policy_path.read_text(encoding="utf-8"))
+            policy_decision_id = policy.get("decision_id")
             if (policy.get("training_allowed") is not False or not _finite(policy.get("expires_at"))
                     or policy["expires_at"] <= self.clock()
-                    or policy.get("source_topic") != item["source_topic"]):
+                    or policy.get("source_topic") != item["source_topic"]
+                    or not isinstance(policy_decision_id, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]{1,200}", policy_decision_id)):
                 raise ValueError
         except (OSError, ValueError, TypeError):
             raise LifecycleDeferred("Trainer must receive a valid training-disabled lease before shutdown") from None
@@ -438,7 +441,8 @@ class ContainerLifecycleActuator:
                 if (ack.get("request_id") == request_id and ack.get("hostname") == item["hostname"]
                         and _finite(stamp) and started <= stamp <= now
                         and now - stamp <= 2 and expiry - now > self.config.command_timeout_seconds + 1):
-                    return request_path, request_id, expiry, started
+                    return (request_path, request_id, expiry, started,
+                            policy_decision_id, float(policy["expires_at"]))
                 if now >= deadline:
                     raise LifecycleDeferred("Trainer is busy or has not acknowledged safe shutdown")
                 self.sleep(min(.25, max(0, deadline - now)))
@@ -455,19 +459,34 @@ class ContainerLifecycleActuator:
             pass
 
     def _validate_drain(self, drain, item):
-        path, request_id, expiry, started = drain
+        path, request_id, expiry, started, policy_decision_id, policy_expiry = drain
         try:
             request = json.loads(path.read_text(encoding="utf-8"))
             ack = json.loads(path.with_name("trainer-drain-ack.json").read_text(encoding="utf-8"))
+            policy = json.loads(self.config.policy_path.read_text(encoding="utf-8"))
             now = self.clock()
             stamp = ack.get("timestamp")
             if (request != {"request_id": request_id, "expires_at": expiry}
                     or ack.get("request_id") != request_id or ack.get("hostname") != item["hostname"]
                     or not _finite(stamp) or not started <= stamp <= now or now - stamp > 2
-                    or expiry - now <= self.config.command_timeout_seconds + 1):
+                    or expiry - now <= self.config.command_timeout_seconds + 1
+                    or policy.get("training_allowed") is not False
+                    or policy.get("decision_id") != policy_decision_id
+                    or policy.get("source_topic") != item["source_topic"]
+                    or policy.get("expires_at") != policy_expiry or policy_expiry <= now):
                 raise ValueError
         except (OSError, ValueError, TypeError, AttributeError):
             raise LifecycleDeferred("Trainer drain acknowledgement expired or changed before stop") from None
+        # Persist only controller-generated identity and bounded numeric facts.
+        # The raw acknowledgement is an intentionally short-lived handshake and
+        # may contain no durable authorization of its own.
+        return {"schema_version": 1, "kind": "trainer_drain_acknowledgement",
+                "request_id": request_id, "acknowledged_at": float(stamp),
+                "validated_at": float(now), "expires_at": float(expiry),
+                "training_policy_decision_id": policy_decision_id,
+                "training_policy_expires_at": policy_expiry,
+                "source_topic": item["source_topic"],
+                "hostname_matched": True, "training_disabled_lease_verified": True}
 
     def _receipt(self, status, decision_id, **fields):
         return {"status": status, "action": "container_lifecycle", "timestamp": self.clock(),
@@ -538,6 +557,7 @@ class ContainerLifecycleActuator:
             return self._receipt("dry_run", decision_id, **plan,
                                  requires_trainer_drain=service == "trainer" and action == "stop")
         drain = None
+        drain_proof = None
         try:
             if service == "trainer" and action == "stop":
                 drain = self._drain_trainer(before)
@@ -566,8 +586,15 @@ class ContainerLifecycleActuator:
             try:
                 self._sample(sample, starting=action == "start", memory_bytes=usage)
                 if drain:
-                    self._validate_drain(drain, current)
-            except LifecycleError:
+                    drain_proof = self._validate_drain(drain, current)
+                    # A successful Docker stop must never be the first durable
+                    # record of the ephemeral trainer acknowledgement.  Fsync
+                    # this sanitized precondition before issuing the command;
+                    # inability to persist it fails closed.
+                    self._audit(self._receipt("drain_acknowledged", decision_id,
+                        service=service, operation=action, container_id=before["id"],
+                        drain=drain_proof))
+            except Exception:
                 # No Docker command has been issued. Preserve an earlier
                 # confirmed stop so a deferred restart remains recoverable.
                 if prior_entry is None:
@@ -608,6 +635,8 @@ class ContainerLifecycleActuator:
                                    after={k: after[k] for k in ("state", "running", "health", "ready")},
                                    phase=entry["phase"], ready=after["ready"],
                                    outcome_verified=confirmed, owned_stop=entry["owned_stop"])
+            if drain_proof is not None:
+                result["drain"] = drain_proof
             if command_error:
                 result["command_error"] = command_error
             if not confirmed:

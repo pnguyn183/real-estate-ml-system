@@ -478,7 +478,8 @@ def trainer_rig(rig):
     docker.add("trainer")
     cfg = replace(tool.config, allowed_services=("trainer",), drain_timeout_seconds=2)
     tool = ContainerLifecycleActuator(cfg, docker, clock, clock.sleep)
-    cfg.policy_path.write_text(json.dumps({"training_allowed": False, "expires_at": clock() + 90,
+    cfg.policy_path.write_text(json.dumps({"training_allowed": False, "decision_id": "training-off-1",
+                                          "expires_at": clock() + 90,
                                          "source_topic": "real_estate_stress_raw"}))
     return tool, docker, clock
 
@@ -514,6 +515,59 @@ def test_trainer_requires_matching_idle_ack_before_stop(rig):
     assert not tool.config.policy_path.with_name("trainer-drain.json").exists()
 
 
+def test_trainer_drain_proof_is_fsynced_before_stop_and_survives_ephemeral_ack(rig):
+    rig = trainer_rig(rig)
+    tool, docker, _ = rig
+    acknowledge(rig)
+    audit_path = tool.config.state_path.with_name("lifecycle_actions.jsonl")
+
+    def proof_must_precede_stop(argv):
+        if argv[1] == "stop":
+            rows = [json.loads(line) for line in audit_path.read_text().splitlines()]
+            assert [row["status"] for row in rows] == ["drain_acknowledged"]
+            assert rows[0]["container_id"] == docker.row("trainer")["Id"]
+
+    docker.on_command = proof_must_precede_stop
+    result = action(rig, name="trainer")
+    assert result["status"] == "applied"
+    proof = result["drain"]
+    assert proof["kind"] == "trainer_drain_acknowledgement"
+    assert proof["hostname_matched"] and proof["training_disabled_lease_verified"]
+    assert set(proof) == {"schema_version", "kind", "request_id", "acknowledged_at",
+                          "validated_at", "expires_at", "training_policy_decision_id",
+                          "training_policy_expires_at", "source_topic", "hostname_matched",
+                          "training_disabled_lease_verified"}
+    assert proof["training_policy_decision_id"] == "training-off-1"
+    tool.config.policy_path.with_name("trainer-drain-ack.json").unlink(missing_ok=True)
+    rows = [json.loads(line) for line in audit_path.read_text().splitlines()]
+    assert [row["status"] for row in rows] == ["drain_acknowledged", "applied"]
+    assert rows[0]["drain"] == rows[1]["drain"] == proof
+    assert docker.row("trainer")["Config"]["Hostname"] not in json.dumps(proof)
+
+
+@pytest.mark.parametrize("error_type", [OSError, TypeError, ValueError])
+def test_trainer_drain_audit_failure_prevents_stop_and_restores_prior_journal(
+        rig, monkeypatch, error_type):
+    rig = trainer_rig(rig)
+    tool, docker, _ = rig
+    acknowledge(rig)
+    original_audit = tool._audit
+
+    def fail_precondition(receipt):
+        if receipt["status"] == "drain_acknowledged":
+            raise error_type("simulated durable storage failure")
+        original_audit(receipt)
+
+    monkeypatch.setattr(tool, "_audit", fail_precondition)
+    result = action(rig, name="trainer")
+    assert result["status"] == "failed" and not docker.mutations
+    state = json.loads(tool.config.state_path.read_text())
+    assert "trainer" not in state["services"]
+    rows = [json.loads(line) for line in
+            tool.config.state_path.with_name("lifecycle_actions.jsonl").read_text().splitlines()]
+    assert [row["status"] for row in rows] == ["failed"]
+
+
 def test_trainer_drain_expiring_during_final_discovery_cannot_stop(rig):
     rig = trainer_rig(rig)
     tool, docker, clock = rig
@@ -527,6 +581,28 @@ def test_trainer_drain_expiring_during_final_discovery_cannot_stop(rig):
     assert not tool.config.policy_path.with_name("trainer-drain.json").exists()
 
 
+def test_trainer_policy_reenabled_after_ack_cannot_authorize_stop(rig):
+    rig = trainer_rig(rig)
+    tool, docker, clock = rig
+    acknowledge(rig)
+
+    def reenable_after_ack(argv):
+        if argv[1] == "ps" and tool.config.policy_path.with_name("trainer-drain.json").exists():
+            tool.config.policy_path.write_text(json.dumps({
+                "training_allowed": True,
+                "decision_id": "training-on-2",
+                "expires_at": clock() + 90,
+                "source_topic": "real_estate_stress_raw",
+            }))
+
+    docker.on_command = reenable_after_ack
+    result = action(rig, name="trainer")
+    assert result["status"] == "deferred" and not docker.mutations
+    rows = [json.loads(line) for line in
+            tool.config.state_path.with_name("lifecycle_actions.jsonl").read_text().splitlines()]
+    assert [row["status"] for row in rows] == ["deferred"]
+
+
 @pytest.mark.parametrize("wrong", ["wrong_host", "wrong_request", "old_timestamp"])
 def test_invalid_trainer_ack_does_not_authorize_stop(rig, wrong):
     rig = trainer_rig(rig)
@@ -538,7 +614,8 @@ def test_invalid_trainer_ack_does_not_authorize_stop(rig, wrong):
 def test_trainer_must_use_shared_control_mount_and_disabled_training(rig):
     rig = trainer_rig(rig)
     tool, docker, clock = rig
-    tool.config.policy_path.write_text(json.dumps({"training_allowed": True, "expires_at": clock() + 90,
+    tool.config.policy_path.write_text(json.dumps({"training_allowed": True, "decision_id": "training-on-1",
+                                                  "expires_at": clock() + 90,
                                                  "source_topic": "real_estate_stress_raw"}))
     acknowledge(rig)
     assert action(rig, name="trainer")["status"] == "deferred"

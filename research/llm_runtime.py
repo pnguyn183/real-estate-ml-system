@@ -22,7 +22,7 @@ from research.lean_runtime import PROJECT_ROOT, _docker, _now, _write
 PROCESSORS = frozenset({"processor", "processor-2", "processor-3"})
 ISOLATED_SERVICES = frozenset({
     "stress-agent", "scraper", "trainer", "airflow", "ai-agent", "api",
-    "predictor", "frontend", "grafana", "mongo-express",
+    "predictor", "frontend", "grafana", "mongo-express", "prometheus",
 })
 IDENTITY_LABELS = (
     "com.docker.compose.project", "com.docker.compose.service",
@@ -146,8 +146,9 @@ def host_memory():
 
 
 def _file_hashes():
+    names = ("docker-compose.yml", ".env", "research/llm_experiment.compose.yml")
     return {name: hashlib.sha256((PROJECT_ROOT / name).read_bytes()).hexdigest()
-            for name in ("docker-compose.yml", ".env") if (PROJECT_ROOT / name).is_file()}
+            for name in names if (PROJECT_ROOT / name).is_file()}
 
 
 def _model_paths():

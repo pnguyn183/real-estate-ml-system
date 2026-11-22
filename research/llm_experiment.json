@@ -14,6 +14,7 @@
   "max_sample_age_seconds": 40,
   "target_latency_seconds": 2,
   "min_memory_available_percent": 10,
+  "startup_memory_available_percent": 25,
   "hard_lag": 10000,
   "max_records": 100000,
   "max_queue": 2000,

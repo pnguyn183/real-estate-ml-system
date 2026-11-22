@@ -58,6 +58,32 @@ def test_records_local_and_deployed_dependencies_without_changing_legacy_hashes(
         assert kwargs == {"text": True, "timeout": 10}
 
 
+def test_worker_identity_supports_an_explicit_lean_compose_command(deployed):
+    outputs, calls = deployed
+    prefix = ("docker", "compose", "--project-name", "real-estate-llm-lean",
+              "--file", "research/llm_lean.compose.yml", "exec", "-T")
+
+    # Adapt the fixture transport to the longer, explicitly scoped command.
+    def check_output(command, **kwargs):
+        calls.append((command, kwargs))
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "fixture-head\n"
+        if command[:2] == ["docker", "ps"]:
+            return "lean-worker fixture-image fixture-id\n"
+        assert command[:len(prefix)] == list(prefix)
+        assert command[len(prefix)] == "processor"
+        return json.dumps(outputs["processor"])
+
+    original = runner.subprocess.check_output
+    try:
+        runner.subprocess.check_output = check_output
+        result = runner.code_identity(worker_services=("processor",),
+                                      compose_exec_prefix=prefix)
+    finally:
+        runner.subprocess.check_output = original
+    assert result["worker_source_hashes"]["processor"] == outputs["processor"][SOURCES[0]]
+
+
 def test_missing_deployed_dependency_is_explicit_and_keeps_other_hashes(deployed):
     outputs, _ = deployed
     outputs["processor"][SOURCES[1]] = {"error": "FileNotFoundError"}

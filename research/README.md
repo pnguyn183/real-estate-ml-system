@@ -29,6 +29,7 @@ python -m pytest -q
 # Read-only snapshot; retains source data locally, outside version control.
 python -m research.data_audit --output runtime/research/data-audit
 python -m research.benchmark legacy --input runtime/research/data-audit/candidates.jsonl --output runtime/research/legacy-benchmark
+python -m research.benchmark price-select --input runtime/research/data-audit/candidates.jsonl --output runtime/research/price-selection --cv-folds 3
 
 # Prevent scheduled crawling/training from competing during paired runs.
 # Pause only services that are already running; restore in finally.
@@ -40,6 +41,12 @@ try {
 }
 python -m research.report --input runtime/research/paired-run
 python -m research.benchmark traffic --input runtime/research/paired-run/adaptive/observations.jsonl --output runtime/research/traffic-benchmark
+
+# LLM overload calibration trên máy ít RAM: profile MongoDB chỉ tồn tại trong phiên.
+python -m research.llm_experiment --calibrate-only --mongo-memory-profile --output runtime/research/llm-calibration-bounded
+
+# Chỉ dùng sau khi phiên bị ngắt và manifest báo MongoDB chưa được khôi phục.
+python -m research.llm_experiment --restore-mongodb runtime/research/llm-calibration-bounded/mongo-runtime.json
 ```
 
 A short paired ramp can evaluate control but cannot supply meaningful 5/10-minute
@@ -149,10 +156,18 @@ receipt if interrupted or `restore_failed`. No container is recreated or volume
 deleted. The PowerShell wrapper supports `-Lean`; direct Python commands avoid
 PowerShell execution-policy restrictions for start, status and stop.
 
-As of this reliability update, Docker Engine is unavailable for a new runtime
-trial. Tests exercise the recovery logic and service restoration; the earlier
-September 28 short Kafka sessions do not verify the new guard/preflight/lean code
-or prove that multi-hour collection succeeds.
+Lean history collection deliberately retains Prometheus. The separate LLM overload
+workflow also stops Prometheus because its telemetry reads Processor, Kafka and
+Docker directly. With `--mongo-memory-profile`, it recreates only MongoDB using
+`research/llm_experiment.compose.yml` (1 GiB WiredTiger cache, 2,560 MiB RAM/swap),
+records the override hash and named-volume identity, then restores healthy base
+MongoDB before restarting optional services. The base Compose file is unchanged.
+
+The live November 22 calibration verified the bounded cache, unchanged named
+volume, base-profile restoration and restoration of eight optional services.
+Host RAM remained only 11.758444903687586% (1,984,212,992 bytes), so the 25%
+pre-load gate blocked the run. No records, LLM decision or A/B result came from
+that attempt; it verifies recovery behavior, not control effectiveness.
 
 Each session saves its exact profile, seed, progress, raw observations and quality
 audit. `export --sessions <dir> <dir> --output <new.jsonl>` combines finalized
@@ -259,6 +274,12 @@ location/physical-attribute block that may over-group similar properties or miss
 relistings with changed metadata, so the result remains a diagnostic rather
 than a universal generalization claim. No production model is overwritten.
 
+`research.benchmark price-select` keeps the outer property-group test sealed,
+selects a candidate by deterministic group CV on train+validation, refits the
+complete pipeline for every fold, then evaluates only the frozen winner once.
+Its artifacts explicitly record `test_used_for_selection=false` and
+`production_deployed=false`; running it is a selection diagnostic, not deployment.
+
 `research.benchmark traffic` uses past-only lag/rolling features, timestamp/run/
 gap boundaries, chronological holdout and a label-horizon purge. It compares
 persistence, RF, Gradient Boosting and XGBoost. LSTM lacks a justified long
@@ -272,13 +293,14 @@ over persistence on both validation and the untouched chronological test. The
 `research.forecast.TrafficForecaster` API loads only an eligible local artifact
 with its matching hash and returns unavailable on flagged telemetry or history
 discontinuities. It is an experimental inference component; the runner does not
-use its output for admission decisions. Predictive control and its causal benefit
-remain pending a suitable dataset and an independently evaluated control policy.
-Before implementing an experimental forecast controller, run the fail-closed
-readiness gate documented in
+use its output for admission decisions. A research-only forecast overlay and
+deterministic queue simulator now exercise safety/accounting boundaries, but they
+are outside the production controller and are not live-effectiveness evidence.
+Before any isolated predictive trial, run the fail-closed readiness gate documented in
 [`docs/PREDICTIVE_CONTROL_EXPERIMENT.md`](../docs/PREDICTIVE_CONTROL_EXPERIMENT.md).
 The gate checks the artifact plus support/split hashes bound into its manifest,
 train-only demand support and an independently measured overload calibration.
-The 17/11 historical manifest predates support/split binding and therefore fails
-closed; newly exported artifacts record both hashes. Passing the gate authorizes only an
-isolated AB/BA trial, never production integration.
+The 17/11 historical manifest predates support/split binding. The 21/11 re-export
+records both hashes and resolves provenance checks, but readiness still fails
+closed until overload calibration/rate are measured within supported demand.
+Passing the gate authorizes only an isolated AB/BA trial, never production integration.

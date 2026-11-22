@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-11-21",
+  "branch": "dev",
+  "base_commit": "e11d34501be66f4d39734914c3479deedb1b0093",
+  "source_sha256": {
+    "agents/container_lifecycle.py": "77f60c232ca5c3c7e08787504b6ab8e913b5ab979835142d553a51b898d7fa39",
+    "agents/runtime_policy.py": "44907b697015e653e5ec9cd7169f611dcc1e757adf684f92ea05ac5a25975f90",
+    "modeling/train_model.py": "b7f329823f3e3449ebceedcba4cad687e70d1be59a3f1cb916bb148ba4cb6e82",
+    "scripts/auto_train.py": "2f2d89cc4f108edb7726e17ddbd5d2e1c8c28a53f6d85a6ee863082ac27a74b8",
+    "research/benchmark.py": "3f1f8ab69a6d4ec5f6d956b11e6c84920804ee6375ff6fbea56cf0de3a89decc",
+    "research/predictive_controller.py": "8f77ad96d5dc636bea7f4f0dcccd8a8202a53975844f4b435e28d7a70e4d9725",
+    "research/predictive_control_simulation.py": "61f14570d65f213db5e4fd20b6e7c8270a01d49fba5191876a83c2c30702762c",
+    "research/lifecycle_cycles.py": "469d7873ce3799e8b69f1bb8f98a9cf53ba311142d18b1500d844e632318e7d1",
+    "frontend/e2e/public-demo.test.mjs": "d744574733122bd6237e65b2709d0fbd7f86daa5360dd1ef26379d9210822647",
+    "frontend/package-lock.json": "ec6785f694063f0380d21df7c81f0cd983e090878b808372b3e4213e03c99adc"
+  },
+  "validation": [
+    {
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "result": "1470 passed, 5617 warnings in 73.21s"
+    },
+    {
+      "command": "python -m compileall -q agents processing research modeling scripts scraper utils",
+      "status": "passed"
+    },
+    {
+      "command": "docker compose config --quiet",
+      "status": "passed"
+    },
+    {
+      "command": "npm run type-check && npm run lint && npm run test:e2e",
+      "status": "passed",
+      "result": "TypeScript and ESLint passed; Vite 6.4.6 build passed; Edge-headless public demo test 1/1 passed"
+    },
+    {
+      "command": "npm audit --omit=dev",
+      "status": "passed",
+      "result": "0 production vulnerabilities after compatible Axios/follow-redirects/form-data lockfile updates"
+    },
+    {
+      "command": "npm audit",
+      "status": "warning",
+      "result": "6 moderate development-only minimatch/@typescript-eslint findings remain; npm requires a breaking @typescript-eslint upgrade, so --force was not used"
+    },
+    {
+      "command": "python -m research.benchmark price-select --input runtime/research/data-audit/candidates.jsonl --output runtime/research/price-selection-20261121 --trees 100 --jobs 1 --cv-folds 3",
+      "status": "passed",
+      "result": "Measured 4 candidates on 3-fold property-group CV; selected XGBoost without outer-test selection and evaluated it once on 731 test rows; production_deployed=false"
+    },
+    {
+      "command": "python -m research.predictive_control_experiment --artifact runtime/research/forecast-2h-20261120-bound/horizon_300s/forecast.joblib --capacity-evidence docs/evidence/llm-overload-20261120.json --output runtime/research/predictive-control-readiness-20261121-bound-recheck.json",
+      "status": "expected_blocked",
+      "result": "Only capacity_calibration_not_completed and measured_overload_rate_missing remain; production_controller_integrated=false"
+    },
+    {
+      "command": "Parse docs/evidence, docs/templates and monitoring/grafana JSON with PowerShell ConvertFrom-Json",
+      "status": "passed",
+      "result": "29 JSON files parsed"
+    },
+    {
+      "command": "Resolve local Markdown targets in docs/PROJECT_REPORT.md",
+      "status": "passed",
+      "result": "196 local links resolved"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "runtime_state": {
+    "docker_daemon": "unavailable at final check",
+    "docker_compose_static_config": "valid",
+    "host_memory_free_gib_before_full_price_selection": 4.35,
+    "host_memory_free_gib_after_validation": 4.26,
+    "live_trial_allowed": false
+  },
+  "warnings": [
+    "Python tests retain existing dependency/deprecation warnings; no Python test failed.",
+    "The browser E2E intentionally verified the public demo while API/health proxy targets were unavailable; Vite logged ECONNREFUSED, but the public flow and protected-workspace navigation passed.",
+    "Promtool was not repeated because Docker daemon was unavailable; its successful 2026-11-18 result remains the latest evidence.",
+    "No live overload, trainer fit, repeated Docker lifecycle or causal-RAM experiment was attempted while Docker was unavailable.",
+    "Research-only simulations and offline harnesses are not counted as Agent effectiveness evidence."
+  ]
+}

@@ -195,7 +195,7 @@ export default function SystemDemo({ onOpenWorkspace }: SystemDemoProps) {
               <li>• Chưa có A/B hợp lệ chứng minh LLM cải thiện khi quá tải.</li>
               <li>• Forecast chưa tham gia quyết định controller.</li>
               <li>• Extraction Gemini thật mới có một fixture, chưa đại diện cho độ chính xác dataset.</li>
-              <li>• Benchmark giá còn nguy cơ rò rỉ target và bản ghi trùng nội dung.</li>
+              <li>• Benchmark giá đã chặn price-text leakage, exact duplicate và group overlap; vẫn chưa chứng minh tổng quát hóa ngoài snapshot.</li>
             </ul>
           </div>
         </div>

@@ -12,6 +12,63 @@ import pytest
 import research.run_experiment as runner
 
 
+def kafka_metadata(brokers=(1, 2, 3), partition_count=3, replicas=(1, 2, 3)):
+    partitions = {index: SimpleNamespace(leader=replicas[0], replicas=list(replicas),
+                                         isrs=list(replicas))
+                  for index in range(partition_count)}
+    return SimpleNamespace(brokers={broker: None for broker in brokers}, topics={
+        "real_estate_stress_raw": SimpleNamespace(error=None, partitions=partitions)})
+
+
+def test_preflight_accepts_explicit_lean_topology(monkeypatch):
+    metadata = kafka_metadata(brokers=(1,), replicas=(1,))
+    monkeypatch.setattr(runner, "AdminClient", lambda _config: SimpleNamespace(
+        list_topics=lambda timeout: metadata))
+    partitions = runner.preflight("localhost:19092", "real_estate_stress_raw",
+                                  expected_broker_ids=(1,), expected_partition_count=3,
+                                  expected_replica_ids=(1,))
+    assert len(partitions) == 3
+    assert all(row["replicas"] == row["isrs"] == [1] for row in partitions)
+
+
+@pytest.mark.parametrize("changes,match", [
+    ({"expected_broker_ids": (1, 2)}, "broker IDs"),
+    ({"expected_partition_count": 2}, "exactly 2 partitions"),
+])
+def test_preflight_rejects_topology_mismatch(monkeypatch, changes, match):
+    metadata = kafka_metadata(brokers=(1,), replicas=(1,))
+    monkeypatch.setattr(runner, "AdminClient", lambda _config: SimpleNamespace(
+        list_topics=lambda timeout: metadata))
+    options = dict(expected_broker_ids=(1,), expected_partition_count=3,
+                   expected_replica_ids=(1,))
+    options.update(changes)
+    with pytest.raises(RuntimeError, match=match):
+        runner.preflight("localhost:19092", "real_estate_stress_raw", **options)
+
+
+def test_preflight_rejects_replica_mismatch(monkeypatch):
+    metadata = kafka_metadata(brokers=(1, 2), replicas=(1,))
+    monkeypatch.setattr(runner, "AdminClient", lambda _config: SimpleNamespace(
+        list_topics=lambda timeout: metadata))
+    with pytest.raises(RuntimeError, match="replicas must be in sync"):
+        runner.preflight("localhost:19092", "real_estate_stress_raw",
+                         expected_broker_ids=(1, 2), expected_partition_count=3,
+                         expected_replica_ids=(1, 2))
+
+
+@pytest.mark.parametrize("options", [
+    {"expected_broker_ids": ()},
+    {"expected_broker_ids": (1, 1)},
+    {"expected_partition_count": 0},
+    {"expected_broker_ids": (1,), "expected_replica_ids": (2,)},
+])
+def test_preflight_rejects_invalid_expected_topology_before_kafka(monkeypatch, options):
+    monkeypatch.setattr(runner, "AdminClient",
+                        lambda *_args: pytest.fail("Kafka must not be contacted"))
+    with pytest.raises(ValueError):
+        runner.preflight("localhost:19092", "real_estate_stress_raw", **options)
+
+
 @pytest.mark.parametrize("limit", [2, 10, 40, 100, 500])
 def test_rate_gate_sustains_cap_under_noninteger_offered_ratio(limit):
     gate = runner.RateGate(limit, 0)

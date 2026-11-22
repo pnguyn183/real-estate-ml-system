@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "created_on": "2026-11-21",
+  "status": "blocked_before_trial",
+  "production_controller_integrated": false,
+  "scope": "Re-export of the existing synthetic two-hour forecast with provenance bindings, followed by the fail-closed predictive-control readiness check. This is not a control trial.",
+  "input": {
+    "session_id": "session-20261114T052833.599204Z-a25c023e",
+    "run_id": "traffic-baseline-8d5dbbdfbdf2",
+    "observations": 1446,
+    "target": "requested_rate",
+    "target_semantics": "offered demand before admission",
+    "sha256": "8153411d27975d35b8b45f545051afbcd14ac0abf01bb95a1d533cd064636264",
+    "synthetic": true,
+    "git_tracked": false
+  },
+  "artifacts": {
+    "300_seconds": {
+      "model": "xgboost",
+      "artifact_sha256": "d73bf5ac42be0840d374a34ce02b100f4f1b1e7cdd1b875e12d7075e084b4f26",
+      "support_sha256": "12df8e22c60bbe54c9bf6ad6ac0d31c27586fc47e48ae58021450e617e49c46f",
+      "split_sha256": "a5907583776abd93d1928d64aa3eeed5caf3092fd057d45765be3e43ab6b699e",
+      "train_support_records_per_second": {
+        "count": 1024,
+        "min": 5.0,
+        "max": 57.0544
+      },
+      "test": {
+        "sample_size": 272,
+        "mae_records_per_second": 4.527937968725317,
+        "rmse_records_per_second": 5.569276965576074,
+        "r2": 0.8484092278281565,
+        "persistence_rmse_records_per_second": 26.233152215727515,
+        "relative_rmse_improvement": 0.7877008100369602
+      }
+    },
+    "600_seconds": {
+      "model": "gradient_boosting",
+      "artifact_sha256": "75765aa209f14a3400728cd3bdb75c8eb423933ea05296ec3e01366d60e937e5",
+      "support_sha256": "d6bd22431f76488aa361176ba84e79b6367213905bfb46a338837897ea3d51d6",
+      "split_sha256": "18b8c7d074e62cf994ef915a09909a8a8696be50cfccac3a2f4c47b09f9bc84d",
+      "test": {
+        "sample_size": 260,
+        "mae_records_per_second": 6.386678048445085,
+        "rmse_records_per_second": 7.616096267172145,
+        "r2": 0.7244954996906379,
+        "persistence_rmse_records_per_second": 24.40003916412052,
+        "relative_rmse_improvement": 0.6878654080862554
+      }
+    }
+  },
+  "readiness": {
+    "blockers": [
+      "capacity_calibration_not_completed",
+      "measured_overload_rate_missing"
+    ],
+    "resolved_since_previous_check": [
+      "forecast_support_hash_missing",
+      "forecast_split_hash_missing",
+      "capacity_resource_fingerprint_missing"
+    ],
+    "capacity_resource_fingerprint": "e87ddc70626f4bef7da8a00f414ef6a609d1dfc9137705fc3d1fb74c8be77d71",
+    "measured_overload_rate": null,
+    "minimum_live_trial_pairs": 3,
+    "trial_order": "AB/BA alternating"
+  },
+  "runtime_outputs": {
+    "forecast_metrics": {
+      "path": "runtime/research/forecast-2h-20261120-bound/metrics.json",
+      "sha256": "f6455ae472ea632d3c4a55806a48a7fb4fa2ce568527a423f3aab1775cd22669",
+      "git_tracked": false
+    },
+    "readiness": {
+      "path": "runtime/research/predictive-control-readiness-20261121-bound.json",
+      "sha256": "2dd889e8b4af7eb1d9bd12e9357c266909fbfecb112fe9e16a1f6f179aeda545",
+      "git_tracked": false
+    }
+  },
+  "limitations": [
+    "The source is one scripted synthetic run with high autocorrelation, not independent natural traffic.",
+    "The 300-second training support ends at 57.0544 records/s; no measured overload rate exists to prove support coverage.",
+    "Passing provenance checks does not demonstrate predictive-control safety or benefit.",
+    "No forecast is connected to the production controller and no causal AB/BA result exists."
+  ]
+}

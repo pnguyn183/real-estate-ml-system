@@ -1,6 +1,7 @@
-"""Reproducible legacy diagnosis and separate, leakage-aware traffic forecasting.
+"""Reproducible price diagnostics and leakage-aware traffic forecasting.
 
 Legacy results do not measure traffic-control effectiveness or publish a model.
+Price selection uses group CV on development data and opens the outer test once.
 Traffic forecasting requires genuine historical observations; no demo data is generated.
 """
 from __future__ import annotations
@@ -20,6 +21,7 @@ from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
 
 from research.data_audit import write_json, parse_utc_timestamp, profile_records, plots
@@ -102,6 +104,299 @@ def comparison_plot(results: dict, path: Path, title: str):
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return str(path)
+
+
+def price_group_cv_folds(frame: pd.DataFrame, development_indices, *, group_column: str,
+                         n_splits=3, seed=42):
+    """Return deterministic absolute row indices for property-group CV.
+
+    Only development indices are accepted here. The outer-test positions therefore
+    cannot enter candidate fitting or validation by accident.
+    """
+    if group_column not in frame:
+        raise ValueError(f"Price dataset must contain {group_column}.")
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least two.")
+    indices = np.asarray(development_indices, dtype=int)
+    if indices.ndim != 1 or len(indices) == 0:
+        raise ValueError("development_indices must be a non-empty one-dimensional sequence.")
+    if len(np.unique(indices)) != len(indices):
+        raise ValueError("development_indices must not contain duplicate rows.")
+    if indices.min() < 0 or indices.max() >= len(frame):
+        raise ValueError("development_indices contains a row outside the dataset.")
+    groups = frame.iloc[indices][group_column]
+    if groups.isna().any():
+        raise ValueError("Property groups must be present for every development row.")
+    if groups.nunique() < n_splits:
+        raise ValueError(f"Need at least {n_splits} property groups for group CV.")
+
+    # shuffle/random_state were added to GroupKFold after sklearn 1.3. Keep a
+    # deterministic fallback because the project's lower dependency bound is 1.3.
+    try:
+        splitter = GroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        split_groups = groups.to_numpy()
+    except TypeError:  # pragma: no cover - exercised only with older sklearn
+        unique_groups = sorted(groups.unique(), key=str)
+        shuffled_groups = np.random.default_rng(seed).permutation(unique_groups)
+        group_rank = {group: rank for rank, group in enumerate(shuffled_groups)}
+        split_groups = groups.map(group_rank).to_numpy()
+        splitter = GroupKFold(n_splits=n_splits)
+
+    relative_positions = np.arange(len(indices))
+    folds = []
+    for fold_number, (fit_relative, validation_relative) in enumerate(
+        splitter.split(relative_positions, groups=split_groups), start=1
+    ):
+        fit_indices = np.sort(indices[fit_relative])
+        validation_indices = np.sort(indices[validation_relative])
+        fit_groups = set(frame.iloc[fit_indices][group_column])
+        validation_groups = set(frame.iloc[validation_indices][group_column])
+        if fit_groups & validation_groups:
+            raise RuntimeError("Property group leakage detected within price-model CV.")
+        folds.append({"fold": fold_number, "train": fit_indices, "validation": validation_indices})
+    return folds
+
+
+def summarize_price_cv(fold_metrics):
+    """Aggregate fold scores without inventing values for undefined metrics."""
+    summary = {}
+    for metric in ("r2", "mae", "rmse", "mdape_percent"):
+        values = [
+            float(fold[metric]) for fold in fold_metrics
+            if fold.get(metric) is not None and np.isfinite(fold[metric])
+        ]
+        summary[metric] = {
+            "mean": float(np.mean(values)) if values else None,
+            "std": float(np.std(values)) if values else None,
+            "count": len(values),
+        }
+    return summary
+
+
+def select_price_candidate(candidate_results):
+    """Select solely by mean development-CV RMSE; test fields are ignored."""
+    candidates = []
+    for name, result in candidate_results.items():
+        rmse = result.get("cv_metrics", {}).get("rmse", {}).get("mean")
+        if result.get("status") == "measured" and rmse is not None and np.isfinite(rmse):
+            candidates.append((float(rmse), str(name), name))
+    return min(candidates)[2] if candidates else None
+
+
+def _serializable_model_parameters(model):
+    return {
+        key: value if isinstance(value, (str, int, float, bool, type(None))) else repr(value)
+        for key, value in model.get_params(deep=False).items()
+    }
+
+
+def evaluate_price_candidate_cv(template, model, X, y, folds):
+    """Fit a fresh complete preprocessing/model pipeline inside every fold."""
+    fold_results = []
+    fold_predictions = []
+    for fold in folds:
+        candidate = clone(template)
+        candidate.set_params(regressor__regressor=clone(model))
+        started = time.perf_counter()
+        candidate.fit(X.iloc[fold["train"]], y.iloc[fold["train"]])
+        predicted = candidate.predict(X.iloc[fold["validation"]])
+        measured = scores(y.iloc[fold["validation"]], predicted, include_mdape=True)
+        fold_results.append({
+            "fold": fold["fold"],
+            "train_size": len(fold["train"]),
+            "validation_size": len(fold["validation"]),
+            "fit_predict_seconds": time.perf_counter() - started,
+            **measured,
+        })
+        fold_predictions.extend(
+            {
+                "fold": fold["fold"],
+                "row_index": int(row_index),
+                "actual_price_vnd": float(actual),
+                "predicted_price_vnd": float(prediction),
+            }
+            for row_index, actual, prediction in zip(
+                fold["validation"], y.iloc[fold["validation"]], predicted
+            )
+        )
+    return fold_results, fold_predictions
+
+
+def price_selection_benchmark(records: list[dict], output: Path, *, trees=100, jobs=2,
+                              cv_folds=3, seed=42):
+    """Select on group CV, then evaluate the frozen winner on outer test once."""
+    from modeling.price_model import (
+        build_regression_pipeline,
+        group_train_validation_test_split,
+        prepare_price_dataset,
+        NUMERIC_FEATURES,
+        CATEGORICAL_FEATURES,
+        PRICE_GROUP_COLUMN,
+        TEXT_FEATURE,
+        TARGET,
+    )
+
+    output.mkdir(parents=True, exist_ok=True)
+    frame, data_audit = prepare_price_dataset(records)
+    if len(frame) < 200:
+        return {
+            "status": "insufficient_data",
+            "rows": len(frame),
+            "required": 200,
+            "data_audit": data_audit,
+            "test_used_for_selection": False,
+            "production_deployed": False,
+        }
+
+    features = NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TEXT_FEATURE]
+    X, y = frame[features], frame[TARGET].astype(float)
+    outer = group_train_validation_test_split(frame, seed=seed)
+    development = np.sort(np.concatenate([outer["train"], outer["validation"]]))
+    outer_test = outer["test"]
+    outer_group_sets = {
+        name: set(frame.iloc[indexes][PRICE_GROUP_COLUMN])
+        for name, indexes in outer.items()
+    }
+    outer_group_overlap = sum(
+        len(outer_group_sets[left] & outer_group_sets[right])
+        for left, right in (("train", "validation"), ("train", "test"), ("validation", "test"))
+    )
+    if outer_group_overlap:
+        raise RuntimeError("Property group leakage detected across the outer price split.")
+    folds = price_group_cv_folds(
+        frame,
+        development,
+        group_column=PRICE_GROUP_COLUMN,
+        n_splits=cv_folds,
+        seed=seed,
+    )
+    split_artifact = {
+        "seed": seed,
+        "outer_strategy": "property-group holdout 70/15/15",
+        "selection_strategy": f"{cv_folds}-fold shuffled GroupKFold on outer train+validation",
+        "outer_train_indices": outer["train"].tolist(),
+        "outer_validation_indices": outer["validation"].tolist(),
+        "development_indices": development.tolist(),
+        "outer_test_indices": outer_test.tolist(),
+        "outer_property_group_counts": {
+            name: len(groups) for name, groups in outer_group_sets.items()
+        },
+        "outer_group_overlap_count": outer_group_overlap,
+        "cv_folds": [
+            {
+                "fold": fold["fold"],
+                "train_indices": fold["train"].tolist(),
+                "validation_indices": fold["validation"].tolist(),
+                "train_property_group_count": int(frame.iloc[fold["train"]][PRICE_GROUP_COLUMN].nunique()),
+                "validation_property_group_count": int(frame.iloc[fold["validation"]][PRICE_GROUP_COLUMN].nunique()),
+                "group_overlap_count": 0,
+            }
+            for fold in folds
+        ],
+        "preprocessing_scope": "fresh full pipeline fitted within each CV fold",
+        "test_usage": "sealed during selection; single final evaluation of the frozen winner",
+        "test_used_for_selection": False,
+        "production_deployed": False,
+    }
+    split_path = output / "price_selection_split.json"
+    write_json(split_path, split_artifact)
+
+    template = build_regression_pipeline()
+    models = {
+        "existing_voting": clone(template.named_steps["regressor"].regressor),
+        **estimators(seed=seed, trees=trees, jobs=jobs),
+    }
+    candidate_results = {}
+    cv_predictions = []
+    for name, model in models.items():
+        if model is None:
+            candidate_results[name] = {
+                "status": "dependency_missing",
+                "install": "python -m pip install -r research/requirements.txt",
+            }
+            continue
+        print(
+            f"Fitting price-selection CV candidate {name}, development={len(development)}, folds={cv_folds}",
+            flush=True,
+        )
+        try:
+            fold_results, predictions = evaluate_price_candidate_cv(template, model, X, y, folds)
+            candidate_results[name] = {
+                "status": "measured",
+                "parameters": _serializable_model_parameters(model),
+                "folds": fold_results,
+                "cv_metrics": summarize_price_cv(fold_results),
+            }
+            cv_predictions.extend(dict(model=name, **row) for row in predictions)
+        except Exception as exc:
+            candidate_results[name] = {
+                "status": "failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "parameters": _serializable_model_parameters(model),
+            }
+        write_json(output / "price_selection_candidates.partial.json", {
+            "candidate_results": candidate_results,
+            "selection_metric": "lowest mean group-CV RMSE; model name breaks exact ties",
+            "test_used_for_selection": False,
+            "production_deployed": False,
+        })
+    if cv_predictions:
+        pd.DataFrame(cv_predictions).to_csv(output / "price_selection_cv_predictions.csv", index=False)
+
+    # Freeze the winner before accessing outer-test targets or features.
+    selected = select_price_candidate(candidate_results)
+    result = {
+        "status": "partial" if any(value["status"] != "measured" for value in candidate_results.values()) else "measured",
+        "purpose": "price_model_group_cv_selection_diagnostic",
+        "target": TARGET,
+        "target_transform": "log1p/expm1 for every candidate",
+        "sample_count": len(frame),
+        "outer_train_size": len(outer["train"]),
+        "outer_validation_size": len(outer["validation"]),
+        "development_size": len(development),
+        "outer_test_size": len(outer_test),
+        "features": features,
+        "selection_metric": "lowest mean group-CV RMSE; model name breaks exact ties",
+        "selected_model": selected,
+        "candidate_results": candidate_results,
+        "data_audit": data_audit,
+        "split_artifact": str(split_path),
+        "split_sha256": hashlib.sha256(split_path.read_bytes()).hexdigest(),
+        "test_used_for_selection": False,
+        "production_deployed": False,
+        "limitations": [
+            "Property identity remains heuristic where source rows lack a durable property ID.",
+            "One outer group holdout estimates this snapshot only; it is not temporal or cross-source validation.",
+            "This diagnostic does not publish or replace the production price model.",
+        ],
+    }
+    if selected is None:
+        result.update(status="failed", reason="No candidate completed group CV; outer test remained sealed.")
+        return result
+
+    try:
+        winner = clone(template)
+        winner.set_params(regressor__regressor=clone(models[selected]))
+        started = time.perf_counter()
+        winner.fit(X.iloc[development], y.iloc[development])
+        test_prediction = winner.predict(X.iloc[outer_test])
+        result["winner_outer_test_metrics"] = scores(
+            y.iloc[outer_test], test_prediction, include_mdape=True
+        )
+        result["winner_refit_test_seconds"] = time.perf_counter() - started
+        pd.DataFrame({
+            "row_index": outer_test,
+            "actual_price_vnd": y.iloc[outer_test].to_numpy(),
+            "predicted_price_vnd": test_prediction,
+            "selected_model": selected,
+        }).to_csv(output / "price_selection_test_predictions.csv", index=False)
+    except Exception as exc:
+        result.update(
+            status="failed",
+            reason="The CV winner could not be refitted/evaluated; no replacement candidate was selected from test results.",
+            winner_refit_error=f"{type(exc).__name__}: {exc}",
+        )
+    return result
 
 
 def legacy_benchmark(records: list[dict], output: Path, *, trees=100, jobs=2):
@@ -375,11 +670,12 @@ def traffic_benchmark(records, output, *, horizons=(300, 600), target="requested
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["legacy", "traffic"])
+    parser.add_argument("mode", choices=["legacy", "price-select", "traffic"])
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--trees", type=int, default=100)
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--cv-folds", type=int, default=3)
     parser.add_argument("--horizons", type=int, nargs="+", default=[300, 600])
     parser.add_argument("--target", choices=["requested_rate", "incoming_rate"], default="requested_rate")
     parser.add_argument("--min-train", type=int, default=100)
@@ -387,18 +683,26 @@ def main():
     parser.add_argument("--lag-seconds", type=int, nargs="*", default=[60, 120])
     parser.add_argument("--min-relative-improvement", type=float, default=.05)
     args = parser.parse_args()
-    if args.trees < 1 or args.jobs < 1 or args.min_train < 2 or args.min_test < 2:
-        parser.error("trees/jobs must be positive; min-train/min-test must be >= 2")
+    if args.trees < 1 or args.jobs < 1 or args.cv_folds < 2 or args.min_train < 2 or args.min_test < 2:
+        parser.error("trees/jobs must be positive; cv-folds/min-train/min-test must be >= 2")
     args.output.mkdir(parents=True, exist_ok=True)
     payload = args.input.read_bytes()
     records = [json.loads(line) for line in payload.decode("utf-8-sig").splitlines() if line.strip()]
     if args.mode == "legacy":
         result = legacy_benchmark(records, args.output, trees=args.trees, jobs=args.jobs)
+    elif args.mode == "price-select":
+        result = price_selection_benchmark(
+            records,
+            args.output,
+            trees=args.trees,
+            jobs=args.jobs,
+            cv_folds=args.cv_folds,
+        )
     else:
         result = traffic_benchmark(records, args.output, horizons=args.horizons, target=args.target, min_train=args.min_train, min_test=args.min_test, trees=args.trees, jobs=args.jobs,
                                    lag_seconds=args.lag_seconds, min_relative_improvement=args.min_relative_improvement)
     source_files = [Path(__file__), Path(__file__).with_name("data_audit.py"), Path(__file__).with_name("forecast.py")]
-    if args.mode == "legacy":
+    if args.mode in {"legacy", "price-select"}:
         source_files.extend(Path(__file__).parents[1] / name for name in ("modeling/price_model.py", "processing/text_enrichment.py", "processing/feature_engineering.py", "agents/safety.py"))
     result.update(created_at=datetime.now(timezone.utc).isoformat(), input_path=str(args.input), input_sha256=hashlib.sha256(payload).hexdigest(), versions=versions(),
                   source_sha256={str(path.relative_to(Path(__file__).parents[1])): hashlib.sha256(path.read_bytes()).hexdigest() for path in source_files},

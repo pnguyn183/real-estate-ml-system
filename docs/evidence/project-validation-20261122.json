@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-22",
+  "branch": "dev",
+  "checks": [
+    {
+      "command": "python -m pytest -q",
+      "status": "passed",
+      "passed": 1473,
+      "failed": 0,
+      "warnings": 5617,
+      "duration_seconds": 56.97
+    },
+    {
+      "command": "python -m pytest -q utils/tests/test_control_agent.py utils/tests/test_runtime_policy.py utils/tests/test_model_router.py utils/tests/test_compose_resources.py utils/tests/test_container_lifecycle.py utils/tests/test_container_drain.py utils/tests/test_control_lifecycle.py utils/tests/test_llm_experiment.py utils/tests/test_llm_runtime.py utils/tests/test_llm_report.py",
+      "status": "passed",
+      "passed": 400,
+      "failed": 0,
+      "duration_seconds": 18.19
+    },
+    {
+      "command": "python -m compileall -q agents research scripts modeling processing",
+      "status": "passed"
+    },
+    {
+      "command": "docker compose config --quiet",
+      "status": "passed"
+    },
+    {
+      "command": "docker exec real_estate_prometheus promtool check config /etc/prometheus/prometheus.yml",
+      "status": "passed",
+      "rule_files": 1,
+      "rules": 10
+    },
+    {
+      "command": "docker exec real_estate_prometheus promtool check rules /etc/prometheus/alert_rules.yml",
+      "status": "passed",
+      "rules": 10
+    },
+    {
+      "command": "Parse repository docs/evidence JSON",
+      "status": "passed",
+      "files": 26
+    },
+    {
+      "command": "Resolve local Markdown links in docs/PROJECT_REPORT.md",
+      "status": "passed",
+      "checked": 201,
+      "missing": 0
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "live_load_validation": {
+    "evidence": "docs/evidence/llm-overload-20261122.json",
+    "status": "guard_stopped",
+    "reason": "emergency_host_memory",
+    "llm_called": false,
+    "ab_pair_completed": false,
+    "services_restored": 7,
+    "restore_errors": 0
+  },
+  "startup_gate_live_validation": {
+    "evidence": "docs/evidence/llm-overload-20261122.json",
+    "status": "blocked_before_load",
+    "threshold_percent": 25,
+    "observed_after_isolation_percent": 21.104528302436368,
+    "records_offered": 0,
+    "services_restored": 7,
+    "restore_errors": 0
+  },
+  "not_rerun": [
+    "frontend type-check/lint/build/browser E2E (unchanged from project-validation-20261121.json)",
+    "npm audit (unchanged from project-validation-20261121.json)"
+  ],
+  "conclusion": "Code and documentation validation passed. The live calibration remained inconclusive because host RAM crossed the emergency floor; no LLM overload-improvement claim is supported."
+}

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-11-21T13:21:49.895234+00:00",
+  "status": "measured_selection_diagnostic",
+  "scope": "Asking-price model selection on one local snapshot. Candidates are selected only by property-group CV on development data; only the frozen winner is evaluated once on the outer test. No production model was overwritten.",
+  "dataset": {
+    "input_rows": 4980,
+    "input_sha256": "85b31405edcf7bd0b96a3b69e37c41b6345a7d463772c5fcc83fb491a63a4eda",
+    "duplicates_removed": 8,
+    "evaluated_rows": 4972,
+    "rows_with_price_text_redacted": 4927,
+    "property_groups": 4683,
+    "prepared_dataset_sha256": "fd281d5552ab9c8a87d4237b203df3e9a7bba8f72a33e5dc9a4e85e2347ce9d4",
+    "target": "price_vnd",
+    "target_kind": "listing asking price, not verified transaction price"
+  },
+  "method": {
+    "seed": 42,
+    "outer_split": "deterministic conservative property-group holdout 70/15/15",
+    "outer_rows": {
+      "train": 3491,
+      "validation": 750,
+      "development": 4241,
+      "test": 731
+    },
+    "outer_groups": {
+      "train": 3278,
+      "validation": 702,
+      "test": 703,
+      "overlap": 0
+    },
+    "selection": "lowest mean RMSE across deterministic shuffled 3-fold GroupKFold on outer train+validation; model name breaks exact ties",
+    "folds": [
+      {"fold": 1, "train_rows": 2818, "validation_rows": 1423, "train_groups": 2653, "validation_groups": 1327, "group_overlap": 0},
+      {"fold": 2, "train_rows": 2826, "validation_rows": 1415, "train_groups": 2653, "validation_groups": 1327, "group_overlap": 0},
+      {"fold": 3, "train_rows": 2838, "validation_rows": 1403, "train_groups": 2654, "validation_groups": 1326, "group_overlap": 0}
+    ],
+    "preprocessing": "complete preprocessing and target transform refitted inside every fold",
+    "target_transform": "log1p before fit, expm1 after prediction",
+    "trees": 100,
+    "jobs": 1,
+    "cv_folds": 3,
+    "test_used_for_selection": false,
+    "production_deployed": false
+  },
+  "development_cv": {
+    "existing_voting": {
+      "rmse_vnd_mean": 16919677710.781448,
+      "rmse_vnd_std": 1435347308.829376,
+      "mae_vnd_mean": 5335370610.379855,
+      "r2_mean": 0.26463590692549893,
+      "mdape_percent_mean": 29.872744135659136
+    },
+    "random_forest": {
+      "rmse_vnd_mean": 15552502000.17708,
+      "rmse_vnd_std": 2905755761.215535,
+      "mae_vnd_mean": 5289828979.957657,
+      "r2_mean": 0.39794208901981426,
+      "mdape_percent_mean": 30.72147060238162
+    },
+    "gradient_boosting": {
+      "rmse_vnd_mean": 15611472334.29142,
+      "rmse_vnd_std": 2978958549.3912377,
+      "mae_vnd_mean": 5356538945.203076,
+      "r2_mean": 0.39450964621171636,
+      "mdape_percent_mean": 32.18624768254267
+    },
+    "xgboost": {
+      "rmse_vnd_mean": 13889398947.680162,
+      "rmse_vnd_std": 3361560651.445456,
+      "mae_vnd_mean": 4775616738.963176,
+      "r2_mean": 0.5211987707528881,
+      "mdape_percent_mean": 29.021611585641025
+    }
+  },
+  "selected_model": {
+    "name": "xgboost",
+    "selection_metric": "development group-CV mean RMSE",
+    "hyperparameters": {
+      "objective": "reg:squarederror",
+      "n_estimators": 100,
+      "learning_rate": 0.06,
+      "max_depth": 6,
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 1
+    },
+    "outer_test": {
+      "sample_size": 731,
+      "r2": 0.4794593143575202,
+      "mae_vnd": 6285854676.574555,
+      "rmse_vnd": 22660458665.680145,
+      "mdape_percent": 30.326781123595502
+    }
+  },
+  "runtime": {
+    "versions": {
+      "python": "3.12.10",
+      "numpy": "2.5.2",
+      "pandas": "3.0.5",
+      "scikit_learn": "1.9.0",
+      "xgboost": "3.4.1",
+      "matplotlib": "3.11.2"
+    },
+    "directory": "runtime/research/price-selection-20261121/",
+    "git_tracked": false,
+    "hashes": {
+      "metrics_json": "3ded6d3ed463ae9f26ff9afb8eb354efd07471e7cd6518c4a0bacbca9bb8dfca",
+      "split_json": "74e9ce4f6ed10f35822e541f415021fe810cb6f06f89d123e2613e386322cd8b",
+      "cv_predictions_csv": "e6c92d8804e905bcc2dbd41e1baa406dea8d09ed8e501fa0bea622e7e5f51627",
+      "test_predictions_csv": "a20fb99a6fa2135e77e80ebb05194e9cecee6e63145b5980af6388af2675ae0b"
+    }
+  },
+  "limitations": [
+    "Property identity is heuristic where durable property IDs are absent; entity grouping still needs human-labelled evaluation.",
+    "This is one local snapshot, not temporal or cross-source validation.",
+    "The target is asking price and does not establish transaction-value accuracy.",
+    "The outer-test result evaluates only the CV-selected winner; it does not authorize deployment or replace the production model."
+  ]
+}

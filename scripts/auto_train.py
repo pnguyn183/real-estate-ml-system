@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from modeling.price_model import RealEstatePriceModel
 from processing.price_anomaly import add_anomaly_training_filter
 from agents.safety import real_data_query
-from agents.runtime_policy import RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
+from agents.runtime_policy import RuntimePolicy, TrainingDeferred, mark_training_fitting, training_lease
 from agents.container_drain import wait_for_container_drain
 from utils.metrics import (
     model_train_duration,
@@ -82,7 +82,7 @@ def run_trainer():
                 )
             finally:
                 client.close()
-            require_training_permission(policy)
+            mark_training_fitting(policy, sample_count=len(records))
             model = RealEstatePriceModel()
             result = model.train(records, model_path=MODEL_PATH, metrics_path=METRICS_PATH)
             train_duration = time.time() - start_time

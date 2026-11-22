@@ -57,6 +57,8 @@ def test_cli_preserves_topic_and_group_and_writes_stable_run_id(monkeypatch, tmp
 def test_sample_scope_names_the_measured_topic(monkeypatch):
     collector = object.__new__(TelemetryCollector)
     collector.topic, collector.processor_urls, collector._previous = "real_estate_raw", (), None
+    collector.expected_broker_ids = (1, 2, 3)
+    collector.broker_container_names = {i: f"real_estate_kafka_{i}" for i in (1, 2, 3)}
     monkeypatch.setattr(collector, "_docker", lambda: {"timestamp": 100})
     monkeypatch.setattr(collector, "_kafka", lambda: {"timestamp": 100})
     for name in ("_derive_kafka", "_derive_docker", "_derive_workers"):
@@ -71,6 +73,8 @@ def test_only_worker_transport_errors_receive_recovery_classification(monkeypatc
     collector = object.__new__(TelemetryCollector)
     url = "http://localhost:8004/metrics"
     collector.topic, collector.processor_urls, collector._previous = "real_estate_stress_raw", (url,), None
+    collector.expected_broker_ids = (1, 2, 3)
+    collector.broker_container_names = {i: f"real_estate_kafka_{i}" for i in (1, 2, 3)}
     monkeypatch.setattr(collector, "_docker", lambda: {"timestamp": 100})
     monkeypatch.setattr(collector, "_kafka", lambda: {"timestamp": 100})
     exception = RuntimeError if kind == "RuntimeError" else getattr(requests.exceptions, kind)
@@ -217,6 +221,103 @@ def test_kafka_all_partitions_and_committed_positions_are_used():
     assert result["brokers"]["3"]["leader_incoming_rate"] == 4
     assert result["broker_ingress_max_mean"] == 1
     assert result["brokers"]["3"]["leader_incoming_share"] == pytest.approx(1 / 3)
+
+
+def test_single_broker_metrics_have_zero_cv_and_full_share():
+    previous = {"kafka": {"timestamp": 5, "broker_ids": [1], "partitions": {
+        str(index): {"leader": 1, "replicas": [1], "isr": [1], "high_offset": 0,
+                     "low_offset": 0, "committed_offset": 0, "lag": 0}
+        for index in range(3)}}}
+    current = copy.deepcopy(previous)
+    current["kafka"]["timestamp"] = 10
+    for partition in current["kafka"]["partitions"].values():
+        partition.update(high_offset=10, committed_offset=8, lag=2)
+    result = {"incoming_rate": None, "throughput": None, "brokers": {"1": {}}, "errors": []}
+    TelemetryCollector._derive_kafka(current, previous, result)
+    assert result["incoming_rate"] == 6
+    assert result["throughput"] == pytest.approx(4.8)
+    assert result["brokers"]["1"]["leader_incoming_share"] == 1
+    assert result["broker_ingress_max_mean"] == 1
+    assert result["broker_ingress_cv"] == 0
+
+
+def test_configured_broker_container_mapping_is_used_for_docker_metrics():
+    stats = parse_docker_stats([{"Name": "lean_kafka", "ID": "new", "MemUsage": "1MiB / 1GiB",
+                                 "NetIO": "2kB / 3kB", "BlockIO": "0B / 4MB", "CPUPerc": "1%"}])
+    current = {"docker": {"timestamp": 10, "engine": {"cpu_count": 4, "memory_bytes": 1024**3},
+                           "containers": stats}}
+    result = {"brokers": {"1": {}}}
+    TelemetryCollector._derive_docker(current, {}, result, {1: "lean_kafka"})
+    assert result["brokers"]["1"]["container_id"] == "new"
+
+
+def test_lean_collector_configuration_is_validated_and_preserved(monkeypatch):
+    created = []
+
+    class Consumer:
+        def __init__(self, config):
+            created.append(config)
+
+    monkeypatch.setattr("confluent_kafka.Consumer", Consumer)
+    collector = TelemetryCollector(
+        bootstrap_servers="localhost:19092", topic="lean_stress", group_id="lean_group",
+        processor_urls=("http://localhost:18003/metrics",),
+        container_names=("lean_kafka", "lean_processor", "lean_mongodb"),
+        expected_broker_ids=(1,), broker_container_names={1: "lean_kafka"},
+        vm_container_name="lean_processor", timeout=3)
+    assert collector.expected_broker_ids == (1,)
+    assert collector.broker_container_names == {1: "lean_kafka"}
+    assert collector.vm_container_name == "lean_processor"
+    assert created[0]["bootstrap.servers"] == "localhost:19092"
+
+
+def test_configured_vm_container_is_used_for_memory_measurement(monkeypatch):
+    from research import telemetry
+
+    collector = object.__new__(TelemetryCollector)
+    collector._engine = None
+    collector.timeout = 1
+    collector.container_names = ("lean_kafka",)
+    collector.vm_container_name = "lean_processor"
+    calls = []
+    memory = ("MemTotal: 1048576 kB\nMemFree: 524288 kB\nMemAvailable: 524288 kB\n"
+              "SwapTotal: 0 kB\nSwapFree: 0 kB\n")
+
+    def command(args, _timeout):
+        calls.append(args)
+        if args[1] == "info":
+            return "4 1073741824"
+        if args[1] == "stats":
+            return json.dumps({"Name": "lean_kafka", "ID": "abc", "MemUsage": "1MiB / 1GiB",
+                               "NetIO": "0B / 0B", "BlockIO": "0B / 0B", "CPUPerc": "1%"})
+        return memory
+
+    monkeypatch.setattr(telemetry, "_command", command)
+    snapshot = collector._docker()
+    assert ["docker", "exec", "lean_processor", "cat", "/proc/meminfo"] in calls
+    assert snapshot["vm_memory"]["available_percent"] == 50
+
+
+@pytest.mark.parametrize("updates", [
+    {"expected_broker_ids": ()},
+    {"expected_broker_ids": (1, 1)},
+    {"broker_container_names": {2: "lean_kafka"}},
+    {"vm_container_name": ""},
+    {"timeout": float("nan")},
+    {"topic": "invalid topic"},
+])
+def test_invalid_lean_collector_configuration_fails_before_consumer(monkeypatch, updates):
+    monkeypatch.setattr("confluent_kafka.Consumer",
+                        lambda *_args, **_kwargs: pytest.fail("consumer must not be created"))
+    options = dict(
+        bootstrap_servers="localhost:19092", topic="lean_stress", group_id="lean_group",
+        processor_urls=("http://localhost:18003/metrics",),
+        container_names=("lean_kafka", "lean_processor", "lean_mongodb"),
+        expected_broker_ids=(1,), broker_container_names={1: "lean_kafka"},
+        vm_container_name="lean_processor", timeout=3)
+    options.update(updates)
+    with pytest.raises(ValueError):
+        TelemetryCollector(**options)
 
 
 def test_leader_migration_preserves_group_rates_but_invalidates_broker_attribution():

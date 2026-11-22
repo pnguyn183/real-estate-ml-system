@@ -1,0 +1,9 @@
+{
+  "sample_count": 5247.0,
+  "mae_vnd": 4442705119.503474,
+  "rmse_vnd": 12896344411.433765,
+  "r2": 0.4350374472067594,
+  "train_size": 4197.0,
+  "test_size": 1050.0,
+  "median_absolute_percentage_error": 0.27302290319110056
+}

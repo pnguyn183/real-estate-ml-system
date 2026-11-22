@@ -6,6 +6,7 @@ closed only when control is explicitly enabled, and only for the selected topic.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 import json
 import math
@@ -148,16 +149,143 @@ def require_training_permission(policy: RuntimePolicy) -> None:
         raise TrainingDeferred("Control agent deferred the next training fit")
 
 
-def _write_training_state(policy: RuntimePolicy, status: str, *, started_at=None) -> None:
+_ACTIVE_TRAINING_PHASES = {"preparing", "fitting"}
+_TERMINAL_TRAINING_PHASES = {"completed", "deferred", "failed", "interrupted"}
+_TRAINING_TRANSITIONS = {
+    "new": {"preparing", "deferred"},
+    "preparing": {"fitting", "deferred", "failed", "interrupted"},
+    "fitting": {"completed", "deferred", "failed", "interrupted"},
+}
+
+
+@dataclass
+class _TrainingRun:
+    path: Path
+    run_id: str
+    decision_id: str
+    started_at: float | None
+    phase: str = "new"
+
+
+_CURRENT_TRAINING_RUN: ContextVar[_TrainingRun | None] = ContextVar(
+    "current_training_run", default=None)
+
+
+def _write_training_state(policy: RuntimePolicy, data: dict) -> None:
     path = policy.path.with_name("training.json")
-    data = {"status": status, "pid": os.getpid(), "hostname": socket.gethostname(),
-            "updated_at": policy.wall_clock(), "started_at": started_at}
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
-        temporary.write_text(json.dumps(data), encoding="utf-8")
+        with temporary.open("x", encoding="utf-8") as output:
+            json.dump(data, output, ensure_ascii=True, allow_nan=False)
+            output.flush()
+            os.fsync(output.fileno())
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _append_training_event(policy: RuntimePolicy, event: dict) -> None:
+    path = policy.path.with_name("training_events.jsonl")
+    with path.open("a", encoding="utf-8") as output:
+        output.write(json.dumps(event, ensure_ascii=True, allow_nan=False) + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def _training_transition(policy: RuntimePolicy, run: _TrainingRun, transition: str, *,
+                         reason: str | None = None, sample_count: int | None = None) -> None:
+    if transition not in _TRAINING_TRANSITIONS.get(run.phase, set()):
+        raise RuntimeError(f"Invalid training transition: {run.phase} -> {transition}")
+    if sample_count is not None and (type(sample_count) is not int or sample_count < 0):
+        raise ValueError("sample_count must be a non-negative integer")
+    if (run.started_at is not None
+            and (isinstance(run.started_at, bool) or not isinstance(run.started_at, (int, float))
+                 or not math.isfinite(run.started_at))):
+        raise RuntimeError("Training start clock is invalid")
+    now = policy.wall_clock()
+    if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
+        raise RuntimeError("Training state clock is invalid")
+    status = "running" if transition in _ACTIVE_TRAINING_PHASES else transition
+    event = {"schema_version": 1, "run_id": run.run_id, "decision_id": run.decision_id,
+             "source_topic": policy.source_topic, "status": status, "phase": transition,
+             "pid": os.getpid(), "hostname": socket.gethostname(), "updated_at": float(now),
+             "started_at": run.started_at}
+    if reason is not None:
+        event["reason"] = reason
+    if sample_count is not None:
+        event["sample_count"] = sample_count
+    # The append-only event is the durable source of truth.  Training fails
+    # closed if it cannot be fsynced; the atomic snapshot is the model-facing
+    # current view and is updated only after the event is durable.
+    _append_training_event(policy, event)
+    _write_training_state(policy, event)
+    run.phase = transition
+
+
+def _last_training_event(policy: RuntimePolicy) -> dict | None:
+    path = policy.path.with_name("training_events.jsonl")
+    try:
+        with path.open("rb") as source:
+            source.seek(0, os.SEEK_END)
+            size = source.tell()
+            source.seek(max(0, size - 16384))
+            tail = source.read(16385)
+        if len(tail) > 16384:
+            tail = tail[-16384:]
+        lines = [line for line in tail.splitlines() if line.strip()]
+        value = json.loads(lines[-1]) if lines else None
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError, TypeError, IndexError):
+        return None
+
+
+def _reconcile_interrupted_training(policy: RuntimePolicy) -> None:
+    path = policy.path.with_name("training.json")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return
+    phase = value.get("phase")
+    if phase not in _ACTIVE_TRAINING_PHASES:
+        # Backward compatibility with the previous unversioned snapshot.
+        phase = "preparing" if value.get("status") == "running" else None
+    if phase not in _ACTIVE_TRAINING_PHASES:
+        return
+    run_id = value.get("run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"[a-f0-9]{32}", run_id):
+        run_id = uuid4().hex
+    last_event = _last_training_event(policy)
+    if isinstance(last_event, dict) and last_event.get("run_id") == run_id:
+        last_phase = last_event.get("phase")
+        if last_phase in _TERMINAL_TRAINING_PHASES:
+            # The durable event was fsynced but atomic snapshot replacement did
+            # not finish. Restore the derived snapshot without inventing a crash.
+            _write_training_state(policy, last_event)
+            return
+        if last_phase in _ACTIVE_TRAINING_PHASES:
+            value, phase = last_event, last_phase
+    decision_id = value.get("decision_id") if isinstance(value.get("decision_id"), str) else ""
+    started_at = value.get("started_at")
+    if (isinstance(started_at, bool) or not isinstance(started_at, (int, float))
+            or not math.isfinite(started_at)):
+        started_at = None
+    stale = _TrainingRun(policy.path, run_id, decision_id, started_at, phase)
+    _training_transition(policy, stale, "interrupted", reason="stale_state_after_lock_recovery")
+
+
+def mark_training_fitting(policy: RuntimePolicy, *, sample_count: int | None = None) -> None:
+    """Recheck permission and durably mark the exact boundary before model fit."""
+    if not policy.enabled:
+        return
+    run = _CURRENT_TRAINING_RUN.get()
+    if run is None or run.path.resolve() != policy.path.resolve():
+        raise RuntimeError("No active controlled training lease")
+    require_training_permission(policy)
+    if run.phase == "fitting":
+        # A command may contain multiple sequential fit operations. Recheck the
+        # lease at each boundary without manufacturing a duplicate transition.
+        return
+    _training_transition(policy, run, "fitting", sample_count=sample_count)
 
 
 @contextmanager
@@ -193,22 +321,35 @@ def training_lease(policy: RuntimePolicy | None = None):
         yield False
         return
     try:
-        if not policy.read().training_allowed:
-            _write_training_state(policy, "deferred")
+        # Acquiring the OS lock proves that no compliant training process is
+        # still active. Reconcile a snapshot left by a crashed predecessor
+        # before recording this attempt.
+        _reconcile_interrupted_training(policy)
+        decision = policy.read()
+        if not decision.training_allowed:
+            deferred = _TrainingRun(policy.path, uuid4().hex, decision.decision_id, None)
+            _training_transition(policy, deferred, "deferred", reason="policy_denied_before_prepare")
             yield False
             return
         started_at = policy.wall_clock()
-        _write_training_state(policy, "running", started_at=started_at)
+        run = _TrainingRun(policy.path, uuid4().hex, decision.decision_id, started_at)
+        _training_transition(policy, run, "preparing")
+        token = _CURRENT_TRAINING_RUN.set(run)
         try:
             yield True
         except TrainingDeferred:
-            _write_training_state(policy, "deferred", started_at=started_at)
+            _training_transition(policy, run, "deferred", reason="policy_revoked_before_fit")
             raise
-        except BaseException:
-            _write_training_state(policy, "failed", started_at=started_at)
+        except BaseException as exc:
+            _training_transition(policy, run, "failed", reason=type(exc).__name__)
             raise
         else:
-            _write_training_state(policy, "completed", started_at=started_at)
+            if run.phase == "fitting":
+                _training_transition(policy, run, "completed")
+            else:
+                _training_transition(policy, run, "deferred", reason="fit_not_started")
+        finally:
+            _CURRENT_TRAINING_RUN.reset(token)
     finally:
         if locked:
             if os.name == "nt":

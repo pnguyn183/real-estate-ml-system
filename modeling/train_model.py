@@ -28,7 +28,7 @@ except ImportError:
 from utils.metrics import start_prometheus_server, update_metrics_from_result, model_train_duration
 from processing.price_anomaly import add_anomaly_training_filter
 from agents.safety import real_data_query
-from agents.runtime_policy import RuntimePolicy, TrainingDeferred, require_training_permission, training_lease
+from agents.runtime_policy import RuntimePolicy, TrainingDeferred, mark_training_fitting, training_lease
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -92,7 +92,7 @@ def _train(args, policy):
         logger.info("Loaded %s records from MongoDB %s.%s", len(records), args.mongo_db, args.collection)
 
     if args.evaluate_variants:
-        require_training_permission(policy)
+        mark_training_fitting(policy, sample_count=len(records))
         variant_metrics = evaluate_feature_variants(records)
         variant_path = Path(args.variant_metrics_path)
         variant_path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,7 +100,7 @@ def _train(args, policy):
         logger.info("Feature-variant metrics written to %s: %s", variant_path, variant_metrics)
 
     start_time = time.time()
-    require_training_permission(policy)
+    mark_training_fitting(policy, sample_count=len(records))
     trainer = RealEstatePriceModel()
     result = trainer.train(records, model_path=args.model_path, metrics_path=args.metrics_path)
     train_duration = time.time() - start_time

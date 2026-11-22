@@ -12,7 +12,8 @@ class Docker:
         self.fail_stop, self.fail_start = None, None
         services = {"processor": "running", "processor-2": "running", "processor-3": "running",
                     "kafka": "running", "trainer": "running", "scraper": "running",
-                    "stress-agent": "exited", "airflow": "paused", "frontend": "running"}
+                    "stress-agent": "exited", "airflow": "paused", "frontend": "running",
+                    "prometheus": "running"}
         for number, (service, state) in enumerate(services.items(), start=1):
             identifier = f"{number:064x}"
             self.containers[identifier] = {
@@ -99,11 +100,13 @@ def test_exact_running_optional_set_restored_without_recreation_or_secrets(runti
     docker, path = runtime
     before = {item["Id"]: copy.deepcopy(item["HostConfig"]) for item in docker.containers.values()}
     with llm_runtime.isolated_runtime(path, project_name="test") as receipt:
-        assert docker.state("trainer") == docker.state("scraper") == docker.state("frontend") == "exited"
+        assert (docker.state("trainer") == docker.state("scraper") == docker.state("frontend")
+                == docker.state("prometheus") == "exited")
         assert docker.state("airflow") == "paused"
         assert docker.state("stress-agent") == "exited"
         assert llm_runtime.verify_runtime(receipt)["models_unchanged"] is True
-    assert docker.state("trainer") == docker.state("scraper") == docker.state("frontend") == "running"
+    assert (docker.state("trainer") == docker.state("scraper") == docker.state("frontend")
+            == docker.state("prometheus") == "running")
     assert docker.state("airflow") == "paused"
     assert docker.state("stress-agent") == "exited"
     assert {args[0] for args in docker.calls} <= {"ps", "inspect", "info", "stop", "start"}

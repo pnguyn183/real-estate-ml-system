@@ -31,15 +31,39 @@ def test_default_config_is_bounded_and_calibration_is_separate():
     cfg = experiment.validate_config(config())
     assert cfg["pairs"] == 3
     assert cfg["completion_timeout_seconds"] == 5
+    assert cfg["startup_memory_available_percent"] == 25
+    assert cfg["startup_memory_available_percent"] > cfg["min_memory_available_percent"]
     assert [row["rate"] for row in experiment.calibration_profile(cfg)] == cfg["calibration_rates"]
     assert experiment.calibrated_profile({"status": "completed"}, cfg) is None
+
+
+def test_lean_topology_is_separate_and_json_stable():
+    topology = experiment.experiment_topology(config(), lean=True)
+    identity = experiment.topology_identity(topology)
+    assert topology["project_name"] == "real-estate-llm-lean"
+    assert topology["expected_broker_ids"] == (1,)
+    assert topology["expected_replica_ids"] == (1,)
+    assert topology["group_id"].endswith("_lean")
+    assert identity["broker_container_names"] == {"1": "real_estate_llm_lean_kafka"}
+    assert json.loads(json.dumps(identity)) == identity
+
+
+def test_lean_topology_refuses_an_unrelated_bootstrap():
+    cfg = config()
+    cfg["bootstrap_servers"] = "remote.invalid:9092"
+    with pytest.raises(ValueError, match="fixed"):
+        experiment.experiment_topology(cfg, lean=True)
 
 
 def test_older_config_gets_explicit_completion_timeout_without_mutation():
     cfg = config()
     del cfg["completion_timeout_seconds"]
-    assert experiment.validate_config(cfg)["completion_timeout_seconds"] == 5
+    del cfg["startup_memory_available_percent"]
+    effective = experiment.validate_config(cfg)
+    assert effective["completion_timeout_seconds"] == 5
+    assert effective["startup_memory_available_percent"] == 25
     assert "completion_timeout_seconds" not in cfg
+    assert "startup_memory_available_percent" not in cfg
 
 
 @pytest.mark.parametrize("changes", [
@@ -48,6 +72,9 @@ def test_older_config_gets_explicit_completion_timeout_without_mutation():
     {"calibration_rates": [10001]}, {"lease_seconds": 40}, {"max_sample_age_seconds": 20},
     {"sample_seconds": 20, "calibration_stage_seconds": 30}, {"overload_seconds": 30},
     {"min_memory_available_percent": 9},
+    {"startup_memory_available_percent": 9},
+    {"startup_memory_available_percent": 51},
+    {"startup_memory_available_percent": 10},
     {"completion_timeout_seconds": True}, {"completion_timeout_seconds": float("inf")},
     {"completion_timeout_seconds": .5}, {"completion_timeout_seconds": 31},
 ])
@@ -458,3 +485,94 @@ def test_config_validation_has_no_docker_side_effect(monkeypatch, tmp_path):
     with pytest.raises(ValueError):
         experiment.main(["--config", str(path), "--output", str(tmp_path / "evidence")])
     assert not (tmp_path / "evidence").exists()
+
+
+def test_restore_mongodb_cli_uses_experiment_lock(monkeypatch, tmp_path):
+    from contextlib import contextmanager
+    from research import llm_mongo_runtime
+
+    events = []
+
+    @contextmanager
+    def lock():
+        events.append("lock_enter")
+        try:
+            yield
+        finally:
+            events.append("lock_exit")
+
+    manifest = tmp_path / "mongo-runtime.json"
+    manifest.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(experiment, "experiment_lock", lock)
+    monkeypatch.setattr(llm_mongo_runtime, "restore_mongodb",
+                        lambda path: events.append(("restore", path)))
+
+    assert experiment.main(["--restore-mongodb", str(manifest)]) == 0
+    assert events == ["lock_enter", ("restore", manifest), "lock_exit"]
+
+
+def test_cli_refuses_two_recovery_modes_before_docker(monkeypatch, tmp_path):
+    monkeypatch.setattr("research.llm_runtime.restore_runtime",
+                        lambda *args: pytest.fail("runtime restore must not run"))
+    monkeypatch.setattr("research.llm_mongo_runtime.restore_mongodb",
+                        lambda *args: pytest.fail("MongoDB restore must not run"))
+    monkeypatch.setattr("research.llm_lean_runtime.restore_lean_runtime",
+                        lambda *args: pytest.fail("lean restore must not run"))
+    with pytest.raises(SystemExit, match="2"):
+        experiment.main(["--restore", str(tmp_path / "isolation.json"),
+                         "--restore-mongodb", str(tmp_path / "mongo-runtime.json"),
+                         "--restore-lean", str(tmp_path / "lean-runtime.json")])
+
+
+def test_cli_refuses_duplicate_mongodb_profiles_before_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr("research.llm_lean_runtime.lean_runtime",
+                        lambda *args, **kwargs: pytest.fail("runtime must not start"))
+    with pytest.raises(SystemExit, match="2"):
+        experiment.main(["--lean-topology", "--mongo-memory-profile",
+                         "--output", str(tmp_path / "evidence")])
+    assert not (tmp_path / "evidence").exists()
+
+
+def test_runtime_contexts_restore_mongodb_before_optional_services():
+    from contextlib import ExitStack, contextmanager
+
+    events = []
+
+    @contextmanager
+    def resource(name, value):
+        events.append("enter_" + name)
+        try:
+            yield value
+        finally:
+            events.append("exit_" + name)
+
+    with ExitStack() as stack:
+        value = experiment._enter_runtime_contexts(
+            stack, resource("isolation", "runtime"), resource("mongo", None))
+        assert value == "runtime"
+    assert events == ["enter_mongo", "enter_isolation", "exit_mongo", "exit_isolation"]
+
+
+def test_runtime_contexts_restore_mongodb_if_isolation_entry_fails():
+    from contextlib import ExitStack, contextmanager
+
+    events = []
+
+    @contextmanager
+    def mongo():
+        events.append("enter_mongo")
+        try:
+            yield
+        finally:
+            events.append("exit_mongo")
+
+    @contextmanager
+    def broken_isolation():
+        events.append("enter_isolation")
+        raise RuntimeError("isolation failed")
+        yield
+
+    with pytest.raises(RuntimeError, match="isolation failed"):
+        with ExitStack() as stack:
+            experiment._enter_runtime_contexts(stack, broken_isolation(), mongo())
+    assert events == ["enter_mongo", "enter_isolation", "exit_mongo"]

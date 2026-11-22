@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "kind": "llm_overload_calibration_attempt",
+  "date": "2026-11-22",
+  "branch": "dev",
+  "command": "python -m research.llm_experiment --calibrate-only --output runtime/research/llm-proof-20261122-calibration",
+  "scope": "Baseline capacity calibration only; no LLM call and no A/B arm.",
+  "result": {
+    "session_status": "calibration_inconclusive",
+    "run_status": "guard_stopped",
+    "stop_reason": "emergency_host_memory",
+    "run_id": "llmproof-baseline-29313d9b6ddc",
+    "load_started_at": "2026-11-22T02:31:14.213+07:00",
+    "finished_at": "2026-11-22T02:31:39.726+07:00",
+    "samples": 5,
+    "stage": "calibration_0",
+    "offered_rate_per_second": 10,
+    "accounting": {
+      "offered": 42,
+      "admitted": 42,
+      "acknowledged": 42,
+      "committed": 42,
+      "rejected": 0,
+      "pending_at_end": 0,
+      "cancelled_future_offers": 31158,
+      "offset_growth": 42
+    },
+    "telemetry": {
+      "peak_kafka_lag": 42,
+      "peak_observed_p95_seconds": 27.9,
+      "minimum_host_memory_available_percent": 5.38287819231025,
+      "minimum_docker_vm_memory_available_percent": 41.75232845414372
+    },
+    "calibration_evidence": null,
+    "selected_overload_profile": null,
+    "llm_decisions": 0,
+    "guard_actions": 1,
+    "guard_reasons": [
+      "emergency_host_memory"
+    ],
+    "resource_fingerprint": "13095e2f8c6b36011fcdc8847ac4f08ae60aa78aeeab10eeadcaf5b7c2a3edb7"
+  },
+  "isolation_and_recovery": {
+    "temporarily_stopped_services": 7,
+    "services": [
+      "frontend",
+      "mongo-express",
+      "api",
+      "scraper",
+      "trainer",
+      "predictor",
+      "grafana"
+    ],
+    "same_container_ids_restored": true,
+    "status": "restored",
+    "restore_errors": 0,
+    "run_cleanup_errors": 0
+  },
+  "raw_artifacts": {
+    "root": "runtime/research/llm-proof-20261122-calibration",
+    "git_ignored": true,
+    "config_sha256": "745af4273ce80978f41dbf18946217955bbe87000c9053d8e7a94362079bec32",
+    "identity_sha256": "56f50ae3c4318b38f46420d012354860fdc978c623e6b4bda394d0589124f555",
+    "run_sha256": "62209644e38626a9cb1c0588e5cffd1416e59f95fa4378ead032300143fc5ccc",
+    "isolation_sha256": "721c559d6b3eb2ee6fecd9570bb920d52633dea15d45c1530de90598f35b70ee"
+  },
+  "safety_follow_up": {
+    "finding": "The former startup check could admit a trial with too little margin above the 10% emergency cutoff.",
+    "change": "Added a separate startup_memory_available_percent threshold of 25%; the runtime emergency floor remains 10%. The 25% gate covers the observed 12.68 percentage-point warm-up drop while retaining margin above 10%.",
+    "applied_after_this_trial": true,
+    "tests": {
+      "command": "python -m pytest -q utils/tests/test_llm_experiment.py utils/tests/test_llm_runtime.py",
+      "passed": 73,
+      "failed": 0
+    },
+    "live_startup_gate_check": {
+      "command": "python -m research.llm_experiment --calibrate-only --output runtime/research/llm-proof-20261122-calibration-02",
+      "status": "blocked_before_load",
+      "reason": "Host available RAM is at or below the experiment safety floor",
+      "workload_started": false,
+      "records_offered": 0,
+      "startup_threshold_percent": 25,
+      "observed_after_isolation_percent": 21.104528302436368,
+      "observed_after_isolation_bytes": 3561345024,
+      "additional_bytes_to_threshold": 657352704,
+      "additional_gib_to_threshold": 0.6122,
+      "temporarily_stopped_services": 7,
+      "restoration_status": "restored_after_error",
+      "restore_errors": 0,
+      "raw_artifacts": {
+        "root": "runtime/research/llm-proof-20261122-calibration-02",
+        "config_sha256": "110292b134eb398380b3c1ba10630dbad6b239a1fc2b619e05358185bae9dbb9",
+        "session_sha256": "671a5fd540534d700621bc74bd097d706366cba1114ee65683eb384482e63c49",
+        "isolation_sha256": "8950b874859b27e13d1960b6650b297a53a636f5b808b31cd7313f7a6f42f4df"
+      }
+    },
+    "prometheus_isolation_gate_check": {
+      "command": "python -m research.llm_experiment --calibrate-only --output runtime/research/llm-proof-20261122-calibration-03",
+      "status": "blocked_before_load",
+      "reason": "Host available RAM is at or below the experiment safety floor",
+      "workload_started": false,
+      "records_offered": 0,
+      "startup_threshold_percent": 25,
+      "observed_after_isolation_percent": 19.60524022639813,
+      "observed_after_isolation_bytes": 3308343296,
+      "temporarily_stopped_services": 8,
+      "additional_isolated_service": "prometheus",
+      "restoration_status": "restored_after_error",
+      "restored_services": 8,
+      "restore_errors": 0,
+      "raw_artifacts": {
+        "root": "runtime/research/llm-proof-20261122-calibration-03",
+        "config_sha256": "110292b134eb398380b3c1ba10630dbad6b239a1fc2b619e05358185bae9dbb9",
+        "session_sha256": "f1c5f9cb954c4dd6707023424bc2fffd5776c5da9633c47d13a261dabfa8026b",
+        "isolation_sha256": "22e193afd5c642464f7c9ea1ebcc3e5915a2910b4912dae16b5417bd0e472a5d"
+      }
+    },
+    "mongo_memory_profile_gate_check": {
+      "command": "python -m research.llm_experiment --calibrate-only --mongo-memory-profile --output runtime/research/llm-proof-20261122-calibration-04",
+      "status": "blocked_before_load",
+      "reason": "Host available RAM is at or below the experiment safety floor",
+      "workload_started": false,
+      "records_offered": 0,
+      "startup_threshold_percent": 25,
+      "observed_after_isolation_percent": 11.758444903687586,
+      "observed_after_isolation_bytes": 1984212992,
+      "temporarily_stopped_services": 8,
+      "restoration_status": "restored_after_error",
+      "restored_services": 8,
+      "restore_errors": 0,
+      "mongodb_profile": {
+        "wiredtiger_cache_bytes": 1073741824,
+        "container_memory_bytes": 2684354560,
+        "container_swap_bytes": 2684354560,
+        "named_volume_preserved": true,
+        "production_command_restored": "mongod",
+        "production_memory_limit_restored": 0,
+        "profile_status": "restored_after_error",
+        "restore_status": "restored"
+      },
+      "raw_artifacts": {
+        "root": "runtime/research/llm-proof-20261122-calibration-04",
+        "config_sha256": "ca2151e7cc8d09accfbf4ac17975092d590f25f5d8751a3786cfaa316393249f",
+        "session_sha256": "2018802a27989567cc58d4a90bc440f93685cb8750b62c4892c7f66f06c077e6",
+        "isolation_sha256": "1a9d43f5f2a4420256de4ae6d8ac51e7b6f788f6785c4493b7da8b281d613cf9",
+        "mongo_runtime_sha256": "067fd3290d91a611e60342391a78aa609ddf2aed7a7cada682a566d5e93fc7cb"
+      }
+    }
+  },
+  "promtool": {
+    "config_command": "docker exec real_estate_prometheus promtool check config /etc/prometheus/prometheus.yml",
+    "rules_command": "docker exec real_estate_prometheus promtool check rules /etc/prometheus/alert_rules.yml",
+    "config_valid": true,
+    "rule_files": 1,
+    "rules_valid": 10
+  },
+  "conclusion": "The safety guard and recovery paths worked, but no sustainable overload rate, LLM action, A/B pair or improvement percentage was established. Three pre-load checks blocked below the 25% startup floor; the latest bounded MongoDB profile check observed 11.76% after isolation. The experiment-only cache/RAM profile, named-volume preservation and production-profile restoration were live-verified, but did not create enough host headroom on this run. Available RAM varied materially between attempts, so no fixed additional-RAM requirement is claimed."
+}

@@ -19,6 +19,9 @@ python -m research.llm_experiment --output runtime/research/llm-proof-fallback -
 
 # Chỉ tìm mức tải quá tải, không gọi model.
 python -m research.llm_experiment --calibrate-only --output runtime/research/llm-calibration
+
+# Máy ít RAM: áp dụng profile MongoDB chỉ trong thí nghiệm rồi tự khôi phục.
+python -m research.llm_experiment --calibrate-only --mongo-memory-profile --output runtime/research/llm-calibration-bounded
 ```
 
 Mỗi lần cần một thư mục output mới. Cấu hình ở
@@ -31,16 +34,24 @@ request, độc lập với chu kỳ poll 0,25 giây. Timeout thực tế và l�
 được lưu trong kết quả; lỗi quan sát vẫn làm lượt thử không hợp lệ. Cấu hình cũ
 thiếu trường này tự dùng 5 giây và ghi rõ giá trị hiệu lực vào artifacts.
 
-RAM trống phải **trên 10% ở cả host và Docker VM**; cần thêm khoảng trống vì RAM
-có thể giảm trong lúc chạy. Không hạ ngưỡng để bỏ qua điều kiện thử. Model dự phòng
+RAM trống khi bắt đầu phải **trên 25% ở host** (`startup_memory_available_percent`)
+và runtime guard vẫn dừng ở **10%** (`min_memory_available_percent`); Docker VM cũng
+phải còn trên ngưỡng guard. Hai ngưỡng tách biệt để giữ khoảng đệm cho worker/Mongo
+warm-up. Mức 25% bao phủ mức giảm 12,68 điểm phần trăm đã quan sát ngày 22/11
+(18,06% → 5,38%) và vẫn giữ biên trên guard 10%; không hạ ngưỡng để bỏ qua điều
+kiện thử. Model dự phòng
 cùng project không tạo quota độc lập; tài khoản cần quyền dùng model tương ứng.
 
 ## Thiết kế đối chứng
 
-- Giữ nguyên CPU/RAM Docker, kiểm tra allocation thực tế và container ID trước,
-  trong, sau mỗi lượt. Không sửa Compose hay `.env`.
+- Giữ nguyên CPU/RAM Docker trong toàn bộ calibration và A/B, kiểm tra allocation
+  thực tế và container ID trước, trong, sau mỗi lượt. Không sửa Compose gốc hay
+  `.env`; nếu bật `--mongo-memory-profile`, override hiệu lực được hash và ghi vào
+  provenance như một phần của allocation cố định.
 - Dừng các publisher khác, trainer, Airflow/AI worker và dịch vụ giao diện/API
-  phụ trợ đang chạy. Cuối phiên khôi phục đúng ID đã chạy trước phiên.
+  phụ trợ đang chạy, kể cả Prometheus. Telemetry của phép thử đọc trực tiếp từ
+  Processor, Kafka và Docker nên không phụ thuộc Prometheus. Cuối phiên khôi phục
+  đúng ID đã chạy trước phiên.
 - Cùng seed, nội dung, khóa partition, lịch nhu cầu và giới hạn queue trong mỗi
   cặp. URL/run ID khác nhau để không ghi đè bản ghi giữa các lượt.
 - Baseline dùng trần admission cố định; LLM chọn trần từ telemetry. Cùng trần
@@ -107,16 +118,22 @@ limits; các giả thuyết đó cần đối chứng riêng.
 - `calibration.json`, `selected_profile.json`: lý do chọn mức tải.
 - `identity.json`, `config.json`, `isolation.json`, `session.json`: mã nguồn,
   cấu hình, container và kết quả khôi phục.
+- `mongo-runtime.json`: cấu hình cache/limit thực tế, named volume và biên nhận
+  recreate/khôi phục MongoDB khi dùng `--mongo-memory-profile`.
 
 Artifacts trong `runtime/` được Git bỏ qua. Chỉ đưa tổng hợp đã kiểm tra vào docs.
 Nếu tắt cưỡng bức/mất điện, khôi phục từ manifest:
 
 ```powershell
 python -m research.llm_experiment --restore runtime/research/llm-proof/isolation.json
+python -m research.llm_experiment --restore-mongodb runtime/research/llm-proof/mongo-runtime.json
 ```
 
-Lệnh chỉ khôi phục thao tác chưa hoàn tất với đúng container ID, không tạo
-container hoặc khởi động dịch vụ vốn đã tắt.
+Lệnh thứ nhất chỉ khôi phục thao tác cô lập chưa hoàn tất với đúng container ID,
+không tạo container hoặc khởi động dịch vụ vốn đã tắt. Lệnh thứ hai chỉ recreate
+MongoDB từ Compose gốc sau khi kiểm tra manifest/hash; named volume `/data/db`
+được giữ nguyên. Khi thoát bình thường, MongoDB gốc được khôi phục và khỏe mạnh
+trước khi các dịch vụ phụ được bật lại.
 
 ## Điểm tiếp tục ngày 23/10/2026
 
@@ -131,7 +148,18 @@ sắp xếp tại chỗ. Giữ nguyên toàn bộ lịch sử, quy tắc loại 
 khi lỗi; 23 kiểm thử price anomaly/feature enrichment đạt. Chưa đo mức giảm RAM
 trên Docker thật. Cần build lại image processor trước khi kiểm chứng bản sửa.
 
-Phần tích hợp giới hạn cache MongoDB viết dở đã được gỡ; không có thay đổi cấu
-hình cache MongoDB được thực hiện. Giới hạn Docker và ngưỡng dừng giữ nguyên.
+Ngày 22/11, profile MongoDB riêng cho thí nghiệm đã được triển khai: WiredTiger
+cache 1 GiB, RAM container 2.560 MiB và swap limit bằng RAM. Compose gốc không
+đổi, named volume được giữ nguyên và cả cấu hình override lẫn thao tác khôi phục
+đều được kiểm tra fail-closed. Lượt live `llm-proof-20261122-calibration-04` xác
+nhận cache thực tế 1.073.741.824 byte, cùng volume trước/sau, MongoDB trở về lệnh
+`mongod` không limit và tám dịch vụ phụ được khôi phục không lỗi. Tuy vậy, RAM host
+cuối thời gian chờ chỉ đạt 11,758444903687586% (1.984.212.992 byte), dưới ngưỡng
+25%, nên bị chặn **trước khi phát tải**: không có workload, quyết định LLM hay A/B.
+
+Ý nghĩa và giới hạn của `wiredTigerCacheSizeGB` theo tài liệu MongoDB chính thức:
+[configuration options](https://www.mongodb.com/docs/manual/reference/configuration-options/)
+và [`mongod` options](https://www.mongodb.com/docs/manual/reference/program/mongod/).
+Giới hạn này chỉ bao phủ cache nội bộ WiredTiger; filesystem cache vẫn tách biệt.
 Xem riêng [tình trạng dữ liệu telemetry](evidence/TELEMETRY_VALIDATION_20261023.md): thu lịch
 sử dự báo không thay thế phép thử chứng minh LLM điều tiết khi quá tải.

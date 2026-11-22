@@ -125,7 +125,12 @@ def validate_config(config, *, max_duration_seconds=3600):
             raise ValueError("VM memory safety needs three positive percentage thresholds")
 
 
-def code_identity():
+def code_identity(*, worker_services=("processor", "processor-2", "processor-3"),
+                  compose_exec_prefix=("docker", "compose", "exec", "-T")):
+    if (not isinstance(worker_services, tuple) or not worker_services
+            or any(not isinstance(value, str) or not value for value in worker_services)
+            or not isinstance(compose_exec_prefix, tuple) or not compose_exec_prefix):
+        raise ValueError("Worker identity command configuration is invalid")
     paths = [Path("agents/traffic_control.py"), Path("agents/generator.py"),
              Path("research/run_experiment.py"), Path("research/telemetry.py"),
              Path("research/telemetry_guard.py"),
@@ -159,11 +164,11 @@ def code_identity():
         "        hashes[source] = {'error': type(exc).__name__}\n"
         "print(json.dumps(hashes))"
     )
-    for service in ("processor", "processor-2", "processor-3"):
+    for service in worker_services:
         try:
             output = subprocess.check_output(
-                ["docker", "compose", "exec", "-T", service, "python", "-c",
-                 worker_hash_script], text=True, timeout=10)
+                [*compose_exec_prefix, service, "python", "-c", worker_hash_script],
+                text=True, timeout=10)
             hashes = json.loads(output)
             if not isinstance(hashes, dict) or set(hashes) != set(worker_paths):
                 raise ValueError("invalid worker source identity")
@@ -185,17 +190,36 @@ def code_identity():
     return result
 
 
-def preflight(bootstrap, topic):
+def _topology_ids(values, name):
+    if (not isinstance(values, tuple) or not values
+            or any(type(value) is not int or value <= 0 for value in values)
+            or len(set(values)) != len(values)):
+        raise ValueError(f"{name} must be a non-empty tuple of unique positive integers")
+    return set(values)
+
+
+def preflight(bootstrap, topic, expected_broker_ids=(1, 2, 3),
+              expected_partition_count=3, expected_replica_ids=(1, 2, 3)):
+    expected_brokers = _topology_ids(expected_broker_ids, "expected_broker_ids")
+    expected_replicas = _topology_ids(expected_replica_ids, "expected_replica_ids")
+    if not expected_replicas <= expected_brokers:
+        raise ValueError("expected replicas must be a subset of expected brokers")
+    if type(expected_partition_count) is not int or not 1 <= expected_partition_count <= 10000:
+        raise ValueError("expected_partition_count must be an integer between 1 and 10000")
+    if not isinstance(bootstrap, str) or not bootstrap or not isinstance(topic, str) or not topic:
+        raise ValueError("bootstrap and topic must be non-empty strings")
     meta = AdminClient({"bootstrap.servers": bootstrap}).list_topics(timeout=10)
-    if set(meta.brokers) != {1, 2, 3}:
-        raise RuntimeError("requires the existing three-broker cluster IDs 1, 2, 3")
+    if set(meta.brokers) != expected_brokers:
+        raise RuntimeError(f"Kafka broker IDs must equal {sorted(expected_brokers)}")
     selected = meta.topics.get(topic)
-    if selected is None or selected.error or len(selected.partitions) != 3:
-        raise RuntimeError("stress topic must already have exactly 3 partitions")
+    if (selected is None or selected.error
+            or len(selected.partitions) != expected_partition_count):
+        raise RuntimeError(
+            f"stress topic must already have exactly {expected_partition_count} partitions")
     partitions = []
     for pid, p in selected.partitions.items():
-        if set(p.replicas) != {1, 2, 3} or set(p.isrs) != {1, 2, 3}:
-            raise RuntimeError("all three stress-topic replicas must be in sync")
+        if set(p.replicas) != expected_replicas or set(p.isrs) != expected_replicas:
+            raise RuntimeError("all configured stress-topic replicas must be in sync")
         partitions.append({"partition": pid, "leader": p.leader, "replicas": p.replicas, "isrs": p.isrs})
     return partitions
 

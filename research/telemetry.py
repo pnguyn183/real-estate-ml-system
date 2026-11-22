@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import subprocess
 import time
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 import requests
@@ -32,6 +32,24 @@ DEFAULT_CONTAINERS = (
     "real_estate_processor_1", "real_estate_processor_2", "real_estate_processor_3",
     "real_estate_mongodb",
 )
+DEFAULT_BROKER_IDS = (1, 2, 3)
+DEFAULT_BROKER_CONTAINERS = {broker_id: f"real_estate_kafka_{broker_id}"
+                             for broker_id in DEFAULT_BROKER_IDS}
+
+
+def _broker_ids(values: tuple[int, ...]) -> tuple[int, ...]:
+    if (not isinstance(values, tuple) or not values
+            or any(type(value) is not int or value <= 0 for value in values)
+            or len(set(values)) != len(values)):
+        raise ValueError("expected_broker_ids must be a non-empty tuple of unique positive integers")
+    return tuple(sorted(values))
+
+
+def _bounded_text(value: str, name: str, maximum: int) -> str:
+    if (not isinstance(value, str) or not value or len(value) > maximum
+            or any(ord(char) < 32 for char in value)):
+        raise ValueError(f"{name} must be a non-empty bounded string without control characters")
+    return value
 
 
 def size_bytes(value: str) -> float:
@@ -143,10 +161,36 @@ class TelemetryCollector:
     def __init__(self, bootstrap_servers: str = "localhost:9092,localhost:9093,localhost:9094",
                  topic: str = "real_estate_stress_raw", group_id: str = "real_estate_training_pipeline",
                  processor_urls: tuple[str, ...] = ("http://localhost:8003/metrics", "http://localhost:8004/metrics", "http://localhost:8005/metrics"),
-                 container_names: tuple[str, ...] = DEFAULT_CONTAINERS, timeout: float = 5):
+                 container_names: tuple[str, ...] = DEFAULT_CONTAINERS, timeout: float = 5, *,
+                 expected_broker_ids: tuple[int, ...] = DEFAULT_BROKER_IDS,
+                 broker_container_names: Mapping[int, str] | None = None,
+                 vm_container_name: str = "real_estate_processor_1"):
         from confluent_kafka import Consumer
-        self.topic, self.group_id = topic, group_id
-        self.processor_urls, self.container_names, self.timeout = processor_urls, container_names, timeout
+        self.expected_broker_ids = _broker_ids(expected_broker_ids)
+        self.topic = _bounded_text(topic, "topic", 249)
+        if self.topic in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._-]+", self.topic):
+            raise ValueError("topic contains unsupported Kafka topic characters")
+        self.group_id = _bounded_text(group_id, "group_id", 255)
+        bootstrap_servers = _bounded_text(bootstrap_servers, "bootstrap_servers", 4096)
+        self.vm_container_name = _bounded_text(vm_container_name, "vm_container_name", 255)
+        if (not isinstance(processor_urls, tuple)
+                or any(not isinstance(url, str) or not url for url in processor_urls)):
+            raise ValueError("processor_urls must be a tuple of non-empty strings")
+        if (not isinstance(container_names, tuple) or not container_names
+                or any(not isinstance(name, str) or not name for name in container_names)
+                or len(set(container_names)) != len(container_names)):
+            raise ValueError("container_names must be a non-empty tuple of unique names")
+        if (not isinstance(timeout, (int, float)) or isinstance(timeout, bool)
+                or not math.isfinite(timeout) or not 0 < timeout <= 60):
+            raise ValueError("timeout must be finite and between 0 and 60 seconds")
+        mapping = (DEFAULT_BROKER_CONTAINERS if broker_container_names is None
+                   else dict(broker_container_names))
+        if (set(mapping) != set(self.expected_broker_ids)
+                or any(not isinstance(name, str) or not name for name in mapping.values())
+                or any(name not in container_names for name in mapping.values())):
+            raise ValueError("broker_container_names must map every expected broker to a measured container")
+        self.broker_container_names = dict(mapping)
+        self.processor_urls, self.container_names, self.timeout = processor_urls, container_names, float(timeout)
         # This observer never subscribes/polls, so it never joins or rebalances the group.
         self.consumer = Consumer({"bootstrap.servers": bootstrap_servers, "group.id": group_id,
                                   "enable.auto.commit": False, "enable.auto.offset.store": False,
@@ -167,7 +211,8 @@ class TelemetryCollector:
         missing = set(self.container_names) - set(containers)
         if missing:
             raise RuntimeError(f"Missing Docker measurements: {sorted(missing)}")
-        vm_memory = parse_vm_memory(_command(["docker", "exec", "real_estate_processor_1", "cat", "/proc/meminfo"], self.timeout))
+        vm_memory = parse_vm_memory(_command(
+            ["docker", "exec", self.vm_container_name, "cat", "/proc/meminfo"], self.timeout))
         return {"timestamp": time.time(), "engine": self._engine, "containers": containers, "vm_memory": vm_memory}
 
     def _kafka(self) -> dict:
@@ -247,7 +292,7 @@ class TelemetryCollector:
                   "interval_seconds": interval, "incoming_rate": None, "throughput": None,
                   "cpu_percent": None, "ram_percent": None, "memory_bytes": None, "kafka_lag": None,
                   "latency_p95_seconds": None, "processing_mean_seconds": None, "error_rate": None,
-                  "brokers": {str(i): {} for i in (1, 2, 3)}, "errors": errors,
+                  "brokers": {str(i): {} for i in self.expected_broker_ids}, "errors": errors,
                   "worker_transport_errors": worker_transport_errors,
                   "collection_transport_errors": collection_transport_errors,
                   "vm_memory_available_percent": None, "vm_memory_free_percent": None, "vm_swap_used_percent": None,
@@ -258,7 +303,7 @@ class TelemetryCollector:
                                         "workers": {url: item["timestamp"] for url, item in raw["workers"].items()}},
                   "metric_scope": f"Kafka topic {self.topic}; selected Kafka/processor/Mongo containers; Docker-engine capacity"}
         self._derive_kafka(raw, previous, result)
-        self._derive_docker(raw, previous, result)
+        self._derive_docker(raw, previous, result, self.broker_container_names)
         self._derive_workers(raw, previous, result)
         self._previous = raw
         return result
@@ -272,6 +317,9 @@ class TelemetryCollector:
         result["partitions"] = partitions
         result["kafka_interval_seconds"] = None
         result["kafka_broker_ids"] = current.get("broker_ids", [])
+        if ("broker_ids" in current
+                and set(current["broker_ids"]) != {int(value) for value in result["brokers"]}):
+            result["errors"].append("Kafka broker topology differs from the configured experiment topology")
         result["kafka_under_replicated_partitions"] = sum(len(p["isr"]) < len(p["replicas"]) for p in partitions.values())
         lags = [p["lag"] for p in partitions.values()]
         result["kafka_lag"] = sum(lags) if all(v is not None for v in lags) else None
@@ -321,7 +369,8 @@ class TelemetryCollector:
             result["errors"].append("Kafka leadership/offset changed: broker ingress attribution unavailable for this interval")
 
     @staticmethod
-    def _derive_docker(raw: dict, previous: dict, result: dict) -> None:
+    def _derive_docker(raw: dict, previous: dict, result: dict,
+                       broker_container_names: Mapping[int, str] | None = None) -> None:
         current, old = raw.get("docker"), previous.get("docker")
         if not current:
             return
@@ -341,8 +390,10 @@ class TelemetryCollector:
                 delta = counter_delta(item[counter], prior[counter]) if prior and prior["container_id"] == item["container_id"] else None
                 interval = current["timestamp"] - old["timestamp"] if old else 0
                 item[counter + "_per_second"] = delta / interval if delta is not None and interval > 0 else None
+        mapping = (DEFAULT_BROKER_CONTAINERS if broker_container_names is None
+                   else broker_container_names)
         for broker_id, broker in result["brokers"].items():
-            broker.update(containers.get(f"real_estate_kafka_{broker_id}", {}))
+            broker.update(containers.get(mapping.get(int(broker_id), ""), {}))
 
     def _derive_workers(self, raw: dict, previous: dict, result: dict) -> None:
         if len(raw["workers"]) != len(self.processor_urls):

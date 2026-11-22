@@ -1,10 +1,24 @@
 """Guard the scientifically consequential split/label boundaries, not scores."""
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 import pytest
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
 
-from research.benchmark import build_traffic_supervised, chronological_split, comparison_plot, scores, traffic_benchmark
+from research.benchmark import (
+    build_traffic_supervised,
+    chronological_split,
+    comparison_plot,
+    evaluate_price_candidate_cv,
+    price_group_cv_folds,
+    scores,
+    select_price_candidate,
+    traffic_benchmark,
+)
 from research.data_audit import profile_records
 
 
@@ -12,6 +26,86 @@ def observations(count=100, run="one", start=None, step=5):
     start = start or datetime(2026, 1, 1, tzinfo=timezone.utc)
     return [{"timestamp": (start + timedelta(seconds=i * step)).isoformat(), "run_id": run,
              "requested_rate": float(i), "incoming_rate": float(i / 2), "throughput": float(i / 3)} for i in range(count)]
+
+
+class RecordingTransformer(BaseEstimator, TransformerMixin):
+    fit_sizes = []
+
+    def fit(self, X, y=None):
+        type(self).fit_sizes.append(len(X))
+        return self
+
+    def transform(self, X):
+        return np.asarray(X)
+
+
+def test_price_group_cv_is_deterministic_and_excludes_outer_test():
+    frame = pd.DataFrame({"property_group": [f"group-{index // 2}" for index in range(24)]})
+    development = np.arange(20)
+    first = price_group_cv_folds(
+        frame, development, group_column="property_group", n_splits=3, seed=42
+    )
+    second = price_group_cv_folds(
+        frame, development, group_column="property_group", n_splits=3, seed=42
+    )
+
+    assert len(first) == len(second) == 3
+    assert sorted(np.concatenate([fold["validation"] for fold in first]).tolist()) == development.tolist()
+    for left, right in zip(first, second):
+        assert np.array_equal(left["train"], right["train"])
+        assert np.array_equal(left["validation"], right["validation"])
+        assert not (set(left["train"]) | set(left["validation"])) & set(range(20, 24))
+        train_groups = set(frame.iloc[left["train"]].property_group)
+        validation_groups = set(frame.iloc[left["validation"]].property_group)
+        assert train_groups.isdisjoint(validation_groups)
+
+
+def test_price_group_cv_rejects_too_few_groups():
+    frame = pd.DataFrame({"property_group": ["one", "one", "two", "two"]})
+    with pytest.raises(ValueError, match="at least 3 property groups"):
+        price_group_cv_folds(
+            frame, np.arange(4), group_column="property_group", n_splits=3, seed=42
+        )
+
+
+def test_price_candidate_selection_never_uses_outer_test_metrics():
+    candidates = {
+        "worse_cv_better_test": {
+            "status": "measured",
+            "cv_metrics": {"rmse": {"mean": 5.0}},
+            "winner_outer_test_metrics": {"rmse": 1.0},
+        },
+        "better_cv_worse_test": {
+            "status": "measured",
+            "cv_metrics": {"rmse": {"mean": 4.0}},
+            "winner_outer_test_metrics": {"rmse": 999.0},
+        },
+    }
+    assert select_price_candidate(candidates) == "better_cv_worse_test"
+
+
+def test_price_cv_refits_complete_pipeline_inside_every_fold():
+    RecordingTransformer.fit_sizes = []
+    template = Pipeline([
+        ("preprocessor", RecordingTransformer()),
+        ("regressor", TransformedTargetRegressor(
+            regressor=LinearRegression(), func=np.log1p, inverse_func=np.expm1
+        )),
+    ])
+    X = pd.DataFrame({"feature": np.arange(12, dtype=float)})
+    y = pd.Series(np.arange(12, dtype=float) + 10)
+    folds = [
+        {"fold": 1, "train": np.arange(0, 6), "validation": np.arange(6, 9)},
+        {"fold": 2, "train": np.arange(3, 12), "validation": np.arange(0, 3)},
+    ]
+
+    metrics, predictions = evaluate_price_candidate_cv(
+        template, LinearRegression(), X, y, folds
+    )
+
+    assert RecordingTransformer.fit_sizes == [6, 9]
+    assert [result["fold"] for result in metrics] == [1, 2]
+    assert sorted(row["row_index"] for row in predictions) == [0, 1, 2, 6, 7, 8]
 
 
 def test_traffic_labels_are_future_demand_not_admitted_rate():

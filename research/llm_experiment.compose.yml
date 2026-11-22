@@ -1,0 +1,10 @@
+services:
+  mongodb:
+    # Experiment-only bound. The production Compose file remains unchanged.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "1"]
+    deploy:
+      resources:
+        limits:
+          memory: 2560M
+    # Equal to memory disables container swap for comparable latency measurements.
+    memswap_limit: 2560M

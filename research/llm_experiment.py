@@ -30,6 +30,49 @@ GROUP = "real_estate_training_pipeline"
 BOOTSTRAP = "localhost:9092,localhost:9093,localhost:9094"
 
 
+def experiment_topology(cfg, lean=False):
+    """Return one of two closed, fingerprinted experiment topologies."""
+    if lean:
+        if cfg.get("bootstrap_servers") not in (None, "localhost:19092"):
+            raise ValueError("Lean topology bootstrap is fixed to localhost:19092")
+        return {
+            "name": "lean-1-broker-1-processor", "project_name": "real-estate-llm-lean",
+            "compose_path": "research/llm_lean.compose.yml", "bootstrap_servers": "localhost:19092",
+            "topic": TOPIC, "group_id": GROUP + "_lean", "partition_ids": (0, 1, 2),
+            "expected_broker_ids": (1,), "expected_replica_ids": (1,),
+            "processor_urls": ("http://localhost:18003/metrics",),
+            "container_names": ("real_estate_llm_lean_kafka", "real_estate_llm_lean_processor",
+                                "real_estate_llm_lean_mongodb"),
+            "broker_container_names": {1: "real_estate_llm_lean_kafka"},
+            "vm_container_name": "real_estate_llm_lean_processor",
+            "processor_services": ("processor",),
+            "claim_scope": "resource-constrained single-broker/single-processor synthetic topology",
+        }
+    return {
+        "name": "full-3-broker-3-processor", "project_name": "real-estate-ml-system",
+        "compose_path": "docker-compose.yml",
+        "bootstrap_servers": cfg.get("bootstrap_servers", BOOTSTRAP),
+        "topic": TOPIC, "group_id": GROUP, "partition_ids": (0, 1, 2),
+        "expected_broker_ids": (1, 2, 3), "expected_replica_ids": (1, 2, 3),
+        "processor_urls": ("http://localhost:8003/metrics", "http://localhost:8004/metrics",
+                           "http://localhost:8005/metrics"),
+        "container_names": ("real_estate_kafka_1", "real_estate_kafka_2", "real_estate_kafka_3",
+                            "real_estate_processor_1", "real_estate_processor_2",
+                            "real_estate_processor_3", "real_estate_mongodb"),
+        "broker_container_names": {i: f"real_estate_kafka_{i}" for i in (1, 2, 3)},
+        "vm_container_name": "real_estate_processor_1",
+        "processor_services": ("processor", "processor-2", "processor-3"),
+        "claim_scope": "local three-broker/three-processor synthetic topology",
+    }
+
+
+def topology_identity(topology):
+    """Return the same topology in a JSON-stable representation."""
+    return {key: ({str(k): v for k, v in value.items()} if key == "broker_container_names"
+                  else list(value) if isinstance(value, tuple) else value)
+            for key, value in topology.items()}
+
+
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
@@ -40,11 +83,16 @@ def validate_config(config):
     # Older experiment profiles remain usable; write the effective timeout to
     # config.json and the run identity rather than relying on an implicit value.
     cfg.setdefault("completion_timeout_seconds", 5)
+    # Starting a load trial immediately above the emergency cutoff leaves no
+    # room for worker/Mongo warm-up.  Keep readiness headroom separate from the
+    # runtime guard so older profiles fail closed without weakening the guard.
+    cfg.setdefault("startup_memory_available_percent", 25)
     bounds = {
         "pairs": (1, 10), "seed": (0, 2**31 - 1), "baseline_rate": (1, 10000), "sample_seconds": (1, 30),
         "decision_seconds": (5, 120), "timeout_seconds": (1, 60),
         "lease_seconds": (10, 300), "max_sample_age_seconds": (5, 120),
         "target_latency_seconds": (.05, 60), "min_memory_available_percent": (10, 50),
+        "startup_memory_available_percent": (10, 50),
         "hard_lag": (100, 50000), "max_records": (1, 1000000), "max_queue": (1, 10000),
         "max_wait_seconds": (1, 120), "drain_seconds": (5, 600),
         "completion_poll_seconds": (.1, 2), "completion_timeout_seconds": (1, 30),
@@ -66,6 +114,8 @@ def validate_config(config):
         raise ValueError("Lease must exceed decision cadence plus model timeout")
     if cfg["max_sample_age_seconds"] <= cfg["timeout_seconds"]:
         raise ValueError("Telemetry lifetime must exceed model timeout")
+    if cfg["startup_memory_available_percent"] <= cfg["min_memory_available_percent"]:
+        raise ValueError("Startup RAM headroom must exceed the emergency memory floor")
     if cfg["calibration_stage_seconds"] < 4 * cfg["sample_seconds"]:
         raise ValueError("Calibration stages need room for three full telemetry intervals")
     if cfg["overload_seconds"] < cfg["decision_seconds"] + cfg["timeout_seconds"] + 3 * cfg["sample_seconds"]:
@@ -144,20 +194,28 @@ def overload_evidence(samples, target, count=3):
     return None
 
 
-def settings(cfg, profile):
-    return ControlSettings(source_topic=TOPIC, max_rate=cfg["baseline_rate"],
+def settings(cfg, profile, topology=None):
+    topology = topology or experiment_topology(cfg)
+    return ControlSettings(source_topic=topology["topic"], max_rate=cfg["baseline_rate"],
         **{k: cfg[k] for k in ("sample_seconds", "decision_seconds", "timeout_seconds", "lease_seconds",
             "max_sample_age_seconds", "min_memory_available_percent", "target_latency_seconds")})
 
 
 class CompletionObserver:
     """Read committed offsets without joining the processing consumer group."""
-    def __init__(self, bootstrap, driver, interval, timeout_seconds=5):
+    def __init__(self, bootstrap, driver, interval, timeout_seconds=5, *, topic=TOPIC,
+                 group_id=GROUP, partition_ids=(0, 1, 2)):
         self.bootstrap, self.driver, self.interval = bootstrap, driver, interval
         if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
                 or not 1 <= timeout_seconds <= 30):
             raise ValueError("Invalid completion observer timeout")
         self.timeout_seconds = timeout_seconds
+        if (not isinstance(topic, str) or not topic or not isinstance(group_id, str) or not group_id
+                or not isinstance(partition_ids, tuple) or not partition_ids
+                or any(type(value) is not int or value < 0 for value in partition_ids)
+                or len(set(partition_ids)) != len(partition_ids)):
+            raise ValueError("Invalid completion observer topology")
+        self.topic, self.group_id, self.partition_ids = topic, group_id, partition_ids
         # Allow an in-flight committed request and socket-bound consumer close,
         # plus scheduling margin. A stalled client still fails bounded cleanup.
         self.shutdown_timeout_seconds = 2 * timeout_seconds + 1
@@ -184,11 +242,11 @@ class CompletionObserver:
         consumer = None
         try:
             from confluent_kafka import Consumer, TopicPartition
-            consumer = Consumer({"bootstrap.servers": self.bootstrap, "group.id": GROUP,
+            consumer = Consumer({"bootstrap.servers": self.bootstrap, "group.id": self.group_id,
                 "enable.auto.commit": False, "enable.auto.offset.store": False,
                 "socket.timeout.ms": math.ceil(self.timeout_seconds * 1000)})
-            partitions = [TopicPartition(TOPIC, i) for i in range(3)]
-            previous = time.monotonic()
+            partitions = [TopicPartition(self.topic, i) for i in self.partition_ids]
+            previous = time.perf_counter()
             while not self.stop_event.is_set():
                 try:
                     offsets = consumer.committed(partitions, timeout=self.timeout_seconds)
@@ -205,7 +263,7 @@ class CompletionObserver:
                 except Exception as exc:
                     self._record_error(exc)
                 finally:
-                    now = time.monotonic()
+                    now = time.perf_counter()
                     self.max_poll_gap_seconds = max(self.max_poll_gap_seconds, now - previous)
                     previous = now
                 self.stop_event.wait(self.interval)
@@ -228,13 +286,20 @@ class CompletionObserver:
             raise RuntimeError("Completion observer did not stop")
 
 
+def verify_experiment_runtime(runtime, *, deep_artifact_check=True):
+    if runtime.get("kind") == "llm-lean-runtime":
+        from research.llm_lean_runtime import verify_runtime
+    else:
+        from research.llm_runtime import verify_runtime
+    return verify_runtime(runtime, deep_artifact_check=deep_artifact_check)
+
+
 def collect(collector, runtime=None):
     row = collector.sample()
     row["host"] = host_snapshot()
     if runtime is not None:
-        from research.llm_runtime import verify_runtime
         try:
-            verify_runtime(runtime, deep_artifact_check=False)
+            verify_experiment_runtime(runtime, deep_artifact_check=False)
         except RuntimeError:
             row.setdefault("errors", []).append("runtime_allocation_or_isolation_changed")
     return row
@@ -257,7 +322,8 @@ def safe_failure_reason(exc):
         frames.append(Path(trace.tb_frame.f_code.co_filename).name)
         trace = trace.tb_next
     if (isinstance(exc, (RuntimeError, ValueError)) and frames
-            and frames[-1] in {"llm_runtime.py", "llm_experiment.py", "run_experiment.py"}):
+            and frames[-1] in {"llm_runtime.py", "llm_mongo_runtime.py", "llm_lean_runtime.py",
+                               "llm_experiment.py", "run_experiment.py"}):
         return str(exc)[:400]
     return type(exc).__name__
 
@@ -273,14 +339,17 @@ def safe_failure_location(exc):
     return frames[-12:]
 
 
-def idle_preflight(collector, cfg, bootstrap, stop):
-    preflight(bootstrap, TOPIC)
+def idle_preflight(collector, cfg, bootstrap, stop, topology=None):
+    topology = topology or experiment_topology(cfg)
+    preflight(bootstrap, topology["topic"], expected_broker_ids=topology["expected_broker_ids"],
+              expected_partition_count=len(topology["partition_ids"]),
+              expected_replica_ids=topology["expected_replica_ids"])
     deadline = time.monotonic() + cfg["drain_seconds"]
     collect(collector)  # Counter derivatives need a previous observation.
     idle = 0
     while time.monotonic() < deadline and not stop.is_set():
         sample = collect(collector)
-        problem = observation_problem(sample, time.time(), settings(cfg, [{"rate": 1}]))
+        problem = observation_problem(sample, time.time(), settings(cfg, [{"rate": 1}], topology))
         if problem:
             raise RuntimeError("Preflight: " + problem)
         if sample["incoming_rate"] > 0:
@@ -292,27 +361,30 @@ def idle_preflight(collector, cfg, bootstrap, stop):
     raise RuntimeError("Preflight queue did not drain or was cancelled")
 
 
-def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, stop, *, calibration=False):
+def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, stop, *,
+              calibration=False, topology=None):
     from confluent_kafka import Producer
     from research.llm_load import LoadDriver
-    from research.llm_runtime import verify_runtime
+    topology = topology or experiment_topology(cfg)
     if mode not in {"baseline", "llm"} or (calibration and mode != "baseline"):
         raise ValueError("Use baseline for calibration, and baseline or llm for paired trials")
     output.mkdir(parents=True, exist_ok=False)
     policy_path = output / "control" / "policy.json"
-    control = settings(cfg, profile)
+    control = settings(cfg, profile, topology)
     agent = FeedbackAgent(control, router, actuator, policy_path, apply=True)
-    reader = RuntimePolicy(True, policy_path, TOPIC)
+    reader = RuntimePolicy(True, policy_path, topology["topic"])
     run_id = "llmproof-" + mode + "-" + uuid4().hex[:12]
     result = {"schema_version": 1, "run_id": run_id, "pair_id": pair_id, "mode": mode,
         "status": "preparing", "profile": profile, "initial_rate": control.max_rate,
         "sample_seconds": cfg["sample_seconds"], "training_disabled": True,
         "completion_timeout_seconds": cfg.get("completion_timeout_seconds", 5),
+        "topology": topology_identity(topology),
         "config_fingerprint": fingerprint({"profile": profile, "seed": cfg["seed"] + pair_id,
             "max_queue": cfg["max_queue"], "max_wait_seconds": cfg["max_wait_seconds"],
             "sample_seconds": cfg["sample_seconds"], "target_latency_seconds": cfg["target_latency_seconds"],
             "completion_poll_seconds": cfg["completion_poll_seconds"],
-            "completion_timeout_seconds": cfg.get("completion_timeout_seconds", 5)}),
+            "completion_timeout_seconds": cfg.get("completion_timeout_seconds", 5),
+            "topology": topology_identity(topology)}),
         "samples": [], "actions": [], "load_started_at": None, "load_ended_at": None,
         "semantics": {"committed": "Consumer-group offset observed past record; not producer ACK or a per-record success verdict",
             "offered_latency": "Scheduled arrival to first observed commit, an upper bound including admission wait",
@@ -339,19 +411,27 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
 
     try:
         session.enter_context(control_session(agent))
-        collector = TelemetryCollector(bootstrap_servers=cfg.get("bootstrap_servers", BOOTSTRAP))
-        producer = Producer({"bootstrap.servers": cfg.get("bootstrap_servers", BOOTSTRAP), "acks": "all",
+        collector = TelemetryCollector(
+            bootstrap_servers=topology["bootstrap_servers"], topic=topology["topic"],
+            group_id=topology["group_id"], processor_urls=topology["processor_urls"],
+            container_names=topology["container_names"],
+            expected_broker_ids=topology["expected_broker_ids"],
+            broker_container_names=topology["broker_container_names"],
+            vm_container_name=topology["vm_container_name"])
+        producer = Producer({"bootstrap.servers": topology["bootstrap_servers"], "acks": "all",
             "enable.idempotence": True, "linger.ms": 5, "delivery.timeout.ms": 10000,
             "request.timeout.ms": 5000, "queue.buffering.max.messages": 10000})
         driver = LoadDriver(profile, cfg["seed"] + pair_id, run_id, producer, lambda: reader.read(), output,
-            topic=TOPIC, max_queue=cfg["max_queue"], max_wait_seconds=cfg["max_wait_seconds"],
+            topic=topology["topic"], max_queue=cfg["max_queue"], max_wait_seconds=cfg["max_wait_seconds"],
             max_records=cfg["max_records"])
-        observer = CompletionObserver(cfg.get("bootstrap_servers", BOOTSTRAP), driver,
-            cfg["completion_poll_seconds"], cfg.get("completion_timeout_seconds", 5))
+        observer = CompletionObserver(topology["bootstrap_servers"], driver,
+            cfg["completion_poll_seconds"], cfg.get("completion_timeout_seconds", 5),
+            topic=topology["topic"], group_id=topology["group_id"],
+            partition_ids=topology["partition_ids"])
         model_pool = ThreadPoolExecutor(max_workers=1)
         sample_pool = ThreadPoolExecutor(max_workers=1)
-        result["resource_fingerprint"] = verify_runtime(runtime)["fingerprint"]
-        idle = idle_preflight(collector, cfg, cfg.get("bootstrap_servers", BOOTSTRAP), stop)
+        result["resource_fingerprint"] = verify_experiment_runtime(runtime)["fingerprint"]
+        idle = idle_preflight(collector, cfg, topology["bootstrap_servers"], stop, topology)
         initial_offsets = offsets_total(idle)
         atomic_json(policy_path.with_name("training.json"), {"status": "experiment_disabled", "updated_at": time.time()})
         agent.publish(control.max_rate, False, "fixed-initial-" + run_id)
@@ -477,7 +557,7 @@ def run_trial(mode, pair_id, cfg, profile, output, router, actuator, runtime, st
         counts = driver.snapshot()
         if result["offset_growth"] != counts.get("acknowledged", counts.get("delivery_acknowledged", 0)):
             result["status"], result["stop_reason"] = "invalid", "concurrent_traffic_or_unconfirmed_delivery"
-        if verify_runtime(runtime)["fingerprint"] != result["resource_fingerprint"]:
+        if verify_experiment_runtime(runtime)["fingerprint"] != result["resource_fingerprint"]:
             result["status"], result["stop_reason"] = "invalid", "resource_allocation_changed"
     except BaseException as exc:
         result["status"] = "cancelled" if isinstance(exc, KeyboardInterrupt) else "failed"
@@ -557,20 +637,59 @@ def calibrated_profile(run, cfg):
     return profile
 
 
+def _enter_runtime_contexts(stack, isolation_context, mongo_context=None):
+    """Apply Mongo first, but restore it before isolated services restart."""
+    if mongo_context is not None:
+        mongo_context.__enter__()
+    try:
+        runtime = stack.enter_context(isolation_context)
+    except BaseException as exc:
+        if mongo_context is not None:
+            mongo_context.__exit__(type(exc), exc, exc.__traceback__)
+        raise
+    if mongo_context is not None:
+        # Registered after isolation, so ExitStack restores MongoDB first.
+        stack.push(mongo_context.__exit__)
+    return runtime
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("research/llm_experiment.json"))
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--calibrate-only", action="store_true")
+    parser.add_argument("--lean-topology", action="store_true",
+                        help="Use the isolated one-broker/one-processor experiment topology")
+    parser.add_argument("--mongo-memory-profile", action="store_true",
+                        help="Use the reversible experiment-only MongoDB cache/RAM profile")
     parser.add_argument("--restore", type=Path, help="Restore exact containers from an interrupted isolation manifest")
+    parser.add_argument("--restore-mongodb", type=Path,
+                        help="Restore production MongoDB from an interrupted memory-profile manifest")
+    parser.add_argument("--restore-lean", type=Path,
+                        help="Stop an interrupted lean topology and restore the exact base containers")
     parser.add_argument("--fallback-model", choices=["gemini-3.5-flash-lite"], help="Session-only fallback using existing Gemini key")
     args = parser.parse_args(argv)
     from research.llm_runtime import isolated_runtime, restore_runtime
+    from research.llm_mongo_runtime import experiment_mongodb, restore_mongodb
+    from research.llm_lean_runtime import lean_runtime, restore_lean_runtime
+    if sum(value is not None for value in (args.restore, args.restore_mongodb, args.restore_lean)) > 1:
+        parser.error("Choose one recovery manifest at a time")
+    if args.lean_topology and args.mongo_memory_profile:
+        parser.error("Lean topology already has a bounded MongoDB profile")
     if args.restore:
         with experiment_lock():
             restore_runtime(args.restore)
         return 0
+    if args.restore_mongodb:
+        with experiment_lock():
+            restore_mongodb(args.restore_mongodb)
+        return 0
+    if args.restore_lean:
+        with experiment_lock():
+            restore_lean_runtime(args.restore_lean)
+        return 0
     cfg = validate_config(json.loads(args.config.read_text(encoding="utf-8")))
+    topology = experiment_topology(cfg, args.lean_topology)
     from dotenv import load_dotenv
     load_dotenv(override=False)
     if args.fallback_model:
@@ -589,30 +708,48 @@ def main(argv=None):
         parser.error("Configure a CONTROL_LLM/LLM model and key before paired trials")
     output = args.output or Path("runtime/research/llm-" + time.strftime("%Y%m%d-%H%M%S"))
     output.mkdir(parents=True, exist_ok=False)
-    atomic_json(output / "config.json", cfg)
+    atomic_json(output / "config.json", {**cfg, "topology": topology_identity(topology),
+        "mongo_memory_profile": args.mongo_memory_profile,
+        "mongo_override": "research/llm_experiment.compose.yml" if args.mongo_memory_profile else None})
     stop = Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     runs = []
-    session = {"status": "preparing", "started_at": time.time(), "topic": TOPIC, "rate_only": True}
+    session = {"status": "preparing", "started_at": time.time(), "topic": topology["topic"],
+               "topology": topology_identity(topology), "rate_only": True,
+               "mongo_memory_profile": args.mongo_memory_profile}
     try:
         with ExitStack() as stack:
             stack.enter_context(experiment_lock())
             stack.enter_context(keep_system_awake())
-            runtime = stack.enter_context(isolated_runtime(output / "isolation.json", stop_requested=stop.is_set,
-                min_memory_available_percent=cfg["min_memory_available_percent"],
-                on_wait=lambda *a: print("Waiting for host RAM above emergency floor", flush=True)))
-            identity = code_identity()
+            if args.lean_topology:
+                runtime = stack.enter_context(lean_runtime(output / "lean-runtime.json",
+                    stop_requested=stop.is_set,
+                    min_memory_available_percent=cfg["startup_memory_available_percent"],
+                    reclaim_docker_daemon=True))
+            else:
+                mongo_context = (experiment_mongodb(output / "mongo-runtime.json",
+                    stop_requested=stop.is_set) if args.mongo_memory_profile else None)
+                runtime = _enter_runtime_contexts(stack,
+                    isolated_runtime(output / "isolation.json", stop_requested=stop.is_set,
+                        min_memory_available_percent=cfg["startup_memory_available_percent"],
+                        on_wait=lambda *a: print("Waiting for host RAM above startup headroom floor", flush=True)),
+                    mongo_context)
+            compose_exec_prefix = ("docker", "compose", "--project-directory", str(Path.cwd()),
+                "--project-name", topology["project_name"], "--file", topology["compose_path"],
+                "exec", "-T") if args.lean_topology else ("docker", "compose", "exec", "-T")
+            identity = code_identity(worker_services=topology["processor_services"],
+                                     compose_exec_prefix=compose_exec_prefix)
             identity["llm_sources"] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
                 [Path("agents/control_agent.py"), *Path("research").glob("llm_*.py")]}
             atomic_json(output / "identity.json", identity)
-            actuator = ComposeResourceActuator(ComposeResourceConfig(compose_path="docker-compose.yml",
-                project_name="real-estate-ml-system", enabled=False,
-                allowed_services=("processor", "processor-2", "processor-3")))
+            actuator = ComposeResourceActuator(ComposeResourceConfig(
+                compose_path=topology["compose_path"], project_name=topology["project_name"],
+                enabled=False, allowed_services=topology["processor_services"]))
             profile = cfg.get("profile")
             if profile is None or args.calibrate_only:
                 calibration = run_trial("baseline", 0, cfg, calibration_profile(cfg), output / "calibration",
-                    router, actuator, runtime, stop, calibration=True)
+                    router, actuator, runtime, stop, calibration=True, topology=topology)
                 profile = calibrated_profile(calibration, cfg)
                 atomic_json(output / "calibration.json", {"status": calibration["status"],
                     "evidence": calibration.get("calibration_evidence"), "selected_profile": profile,
@@ -627,7 +764,7 @@ def main(argv=None):
                     if stop.is_set():
                         break
                     run = run_trial(mode, pair + 1, cfg, profile, output / f"pair-{pair + 1}-{mode}",
-                        router, actuator, runtime, stop)
+                        router, actuator, runtime, stop, topology=topology)
                     runs.append(run)
                     write_report(runs, output, target_latency_seconds=cfg["target_latency_seconds"])
                     if run["status"] != "completed":
