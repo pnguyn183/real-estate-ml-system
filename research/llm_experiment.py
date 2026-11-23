@@ -33,11 +33,11 @@ BOOTSTRAP = "localhost:9092,localhost:9093,localhost:9094"
 def experiment_topology(cfg, lean=False):
     """Return one of two closed, fingerprinted experiment topologies."""
     if lean:
-        if cfg.get("bootstrap_servers") not in (None, "localhost:19092"):
-            raise ValueError("Lean topology bootstrap is fixed to localhost:19092")
+        if cfg.get("bootstrap_servers") not in (None, "127.0.0.1:19092"):
+            raise ValueError("Lean topology bootstrap is fixed to 127.0.0.1:19092")
         return {
             "name": "lean-1-broker-1-processor", "project_name": "real-estate-llm-lean",
-            "compose_path": "research/llm_lean.compose.yml", "bootstrap_servers": "localhost:19092",
+            "compose_path": "research/llm_lean.compose.yml", "bootstrap_servers": "127.0.0.1:19092",
             "topic": TOPIC, "group_id": GROUP + "_lean", "partition_ids": (0, 1, 2),
             "expected_broker_ids": (1,), "expected_replica_ids": (1,),
             "processor_urls": ("http://localhost:18003/metrics",),

@@ -22,6 +22,7 @@ the conclusion. A saved configuration or test plan is not a completed experiment
 | Ops revalidation, 2026-11-18 | [Promtool, drain and lifecycle scope](ops-validation-20261118.json) | Promtool passed; one same-ID predictor stop/start and isolated trainer drain ACKs observed; no repeated-cycle or causal-RAM claim |
 | Overload calibration retry, 2026-11-20 | [Guard-stopped baselines](llm-overload-20261120.json) | Stronger core-only retry reached 300 rps and committed 8,154/8,154 records, but RAM crossed below 10% before measurable overload/600 rps; no profile, LLM decision or A/B trial exists |
 | Memory-headroom calibration, 2026-11-22 | [Guard-stopped attempt](llm-overload-20261122.json) | Baseline stopped at 10 rps when host RAM reached 5.38%; 42/42 records committed and all seven isolated services were restored. No LLM call/A-B claim; a separate 25% startup headroom gate was added and tested afterward |
+| Lean-topology overload A/B, 2026-11-23 | [Calibration, paired result and hashes](llm-lean-overload-20261123.json) | One-broker/one-processor calibration reached 300 rps; three eligible pairs contained real LLM rate decisions, but 0/3 demonstrated improvement because served fraction regressed/trade-offs remained. Final provider-unavailable attempt is inconclusive, not a RAM failure |
 
 ## Telemetry and forecasting
 

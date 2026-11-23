@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 
 
 OPTIONAL_SERVICES = frozenset({
@@ -49,7 +50,19 @@ def _write(path, receipt):
             json.dump(receipt, handle, ensure_ascii=False, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        # Windows readers and virus scanners may briefly open the destination
+        # without delete sharing. Keep the previous complete manifest visible
+        # and retry only the atomic replacement for a bounded interval.
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.02, remaining))
     finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()

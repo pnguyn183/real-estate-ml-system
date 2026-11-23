@@ -135,6 +135,31 @@ def test_model_timeout_or_all_routes_unavailable_pauses(tmp_path):
     assert reader.read().rate_per_second == 0
 
 
+def test_one_bounded_schema_repair_still_requires_valid_llm_decision(tmp_path):
+    agent, reader, router, _, _ = setup(tmp_path)
+    outputs = iter([{"state": "unsupported"}, decision(rate_per_second=17.0)])
+
+    def extract(messages, timeout):
+        router.calls.append((messages, timeout))
+        return RoutedResponse(json.dumps(next(outputs)), "fake", "test-model", 1)
+
+    router.extract_result = extract
+    receipt = agent.tick(sample())
+    assert receipt["status"] == "applied"
+    assert receipt["decision_validation_attempts"] == 2
+    assert receipt["decision"]["rate_per_second"] == 17.0
+    assert reader.read().rate_per_second == 17.0
+    assert len(router.calls) == 2
+    assert "failed the supplied response_schema" in router.calls[1][0][-1]["content"]
+    assert router.calls[1][1] <= agent.cfg.timeout_seconds
+
+
+def test_prompt_distinguishes_new_demand_from_admission_backlog():
+    from agents.control_agent import SYSTEM_PROMPT
+    assert "offered_rate is only new demand" in SYSTEM_PROMPT.replace("`", "")
+    assert "pending_offered is positive" in SYSTEM_PROMPT
+
+
 def test_result_that_outlives_telemetry_is_not_applied(tmp_path):
     agent, reader, router, tools, clock = setup(tmp_path)
     router.effect = lambda: setattr(clock, "value", 1040)

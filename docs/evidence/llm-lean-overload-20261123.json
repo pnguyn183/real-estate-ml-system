@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "kind": "llm_overload_lean_topology_validation",
+  "date": "2026-11-23",
+  "branch": "dev",
+  "scope": "Synthetic, resource-constrained single-broker/single-processor topology; fixed Docker allocation; rate-control evaluation only. This is not a three-broker availability or production-capacity result.",
+  "topology": {
+    "compose": "research/llm_lean.compose.yml",
+    "kafka_brokers": 1,
+    "kafka_partitions": 3,
+    "processors": 1,
+    "training_disabled": true,
+    "bootstrap_servers": "127.0.0.1:19092",
+    "workload_seed": 42
+  },
+  "calibration": {
+    "artifact_root": "runtime/research/llm-lean-proof-20261122-calibration-08",
+    "status": "calibration_complete",
+    "run_id": "llmproof-baseline-f728225bb09a",
+    "selected_profile": [
+      {"name": "light", "rate_per_second": 10, "seconds": 40},
+      {"name": "overload", "rate_per_second": 300, "seconds": 100},
+      {"name": "recovery", "rate_per_second": 10, "seconds": 40}
+    ],
+    "selection_evidence": {
+      "reason": "growing_backlog",
+      "rate_per_second": 300,
+      "consecutive_samples": 3
+    },
+    "accounting": {
+      "offered": 9776,
+      "admitted": 9774,
+      "acknowledged": 9774,
+      "committed": 9774,
+      "rejected": 2,
+      "delivery_failed": 0,
+      "enqueue_failed": 0,
+      "final_lag": 0
+    },
+    "measurements": {
+      "peak_kafka_lag": 293,
+      "peak_interval_p95_seconds": 26.458333333333332,
+      "offered_to_commit_p95_upper_seconds": 1.338230848312378,
+      "host_memory_available_before_trial_percent": 34.863884895997934
+    },
+    "restoration": {
+      "runtime_status": "restored",
+      "original_base_containers": 20,
+      "originally_running_base_containers": 16,
+      "running_base_containers_restored": 16,
+      "lean_containers_stopped": 5
+    }
+  },
+  "paired_trial": {
+    "artifact_root": "runtime/research/llm-lean-proof-20261123-ab-03",
+    "session_status": "completed",
+    "formal_verdict": "not_demonstrated",
+    "formal_reasons": [
+      "need_at_least_3_pairs_with_observed_model_stabilization",
+      "not_all_eligible_pairs_support_the_claim"
+    ],
+    "eligible_pairs": 3,
+    "demonstrated_pairs": 0,
+    "orders": ["baseline_then_llm", "llm_then_baseline", "baseline_then_llm"],
+    "providers_observed": ["openai_compatible", "gemini"],
+    "models_observed": ["gemini-3.6-flash", "gemini-3.5-flash-lite"],
+    "actual_llm_decisions_per_pair": 9,
+    "pairs": [
+      {
+        "pair_id": 1,
+        "baseline": {"offered": 30800, "committed": 30800, "rejected": 0, "served_fraction": 1.0, "peak_lag": 2000, "peak_interval_p95_seconds": 9.75, "latency_violation_seconds": 95.50749278068542, "offered_to_commit_p95_upper_seconds": 6.776135444641113},
+        "llm": {"offered": 30800, "committed": 28097, "rejected": 2703, "served_fraction": 0.9122402597402598, "peak_lag": 1184, "peak_interval_p95_seconds": 4.875, "latency_violation_seconds": 50.33082318305969, "offered_to_commit_p95_upper_seconds": 10.586308479309082},
+        "demonstrated": false
+      },
+      {
+        "pair_id": 2,
+        "baseline": {"offered": 30800, "committed": 30800, "rejected": 0, "served_fraction": 1.0, "peak_lag": 1201, "peak_interval_p95_seconds": 4.875, "latency_violation_seconds": 80.30378413200378, "offered_to_commit_p95_upper_seconds": 4.1581079959869385},
+        "llm": {"offered": 30800, "committed": 18264, "rejected": 12536, "served_fraction": 0.592987012987013, "peak_lag": 68, "peak_interval_p95_seconds": 0.6404069767441852, "latency_violation_seconds": 0, "offered_to_commit_p95_upper_seconds": 20.0545711517334},
+        "demonstrated": false
+      },
+      {
+        "pair_id": 3,
+        "baseline": {"offered": 30800, "committed": 30800, "rejected": 0, "served_fraction": 1.0, "peak_lag": 4213, "peak_interval_p95_seconds": 29.0, "latency_violation_seconds": 90.3353340625763, "offered_to_commit_p95_upper_seconds": 14.323248624801636},
+        "llm": {"offered": 30800, "committed": 28219, "rejected": 2581, "served_fraction": 0.9162012987012987, "peak_lag": 506, "peak_interval_p95_seconds": 2.425, "latency_violation_seconds": 25.553544521331787, "offered_to_commit_p95_upper_seconds": 8.569416046142578},
+        "demonstrated": false
+      }
+    ],
+    "interpretation": "The LLM made real multi-level rate decisions and reduced measured lag/interval latency in several runs, but it also rejected demand and reduced the committed/offered fraction. Pair 1 worsened offered-to-commit p95, pair 2 served only 59.30% of offered demand, and no pair satisfied the pre-existing loaded-recovery chain criterion. Therefore no improvement percentage is claimed.",
+    "restoration": {
+      "runtime_status": "restored",
+      "host_memory_available_before_trial_percent": 25.537656724004094,
+      "originally_running_base_containers_restored": "16/16",
+      "lean_containers_stopped": "5/5"
+    }
+  },
+  "follow_up_attempts": [
+    {
+      "artifact_root": "runtime/research/llm-lean-proof-20261123-ab-04",
+      "status": "incomplete",
+      "verdict": "inconclusive",
+      "reason": "Operator stopped the exploratory rerun after the model lowered the recovery ceiling while pending offered work remained. The run is not counted as proof.",
+      "runtime_status": "restored"
+    },
+    {
+      "artifact_root": "runtime/research/llm-lean-proof-20261123-ab-05",
+      "status": "incomplete",
+      "verdict": "inconclusive",
+      "reason": "The LLM arm stopped during the light phase after two guard actions with decision_failed:provider_unavailable. No LLM decision was applied and the failure is not attributed to RAM or control effectiveness.",
+      "llm_run_accounting": {"offered": 317, "admitted": 317, "committed": 317, "rejected": 0, "final_lag": 0},
+      "runtime_status": "restored",
+      "originally_running_base_containers_restored": "16/16",
+      "lean_containers_stopped": "5/5"
+    }
+  ],
+  "post_trial_safety_changes": {
+    "applied_after_ab_03": true,
+    "changes": [
+      "A recovery sample may retain at most one residual record per partition (max_recovery_lag=3 for this three-partition topology).",
+      "A lower committed/offered served fraction now prevents a demonstrated verdict.",
+      "The model prompt distinguishes new offered rate from pending offered work and requires backlog drain before lowering the recovery ceiling.",
+      "One bounded LLM schema-repair call is allowed inside the original decision deadline; host code never invents the repaired action."
+    ],
+    "retroactive_reclassification": false,
+    "reason": "The completed AB-03 artifact remains bound to the code and decision criteria used when it ran. Later criteria are for future trials only."
+  },
+  "artifact_hashes": {
+    "calibration_json": "d9615f8c9c7a4bce1086218267686bf1b6c490ff8619f0a45ad050247e8ede96",
+    "calibration_session_json": "6e185e7b9754cb963f8cbb206c991bf15b21563c57ad17fd3e75ab4720eb4489",
+    "calibration_runtime_json": "c83b7bbc6c17b9e15367db1733814266f4604b6330f2e8db6252c09d7cd8bf2b",
+    "ab03_comparison_json": "fc8e21d2174da94c09ae581395435798c0c0cb74be00950309c9a53b3bc760de",
+    "ab03_session_json": "6c6780e0bd8d036aa27e8fab63e19657733385feea4def8d0c4d15822ec9a747",
+    "ab03_runtime_json": "817ec64a5c198910ca6c44493653fae8d3c48cde5cb6137bb12883583de1c190",
+    "ab05_comparison_json": "9e8dd22e9af287e53a5c43350ca83f8fce5cf9090c64fb5708782168396f90f4",
+    "ab05_session_json": "3c7103042902f18920cd78c738018c26eea92a7d571a9e322d361f5c8789e353",
+    "ab05_runtime_json": "37ef159becc6a49b250fb87751b6e7f037d829bc1a3f949f4653d572e0c70529"
+  },
+  "conclusion": "The lean topology makes a real, isolated LLM overload experiment feasible on the available RAM. Actual LLM rate changes are experimentally verified. Repeatable stabilization improvement is not demonstrated; the completed paired result is not_demonstrated, and the final provider-unavailable guard stop is inconclusive rather than a RAM failure."
+}

@@ -47,6 +47,13 @@ python -m research.llm_experiment --calibrate-only --mongo-memory-profile --outp
 
 # Chỉ dùng sau khi phiên bị ngắt và manifest báo MongoDB chưa được khôi phục.
 python -m research.llm_experiment --restore-mongodb runtime/research/llm-calibration-bounded/mongo-runtime.json
+
+# Topology cô lập 1 broker/1 processor cho máy không đủ RAM chạy full stack.
+python -m research.llm_experiment --calibrate-only --lean-topology --output runtime/research/llm-lean-calibration
+python -m research.llm_experiment --lean-topology --fallback-model gemini-3.5-flash-lite --output runtime/research/llm-lean-proof
+
+# Chỉ dùng khi phiên lean bị ngắt và manifest chưa báo restored.
+python -m research.llm_experiment --restore-lean runtime/research/llm-lean-proof/lean-runtime.json
 ```
 
 A short paired ramp can evaluate control but cannot supply meaningful 5/10-minute
@@ -168,6 +175,21 @@ volume, base-profile restoration and restoration of eight optional services.
 Host RAM remained only 11.758444903687586% (1,984,212,992 bytes), so the 25%
 pre-load gate blocked the run. No records, LLM decision or A/B result came from
 that attempt; it verifies recovery behavior, not control effectiveness.
+
+The separate lean topology uses one Kafka broker, three partitions, one Processor
+and bounded MongoDB in its own Compose project. It stops the running base stack,
+reclaims Docker Desktop memory, verifies exact container identities and restores
+only containers that were running before the experiment. It never changes the
+production Compose file or deletes volumes. Its claim scope is synthetic,
+single-broker/single-processor rate control—not production capacity or HA.
+
+The November 22–23 lean run calibrated 300 rps and completed three eligible
+baseline/LLM pairs with real model decisions. The formal result was
+`not_demonstrated` (0/3 pairs): the LLM reduced several lag/latency measurements
+while lowering committed/offered service to 59.30–91.62%. A later attempt stopped
+on `provider_unavailable`, not RAM. See the
+[dated evidence](../docs/evidence/llm-lean-overload-20261123.json); do not report
+the reduced accepted demand as an LLM performance improvement.
 
 Each session saves its exact profile, seed, progress, raw observations and quality
 audit. `export --sessions <dir> <dir> --output <new.jsonl>` combines finalized

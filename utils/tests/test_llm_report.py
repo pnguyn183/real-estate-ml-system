@@ -18,7 +18,7 @@ def run(mode="llm", pair=1, start=1000):
                         "throughput": 50 if recovered else 60, "kafka_lag": 0 if recovered else index * 10,
                         "latency_p95_seconds": .3 if recovered else index + 2,
                         "error_rate": 0, "pending": 0})
-    admitted = 350 if mode == "llm" else 700
+    admitted = 700
     return {"pair_id": pair, "run_id": f"{pair}-{mode}", "mode": mode, "status": "completed",
             "sample_seconds": 10, "load_started_at": start, "load_ended_at": start + 80,
             "training_disabled": True, "config_fingerprint": "schedule+seed", "resource_fingerprint": "limits",
@@ -31,7 +31,7 @@ def run(mode="llm", pair=1, start=1000):
             "accounting": {"offered": 700, "planned": 700, "workload_fingerprint": "same-real-generated-payloads",
                            "scheduler_lateness_p95_seconds": .001, "scheduler_lateness_max_seconds": .01,
                            "errors": [], "rate_read_errors": 0, "admitted": admitted, "deferred": 200,
-                           "rejected": 700 - admitted, "acknowledged": admitted, "committed": admitted,
+                           "rejected": 0, "acknowledged": admitted, "committed": admitted,
                            "latency_count": admitted,
                            "delivery_failed": 0, "enqueue_failed": 0, "pending": 0,
                            "offered_to_commit_p95_upper_seconds": 15 if mode == "llm" else 30}}
@@ -48,10 +48,29 @@ def test_three_matched_ab_ba_pairs_with_actual_response_can_demonstrate():
     assert report["verdict"] == "demonstrated"
     assert report["eligible_pairs"] == report["demonstrated_pairs"] == 3
     proof = report["pairs"][0]["llm"]
-    assert proof["served_fraction"] == .5
-    assert proof["accounting"]["rejected"] == 350
+    assert proof["served_fraction"] == 1
+    assert proof["accounting"]["rejected"] == 0
     assert proof["adaptation_chains"][0]["recovery_phase"] == "same_offered_overload"
     assert "wait" in " ".join(report["notes"])
+
+
+def test_served_fraction_regression_cannot_be_called_demonstrated():
+    runs = three_pairs()
+    llm = runs[1]
+    llm["accounting"].update(admitted=699, rejected=1, acknowledged=699,
+                              committed=699, latency_count=699)
+    report = build_report(runs)
+    assert report["verdict"] == "not_demonstrated"
+    assert "served_fraction_regressed" in report["pairs"][0]["reasons"]
+
+
+def test_partition_scale_residual_lag_can_confirm_loaded_recovery():
+    value = run()
+    for row in value["samples"][4:]:
+        row["kafka_lag"] = 3
+    chains = adaptation_chains(value, max_recovery_lag=3)
+    assert chains and chains[0]["max_recovery_lag"] == 3
+    assert adaptation_chains(value, max_recovery_lag=2) == []
 
 
 @pytest.mark.parametrize("change, expected", [

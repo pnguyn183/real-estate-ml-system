@@ -1,6 +1,6 @@
 # Project Report
 
-**Cập nhật: 22/11/2026 · Nhánh: `dev`.**
+**Cập nhật: 23/11/2026 · Nhánh: `dev`.**
 
 Báo cáo tổng hợp các chức năng đã triển khai, kết quả kiểm chứng, những hạn chế
 hiện tại và kế hoạch phát triển tiếp theo của hệ thống. Dữ liệu thực nghiệm
@@ -24,12 +24,21 @@ lượt kế tiếp vẫn bị chặn ở 19,61% và khôi phục 8/8 dịch v�
 dùng cho thực nghiệm (WiredTiger cache 1 GiB, memory/swap 2.560 MiB) đã được
 áp dụng và khôi phục production live, giữ nguyên named volume; tuy nhiên lượt
 này chỉ đạt 11,76% sau isolation nên không phát tải, không gọi LLM và không tạo A/B.
+Ngày **22–23/11/2026**, topology thí nghiệm lean riêng (một Kafka, một Processor,
+MongoDB giới hạn tài nguyên) đã hiệu chuẩn được mức 300 rps và hoàn tất ba cặp
+baseline/LLM cùng seed trên RAM hiện có. Mỗi nhánh LLM có chín quyết định model
+thật và đã thay đổi rate nhiều mức. Tuy nhiên verdict chính thức là
+`not_demonstrated` (0/3 cặp chứng minh): LLM giảm lag/latency nội bộ bằng cách
+từ chối 2.581–12.536 yêu cầu mỗi lượt, làm `committed/offered` giảm còn
+59,30–91,62%; p95 từ offered đến commit cũng xấu hơn ở hai cặp. Một lượt sau đó
+dừng bởi `provider_unavailable`, không phải thiếu RAM. [Bằng chứng 23/11](evidence/llm-lean-overload-20261123.json).
 
 **Trạng thái tổng thể:** đã có stress agent, extraction agent, vòng phản hồi LLM,
 công cụ sửa tài nguyên Docker/Compose và hệ thống đo lường. Đã xác minh vòng LLM
-ở tải nhỏ, chuyển model khi lỗi 503, dừng/bật lại một dịch vụ phụ theo telemetry
-và khôi phục xử lý tải nhỏ. **Chưa chứng minh LLM tự điều tiết để giữ ổn định khi
-quá tải.** Trên phiên synthetic hai giờ, forecast 5 và 10 phút đều vượt
+ở tải nhỏ, quyết định rate thật trong topology quá tải lean, chuyển model khi lỗi
+503, dừng/bật lại một dịch vụ phụ theo telemetry và khôi phục xử lý tải nhỏ.
+**Chưa chứng minh LLM tự điều tiết để giữ ổn định khi quá tải mà không làm giảm
+tỷ lệ phục vụ.** Trên phiên synthetic hai giờ, forecast 5 và 10 phút đều vượt
 persistence theo gate offline; forecast vẫn chưa tham gia controller.
 
 Quy ước checklist:
@@ -89,11 +98,11 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 | Nêu bài toán/giá trị | Một phần, rải rác trong tài liệu | Mục 2 và kiến trúc | Thiếu proven-vs-design | Bổ sung mục 0.1 | Documented và đối chiếu evidence |
 | Self-hosted so với Cloud | Chưa có | Compose/resource limits | Thiếu TCO và điều kiện lựa chọn | Bổ sung mục 0.2, không tự tạo giá | Documented; monetary TCO not verified |
 | Cơ sở metrics | Một phần | `research/telemetry.py`, Prometheus/Grafana | Thiếu mapping Golden/USE và nguồn | Bổ sung mục 5.4 và References | Implemented một phần; controlled telemetry experimentally verified |
-| Luồng xử lý/điều tiết | Đã có code/test; LLM overload chưa kiểm chứng | controller, harness, evidence 07/10–14/11 | Thiếu A/B LLM hợp lệ | Giữ trạng thái chưa kiểm chứng; bổ sung p95/p99 dashboard | Implemented/tested; LLM overload improvement not verified |
+| Luồng xử lý/điều tiết | Đã có code/test; LLM overload chưa kiểm chứng | controller, harness, evidence 07/10–14/11 | Thiếu A/B LLM hợp lệ | Thêm topology lean, hiệu chuẩn và chạy 3 cặp cùng seed | Actual LLM overload decisions verified; improvement not demonstrated |
 | Đánh giá model giá | Một phần | production metrics và legacy benchmark | Legacy thiếu MdAPE; leakage/group split chưa xử lý | Thêm MdAPE; redaction giá, dedup, group split, benchmark sạch và selector group-CV không mở test khi chọn | Full-snapshot group-CV selection measured; deployment/generalization chưa kiểm chứng |
 | Dự báo tải | Offline 5 phút đạt, 10 phút cũ không đạt | benchmark/forecast artifact | Chưa đánh giá phiên hai giờ, chưa tích hợp control | Chạy chronology 5/10 phút; bind provenance; thêm fail-closed research overlay/simulator, không nối production | 5/10 phút offline synthetic verified; research overlay tested; live predictive-control trial blocked |
 | Extraction | Pipeline đầy đủ, một fixture provider thật | schema/worker/router/Kafka/Mongo/DLQ | Chưa có benchmark nhãn người | Thêm protocol/evaluator và panel 34 record cho hai reviewer + adjudication | Panel prepared; human labels và dataset accuracy not verified |
-| Đánh giá Agent | Harness có; chưa có cặp overload LLM hợp lệ | `llm_experiment.py`, lifecycle evidence | Không có improvement % của LLM | Không lấy guard/drain làm thành tích; giữ `not verified` | Harness implemented/tested; LLM improvement not verified |
+| Đánh giá Agent | Harness có; chưa có cặp overload LLM hợp lệ | `llm_experiment.py`, lifecycle evidence | Không có improvement % của LLM | Hoàn tất 3 cặp lean; báo cả offered/committed/rejected và không nhận guard/drain làm thành tích | 3/3 cặp eligible, verdict `not_demonstrated`; không công bố improvement % |
 
 ## 1. Tiến độ triển khai và kiểm chứng
 
@@ -102,8 +111,8 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 - [x] **Có telemetry phục vụ điều tiết.** Đã đo CPU/RAM container, RAM/swap VM, tài nguyên host, Kafka ingress/throughput/lag, latency, lỗi và lịch sử quyết định. Có phát hiện số đo thiếu/cũ. Mã: [telemetry.py](../research/telemetry.py), [control_agent.py](../agents/control_agent.py). Chạy thật: [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md).
 - [x] **Phân loại trạng thái tải bằng LLM.** Model nhận telemetry và chọn `light`, `normal`, `heavy`; đã quan sát `light → normal` khi có dữ liệu thật. Trạng thái và tốc độ được model đề xuất từ số đo; code kiểm tra giới hạn an toàn trước khi áp dụng. [Thiết kế và phạm vi](LLM_FEEDBACK_CONTROL.md), [bằng chứng 07/10](evidence/llm-feedback-20261007.json).
 - [x] **Có dynamic feedback loop rate limiting chạy được.** Telemetry → LLM → quyết định JSON → policy có thời hạn → producer/Kafka → telemetry vòng sau đã chạy thật với 646 record. Rate gate điều chỉnh nhịp phát theo `rate_per_second`. [runtime_policy.py](../agents/runtime_policy.py), [kiểm chứng 07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **Một phần: LLM tự tăng/giảm nhiều mức tốc độ theo tải.** Cơ chế đã có nhưng mọi quyết định LLM hợp lệ trong hai lượt 07/10 đều chọn **5 record/s**. Việc giảm về 0 do RAM/provider thuộc guard của code, chưa phải bằng chứng LLM tự giảm tốc để giải quyết nghẽn. [Giới hạn thực nghiệm](evidence/LLM_FEEDBACK_VALIDATION_20261007.md).
-- [ ] **Một phần: agent biết giới hạn hệ thống và phân biệt rảnh/bình thường/nặng.** Có phân loại LLM, capacity Docker và throughput đã quan sát; đã tạo được quá tải ở cấu hình cụ thể. Chưa xác định công suất tối đa hoặc mức vận hành tối ưu có tính lặp lại. `capacity_evidence()` không coi vài mẫu rảnh là bằng chứng saturation. [control_agent.py](../agents/control_agent.py), [hiệu chuẩn 14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md).
+- [x] **LLM đã tự tăng/giảm nhiều mức tốc độ theo telemetry.** Trong ba nhánh LLM lean ngày 23/11, model thật đã trả chín quyết định mỗi nhánh và chọn các mức từ 10 đến 2.000 record/s; đã quan sát giảm từ 2.000 xuống 220–250/s khi lag/latency tăng. Đây là bằng chứng hành động rate thật, **không phải** bằng chứng cải thiện: verdict ba cặp vẫn là `not_demonstrated` do loaded-recovery không đạt và tỷ lệ phục vụ giảm. [Bằng chứng 23/11](evidence/llm-lean-overload-20261123.json).
+- [ ] **Một phần: agent biết giới hạn hệ thống và phân biệt rảnh/bình thường/nặng.** Có phân loại LLM; topology lean hiệu chuẩn được overload ở 300 rps với ba mẫu backlog tăng liên tiếp. Đây chỉ là giới hạn quan sát của workload/allocation một broker–một processor, không phải công suất tối đa của stack ba broker hoặc mức vận hành tối ưu có tính lặp lại. `capacity_evidence()` không coi vài mẫu rảnh là bằng chứng saturation. [control_agent.py](../agents/control_agent.py), [hiệu chuẩn lean 23/11](evidence/llm-lean-overload-20261123.json).
 - [x] **Có bảo vệ khi thiếu RAM hoặc telemetry/model bị lỗi.** Policy thiếu/sai/hết hạn đưa producer về rate an toàn; thiếu RAM ngăn phát mới và ngăn bắt đầu training, processor tiếp tục xử lý backlog. Đã quan sát thật các lần `emergency_host_memory`. Ngày 22/11 bổ sung điều kiện bắt đầu thử tải phải trên 25% RAM host, tách khỏi emergency guard 10%; mức này bao phủ mức giảm 12,68 điểm phần trăm quan sát trong warm-up. Cơ chế này không tạo thêm RAM và không bảo đảm cả stack vẫn chạy khi footprint nền vượt bộ nhớ. [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [22/11](evidence/llm-overload-20261122.json), [runtime_policy.py](../agents/runtime_policy.py).
 
 ### 1.2. Docker resource constraints và luồng training
@@ -125,7 +134,7 @@ vận hành, retention, egress, mức hỗ trợ hoặc báo giá Cloud tương 
 
 - [x] **Kiểm chứng tích hợp trên Docker, Kafka/Mongo và provider thật.** Đã có dữ liệu Kafka/Mongo thật, gọi model thật và thử actuator thật; kết quả được ghi theo từng lượt, gồm cả thất bại. [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md), [13/10](evidence/LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [lifecycle 14/11](evidence/container-lifecycle-recovery-20261114.json).
 - [x] **Xây dựng bộ thử đối chứng điều tiết LLM.** Đã xây harness baseline/LLM, hiệu chuẩn quá tải, workload cùng seed, tách nhu cầu trước gate khỏi lượng được nhận, lưu quyết định/ingress/commit/lag/latency/lỗi và trạng thái khôi phục. [llm_experiment.py](../research/llm_experiment.py), [llm_report.py](../research/llm_report.py), [tiêu chí đối chứng](LLM_OVERLOAD_EXPERIMENT.md).
-- [ ] **Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Các lượt đối chứng đến 22/11 chưa hoàn thành cặp hợp lệ; không có quyết định LLM trong các nhánh overload đã lưu. Lượt 20/11 tới 300 rps rồi bị RAM guard dừng trước overload bền vững. Lượt 22/11 dừng ngay ở stage 10 rps khi RAM host giảm còn 5,38%; 42/42 record đã commit, bảy dịch vụ cô lập được khôi phục và không có LLM call. Ba gate check sau đó đều chặn trước workload; lượt mới nhất đã áp dụng profile MongoDB giới hạn và khôi phục 8/8 dịch vụ nhưng RAM sau isolation chỉ đạt 11,76%. Vì không có overload profile nên nhánh LLM/A-B không bắt đầu. [14/11](evidence/llm-overload-20261114.json), [18/11](evidence/llm-overload-20261118.json), [20/11](evidence/llm-overload-20261120.json), [22/11](evidence/llm-overload-20261122.json).
+- [ ] **Chưa hoàn thành: chứng minh LLM giữ hệ thống ổn định khi quá tải.** Topology lean ngày 23/11 đã giải quyết điều kiện RAM để hoàn tất ba cặp hợp lệ và có quyết định LLM thật, nhưng kết quả là `not_demonstrated`: 0/3 cặp có chuỗi giảm rate → ingress đáp ứng → phục hồi dưới tải theo tiêu chí của lượt chạy. Các nhánh LLM chỉ commit 59,30–91,62% offered demand so với 100% ở baseline; vì vậy giảm lag không được diễn giải thành cải thiện hệ thống. Lượt AB-04 bị người vận hành dừng và AB-05 bị guard dừng do `provider_unavailable`; cả hai là `inconclusive`. [Bằng chứng 23/11](evidence/llm-lean-overload-20261123.json).
 - [x] **Cải thiện độ ổn định và khả năng truy vết.** Đã sửa tranh chấp policy file Windows, timeout observer, đọc lịch sử anomaly theo luồng và ghi hash dependency thực sự trong worker. Chi tiết commit/tests ở [mục 7](#7-các-bản-sửa-đã-hoàn-thành).
 - [ ] **Một phần: kiểm chứng bản sửa giảm RAM trên Docker.** Mã và test đã hoàn tất; phiên 23/10 vẫn dùng cùng container/image identity như trước bản sửa và thiếu hash dependency cần thiết. Phải xác minh/recreate worker trước khi nhận kết quả mới là kiểm chứng bản sửa. Chưa có số đo giảm RAM thực tế. [Provenance và giới hạn](evidence/TELEMETRY_VALIDATION_20261024.md).
 - [x] **Theo dõi riêng RAM host, Docker VM và container.** Các số đo được lưu cùng thời điểm và phạm vi đo, giúp xác định áp lực bộ nhớ ở từng lớp. RAM container thấp không đồng nghĩa host hoặc VM còn đủ bộ nhớ. [Định nghĩa số đo](#5-dữ-liệu-telemetry-và-kết-quả-dự-báo).
@@ -196,6 +205,9 @@ không được tính là quyết định của model. Model không có quyền 
 | 22/11 — startup gate | Chặn trước workload ở 21,10%; 7/7 dịch vụ khôi phục, lỗi restore 0 | Xác minh gate 25%; số RAM này không phải yêu cầu cố định vì thay đổi giữa các lượt |
 | 22/11 — thêm Prometheus isolation | Chặn trước workload ở 19,61%; 8/8 dịch vụ khôi phục, lỗi restore 0 | Cô lập Prometheus không đủ tạo headroom trong lượt này; không có LLM evidence |
 | 22/11 — Mongo memory profile | Cache 1 GiB và memory/swap 2.560 MiB được xác minh; named volume giữ nguyên; production profile được recreate/restore; gate chặn ở 11,76% | Xác minh profile và recovery live, không chứng minh giảm RAM nhân quả hoặc hiệu quả điều tiết; 0 workload/LLM/A-B |
+| 22/11 — lean calibration | Một broker/một processor; 300 rps tạo ba mẫu backlog tăng; 9.774/9.776 offered commit, peak lag 293, final lag 0 | Topology ít RAM đủ để tạo overload synthetic trong phạm vi cấu hình này; không đại diện stack ba broker |
+| 23/11 — lean A/B | 3/3 cặp eligible, mỗi nhánh LLM có 9 quyết định thật; baseline commit 30.800/30.800, LLM commit 18.264–28.219/30.800 | Verdict `not_demonstrated`: lag giảm nhưng served fraction giảm còn 59,30–91,62%; không công bố improvement % |
+| 23/11 — lượt cuối | LLM arm commit 317/317 rồi hai guard `decision_failed:provider_unavailable`; 16/16 base service khôi phục, 5/5 lean container dừng | `inconclusive`, không phải lỗi RAM và không phải bằng chứng agent cải thiện |
 
 Nguồn Git: [Gemini — phụ lục A](#phụ-lục-a--bằng-chứng-gemini-ngày-24092026),
 [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md), [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md),
@@ -203,7 +215,8 @@ Nguồn Git: [Gemini — phụ lục A](#phụ-lục-a--bằng-chứng-gemini-ng
 [05/11 và khôi phục 11/11](evidence/container-lifecycle-live-20261105.json),
 [lifecycle 14/11](evidence/container-lifecycle-recovery-20261114.json),
 [calibration 14/11](evidence/llm-overload-20261114.json),
-[các lượt 22/11](evidence/llm-overload-20261122.json).
+[các lượt 22/11](evidence/llm-overload-20261122.json),
+[lean calibration/A-B 23/11](evidence/llm-lean-overload-20261123.json).
 
 ### 4.2. Kết quả controller theo luật
 
@@ -424,6 +437,7 @@ miễn phí, không tự mở billing và không biến cùng một key thành q
 | Demo browser E2E và dependency patch | 21/11/2026 | Edge-headless flow đạt; production npm audit còn 0 vulnerability, 6 moderate dev-only chưa force-upgrade |
 | Startup RAM headroom cho overload trial | 22/11/2026 | Tách startup gate 25% khỏi emergency guard 10%; 73 test experiment/runtime đạt. Gate live chặn trước workload ở 21,10% và khôi phục 7/7 dịch vụ; không được tính là LLM evidence |
 | Profile RAM MongoDB có recovery bền vững | 22/11/2026 | Override riêng được hash, manifest không lưu env/secret, xác minh cache/limit/named volume và restore production trước khi bật lại dịch vụ phụ; 92 test experiment/runtime đạt. Live gate vẫn chặn ở 11,76%; không có LLM/A-B claim |
+| Topology lean cho overload trial | 23/11/2026 | Project Compose riêng, một broker/một processor, giới hạn CPU/RAM và listener IPv4; tự dừng/khôi phục đúng base containers. Dùng để kiểm chứng rate control khi ít RAM, không đại diện HA/production |
 
 Full suite ngày 21/11 đạt **1.470 tests**; Python compileall và Compose config đạt.
 Frontend type-check/ESLint/build/browser E2E đạt; production npm audit còn 0 vulnerability.
@@ -434,6 +448,7 @@ Promtool chạy lại ngày 22/11 trong container hiện hữu và xác nhận c
 Python dependency/deprecation/runtime và 6 moderate dev-only npm findings; không có test fail.
 [Validation 21/11](evidence/project-validation-20261121.json),
 [live guard/Promtool 22/11](evidence/llm-overload-20261122.json),
+[lean calibration/A-B 23/11](evidence/llm-lean-overload-20261123.json),
 [validation 22/11](evidence/project-validation-20261122.json),
 [validation 20/11](evidence/project-validation-20261120.json),
 [validation 18/11](evidence/project-validation-20261118.json),
@@ -444,12 +459,12 @@ container với phiên bản mã nguồn cần kiểm chứng.
 ## 8. Hạng mục còn lại và tiêu chí nghiệm thu
 
 - [ ] **Triển khai và xác minh bản sửa worker:** container dùng đúng image/mã, hash `price_anomaly.py` và `feature_engineering.py` khớp bản cần thử; đo RAM thực tế trước khi kết luận giảm bộ nhớ.
-- [ ] **Chứng minh điều tiết LLM quá tải:** trước hết RAM host sau isolation phải vượt startup gate 25% và còn đủ biên để không chạm emergency guard 10% khi warm-up. Các lượt 22/11 dao động 11,76–21,10% sau isolation nên không suy ra một lượng RAM thiếu cố định; profile MongoDB đã chạy đúng nhưng chưa đủ. Sau đó cần ít nhất 3 cặp hợp lệ, có cả thứ tự baseline→LLM và LLM→baseline, cùng seed/workload/allocation/training. Model phải thật sự giảm rate; ingress/lag/latency phục hồi với throughput dương **khi offered demand vẫn cao**; báo cáo cả lỗi, deferred và rejected. Guard/drain không được nhận công cho LLM.
+- [ ] **Chứng minh điều tiết LLM quá tải:** topology lean đã vượt rào cản RAM, hiệu chuẩn 300 rps và hoàn tất ba cặp cùng seed/allocation nhưng verdict là `not_demonstrated`. Lượt kế tiếp phải dùng tiêu chí đã khai báo trước: phục hồi cho phép tối đa ba record lag (một/partition), served fraction không được thấp hơn baseline, backlog admission phải drain trước deadline và provider phải hoàn thành đủ ba cặp. Không chạy lại chỉ để tìm kết quả đẹp; giữ nguyên workload/seed/resource, báo offered/admitted/committed/rejected và không nhận guard/drain làm thành tích LLM. Cần thử riêng topology ba broker trước mọi kết luận production/HA.
 - [ ] **Chứng minh LLM tự đổi allocation:** có quyết định model, receipt Docker+Compose và phép đo hiệu quả; đây là thử nghiệm riêng vì bài đối chứng rate hiện cố định resource limits.
 - [ ] **Mở rộng kiểm chứng lifecycle:** stop/start cùng container và tải nhỏ sau start đã đạt ngày 14/11; ngày 18/11 thêm một chu kỳ predictor và isolated trainer probe. Durable drain receipt cùng bounded 3-cycle harness đã implemented/tested ngày 21/11. Còn deploy/recreate trainer production với image mới, chạy ba chu kỳ live/continuous operation, đo tác động RAM nhân quả và ổn định overload; harness/probe không được nhận công cho LLM.
 - [ ] **Chạy training dưới điều tiết:** state machine durable, revoke-before-fit và crash reconciliation đã implemented/tested. Còn kiểm chứng live hoãn→cho phép→fit hoàn tất, theo dõi stream trong lúc fit và đo chi phí tài nguyên thay vì chỉ quan sát state/`training_allowed=true`.
 - [ ] **Hoàn tất fallback quota/vận hành:** cấu hình route được tài khoản cho phép; xác nhận khả năng chuyển khi quota hết, giới hạn chi phí và giới hạn quota dùng chung. Test mô phỏng chỉ xác minh logic; chỉ ghi nhận failover quota thực tế khi có lỗi quota và response fallback thật. Không cần cố tình tiêu hết quota để thử.
-- [ ] **Mở rộng forecast:** 5/10 phút đã đạt gate offline trên một run synthetic hai giờ; artifact re-export đã có provenance binding và overlay/simulator research-only đã có test. Readiness vẫn fail-closed vì thiếu capacity calibration, overload rate và miền train phù hợp. Còn dữ liệu độc lập nhiều ngày/tự nhiên và ba cặp live AB/BA; chỉ nối production sau trial đạt.
+- [ ] **Mở rộng forecast:** 5/10 phút đã đạt gate offline trên một run synthetic hai giờ; artifact re-export đã có provenance binding và overlay/simulator research-only đã có test. Lean calibration cung cấp một overload rate cho đúng topology này, nhưng reactive LLM trial chưa chứng minh lợi ích và không đại diện stack production. Còn dữ liệu độc lập nhiều ngày/tự nhiên, capacity binding đúng topology và ba cặp predictive-control live; chỉ nối production sau trial đạt.
 - [ ] **Đánh giá chất lượng model giá:** redaction target, dedup, conservative property-group split và full-snapshot group-CV selection không dùng outer test khi chọn đã có evidence. Còn đánh giá heuristic entity grouping bằng nhãn property, confidence interval và tập thời gian/nguồn độc lập trước khi deploy; production model chưa thay đổi.
 - [ ] **Đánh giá extraction trên dữ liệu đại diện:** protocol/schema/evaluator và panel 34 record đã có; còn hai người thật gán nhãn, adjudicator độc lập, đánh giá representativeness và chạy benchmark. Một fixture Gemini không đủ.
 
@@ -463,9 +478,9 @@ container với phiên bản mã nguồn cần kiểm chứng.
 | Docker apply/rollback | [06/10](evidence/LLM_FEEDBACK_VALIDATION_20261006.md) | [resource.apply.json](../runtime/control-validation/20261006-01/resource.apply.json), [rollback.json](../runtime/control-validation/20261006-01/rollback.json) |
 | LLM và fallback thật | [07/10](evidence/LLM_FEEDBACK_VALIDATION_20261007.md), [JSON tổng hợp](evidence/llm-feedback-20261007.json) | [summary lượt 02](../runtime/control-validation/20261007-02/summary.json), [summary lượt 03](../runtime/control-validation/20261007-03/summary.json), provider/live logs cùng thư mục |
 | LLM container lifecycle | [Lượt 05/11](evidence/container-lifecycle-live-20261105.json), [stop/start và recovery 14/11](evidence/container-lifecycle-recovery-20261114.json) | Raw result/decisions/samples/receipts ở `runtime/diagnostics/container-lifecycle-*`; hash ghi trong summary Git |
-| Các lần overload chưa hoàn thành | [13/10](evidence/LLM_OVERLOAD_VALIDATION_20261013.md), [14/10](evidence/LLM_OVERLOAD_VALIDATION_20261014.md), [19/10](evidence/LLM_OVERLOAD_VALIDATION_20261019.md), [14/11](evidence/llm-overload-20261114.json), [18/11](evidence/llm-overload-20261118.json), [20/11](evidence/llm-overload-20261120.json), [22/11](evidence/llm-overload-20261122.json) | Raw calibration/session ở `runtime/research/llm-proof-*`; chưa có cặp A/B LLM hợp lệ hoặc quyết định LLM trong overload |
+| Overload/LLM control | [Các lượt cũ](evidence/llm-overload-20261122.json), [lean calibration và A/B 23/11](evidence/llm-lean-overload-20261123.json) | `runtime/research/llm-lean-proof-*`; đã có 3 cặp eligible và quyết định LLM thật, verdict `not_demonstrated`; các lượt AB-04/05 không hoàn tất |
 | Kiểm kê và phiên telemetry | [23/10](evidence/TELEMETRY_VALIDATION_20261023.md), [24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [phiên 2h 14/11](evidence/telemetry-session-20261114.json) | Session/observations/history audit ở `runtime/research/traffic-sessions*`; hash ghi trong summaries Git |
-| Forecast 5/10 phút | [Đánh giá cũ 24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [đánh giá phiên 2h 17/11](evidence/telemetry-forecast-2h-20261117.json), [readiness lịch sử](evidence/predictive-control-readiness-20261118.json), [bound re-export 21/11](evidence/predictive-control-readiness-20261121.json) | Artifact bound và research overlay/simulator ở local/source; capacity calibration và control trial chưa bắt đầu |
+| Forecast 5/10 phút | [Đánh giá cũ 24/10](evidence/TELEMETRY_VALIDATION_20261024.md), [đánh giá phiên 2h 17/11](evidence/telemetry-forecast-2h-20261117.json), [readiness lịch sử](evidence/predictive-control-readiness-20261118.json), [bound re-export 21/11](evidence/predictive-control-readiness-20261121.json) | Artifact bound và research overlay/simulator ở local/source; lean reactive-control trial đã chạy nhưng predictive-control trial chưa bắt đầu |
 | Extraction evaluation readiness | [Protocol](EXTRACTION_EVALUATION.md), [schema nhãn](templates/extraction-ground-truth.schema.json), [panel/manifest](evidence/extraction-panel-20261118/manifest.json), [evaluator](../research/extraction_evaluation.py) | Hai reviewer/adjudicator chưa điền nhãn; chưa có metrics accuracy đại diện |
 | Ops/lifecycle | [Promtool/drain live scope 18/11](evidence/ops-validation-20261118.json), [durable drain code](../agents/container_lifecycle.py), [bounded cycle harness](../research/lifecycle_cycles.py) | Live receipt 18/11 vẫn chỉ console capture; durable proof/3-cycle code ngày 21/11 mới có offline tests, không có claim continuous/causal RAM |
 | Demo công khai | [SystemDemo](../frontend/src/components/SystemDemo.tsx), [evidence constants](../frontend/src/data/projectEvidence.ts), [browser E2E](../frontend/e2e/public-demo.test.mjs) | Hiển thị artifact tĩnh đã gắn nhãn; Edge headless xác minh flow demo→đăng nhập→demo; không giả làm live dashboard |
@@ -474,6 +489,7 @@ container với phiên bản mã nguồn cần kiểm chứng.
 | Validation 21/11 | [Code, benchmark, browser và safety checks](evidence/project-validation-20261121.json) | Full suite 1.470 tests; group-CV measured, browser E2E đạt, predictive gate vẫn fail-closed; Docker live trial không chạy |
 | Live validation 22/11 | [RAM guard, recovery và Promtool](evidence/llm-overload-20261122.json) | 42/42 record commit rồi host-memory guard dừng; các pre-load gate sau đó không phát tải. Profile MongoDB/cache/volume/production restore và 8/8 service recovery được xác minh; Prometheus config cùng 10 rules đạt; không có LLM/A-B claim |
 | Validation 22/11 | [Code và tài liệu](evidence/project-validation-20261122.json) | Full suite 1.473 tests; control subset, compile, JSON, 201 report links, Compose và diff check đạt |
+| Live validation 23/11 | [Lean calibration và LLM A/B](evidence/llm-lean-overload-20261123.json) | 300 rps calibration và 3/3 cặp eligible với quyết định LLM thật; verdict `not_demonstrated`; provider-unavailable follow-up được giữ là `inconclusive` |
 
 Mỗi bộ bằng chứng gắn với ngày chạy, phiên bản mã và phạm vi thí nghiệm cụ thể.
 Artifact trong `runtime/` được lưu cục bộ; các báo cáo và số liệu tổng hợp trong
@@ -485,7 +501,7 @@ repository phục vụ đối chiếu kết quả giữa các phiên bản.
 | --- | --- | --- | --- |
 | Extraction | LLM provider/router; schema/evidence/merge là code | Cùng panel adjudicated, không extraction hoặc provider/model khác | Panel 34 record đang chờ hai reviewer/adjudicator; accuracy chưa kiểm chứng |
 | Stress generation | Generator có seed/rule, không phải LLM control | Không áp dụng improvement hệ thống | Implemented/tested |
-| Load classification/rate/training permission | LLM đề xuất; guard giới hạn | Fixed-rate hoặc cùng controller không LLM | Tải nhỏ đã chạy; overload A/B chưa đạt |
+| Load classification/rate/training permission | LLM đề xuất; guard giới hạn | Fixed-rate, cùng seed/workload/allocation | Ba cặp lean eligible có quyết định rate thật; 0/3 chứng minh, served fraction giảm nên không có improvement % |
 | Resource allocation | LLM có schema đề xuất; actuator deterministic | Cùng workload và allocation cố định | Tool thật đã chạy; allocation do người chọn |
 | Container lifecycle | LLM chọn stop/start; guard/actuator thi hành | Cùng telemetry/workload, lifecycle disabled | Functional recovery đạt; không có A/B overload |
 | Workload forecast | ML offline; overlay research-only chưa nối production | Persistence cho forecast; reactive controller cho control trial | 5/10 phút đạt trên một run synthetic; provenance bound và safety code tested, nhưng readiness/live benefit vẫn bị chặn |
@@ -493,7 +509,11 @@ repository phục vụ đối chiếu kết quả giữa các phiên bản.
 Kết quả paired-v4 theo luật giảm peak lag 74,88% và peak p95 65,74%, nhưng
 committed throughput thấp hơn và rejected tăng mạnh. Đây **không phải** phần trăm
 cải thiện của LLM. Lượt lifecycle 14/11 cũng không có baseline tương đương, nên
-không tính improvement %. Khi có cặp hợp lệ, metric “thấp hơn tốt hơn” dùng
+không tính improvement %. Ba cặp lean 23/11 đủ điều kiện so sánh nhưng không đạt
+claim: LLM hạ peak lag/interval latency đồng thời giảm served fraction và có cặp
+tăng offered-to-commit p95. Vì các mục tiêu đánh đổi trái chiều, báo cáo giữ
+`not_demonstrated` thay vì chọn riêng một metric để tính improvement %. Khi có
+kết quả đạt toàn bộ gate, metric “thấp hơn tốt hơn” dùng
 `(baseline − agent) / baseline × 100%`; metric “cao hơn tốt hơn” dùng
 `(agent − baseline) / baseline × 100%`. Không tính khi baseline bằng 0 và luôn
 báo cáo offered, admitted, committed, backlog, deferred/rejected cùng nhau.
@@ -507,11 +527,14 @@ báo cáo offered, admitted, committed, backlog, deferred/rejected cùng nhau.
    mạnh RAM host/VM/container có mẫu số khác nhau.
 4. Trình bày timeline 14/11: LLM chọn stop, guard kiểm tra, LLM fallback chọn start,
    ba cửa sổ tải nhỏ sạch. Nói rõ đây là functional trial, không phải overload proof.
-5. Mở Grafana `Real Estate Pipeline`: xem throughput, per-partition lag sample và
+5. Trình bày A/B lean 23/11: model thật giảm rate và lag, nhưng từ chối nhiều
+   offered demand nên verdict là `not_demonstrated`. Đây là ví dụ trực quan về
+   lý do không thể gọi giảm tải đơn thuần là cải thiện.
+6. Mở Grafana `Real Estate Pipeline`: xem throughput, per-partition lag sample và
    p95/p99 admitted-to-commit. Không gọi gauge lag này là total consumer-group lag.
-6. So sánh paired-v4 rule controller và đọc cả throughput/rejected để tránh kết luận
+7. So sánh paired-v4 rule controller và đọc cả throughput/rejected để tránh kết luận
    “giảm lag = tăng hiệu năng”.
-7. Kết thúc bằng hai cột “đã có bằng chứng/chưa thể kết luận”, sau đó mới đăng nhập
+8. Kết thúc bằng hai cột “đã có bằng chứng/chưa thể kết luận”, sau đó mới đăng nhập
    khu vực dự đoán giá nếu cần demo API/model.
 
 Các số trong demo là snapshot từ evidence Git và đều ghi rõ synthetic/local scope;

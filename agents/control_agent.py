@@ -22,7 +22,7 @@ import time
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class ResourceLimit(BaseModel):
@@ -216,6 +216,17 @@ only allowed services and must fit per-service and TOTAL Docker budgets. Omit
 resources when adjustment is not justified, disabled, or original limits cannot
 be restored. Use actual memory usage and headroom before reducing RAM; preserve
 ongoing processing. Prefer one measured change at a time and observe its effect.
+The admission limit is a ceiling, not a target: do not lower a healthy limit merely
+to match temporarily low offered demand. A rate decrease needs fresh measured
+overload evidence such as target-latency violation, growing lag, errors or resource
+saturation. Account for queue capacity and avoid rejecting demand when a smaller
+decrease can stabilize the pipeline. After a decrease, require several fresh stable
+samples with negligible lag and latency below target before increasing again.
+`offered_rate` is only new demand, while `pending_offered` is already offered work
+waiting before Kafka. During recovery or drain, never lower the ceiling to the new
+demand while pending_offered is positive. Once Kafka lag and latency are healthy,
+raise the ceiling toward measured safe throughput so that admission backlog drains
+before its wait deadline; keep it conservative enough not to recreate Kafka lag.
 Container lifecycle is separate from resource limits. Only services advertised in
 container_lifecycle may be changed, and only when container_changes_enabled is true.
 Choose at most ONE container action per decision and never combine it with resource
@@ -335,10 +346,28 @@ class FeedbackAgent:
                        "history": list(self.history), "capacity_evidence": capacity_evidence(list(self.history)),
                         "recent_actions": [{k: a.get(k) for k in ("timestamp", "status", "reason", "decision", "resource_error", "containers")}
                                           for a in self.actions], "response_schema": AgentDecision.model_json_schema()}
-            result = self.router.extract_result([
+            messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(context, allow_nan=False)}], self.cfg.timeout_seconds)
-            decision = AgentDecision.model_validate_json(result.content)
+                {"role": "user", "content": json.dumps(context, allow_nan=False)}]
+            decision_deadline = self.clock() + self.cfg.timeout_seconds
+            result = self.router.extract_result(messages, self.cfg.timeout_seconds)
+            validation_attempts = 1
+            try:
+                decision = AgentDecision.model_validate_json(result.content)
+            except ValidationError:
+                # A provider can satisfy JSON mode while missing the stricter
+                # local action schema. Permit one bounded model repair; never
+                # infer or fill an action in host code, and fail closed again
+                # if the corrected response is still invalid.
+                remaining = decision_deadline - self.clock()
+                if remaining < 0.1:
+                    raise
+                repair = {"role": "system", "content":
+                    "Your previous JSON response failed the supplied response_schema. "
+                    "Return one corrected JSON object only; preserve no unsupported fields."}
+                result = self.router.extract_result([*messages, repair], remaining)
+                validation_attempts = 2
+                decision = AgentDecision.model_validate_json(result.content)
             if decision.rate_per_second > self.cfg.max_rate or set(decision.resources) - set(self.cfg.allowed_services):
                 return self.pause("model_action_outside_budget")
             if decision.resources and not self.actuator.config.enabled:
@@ -396,6 +425,7 @@ class FeedbackAgent:
                         "containers": container_receipt,
                         "effective_policy": {"rate_per_second": rate, "training_allowed": permit_training},
                         "awaiting_fresh_telemetry": requires_recheck,
+                        "decision_validation_attempts": validation_attempts,
                        "action_origin": "llm"}
             self.actions.append(receipt)
             self._log("decisions.jsonl", receipt)

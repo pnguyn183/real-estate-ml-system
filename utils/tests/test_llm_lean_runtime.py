@@ -4,6 +4,7 @@ import json
 import pytest
 
 from research import llm_lean_runtime as subject
+from research import lean_runtime as base_runtime
 
 
 class Clock:
@@ -139,6 +140,56 @@ def run_context(configured, **kwargs):
     )
 
 
+def test_docker_desktop_reclaim_observes_daemon_down_before_start(
+        tmp_path, monkeypatch):
+    install = tmp_path / "Programs" / "DockerDesktop"
+    install.mkdir(parents=True)
+    (install / "DockerCli.exe").write_bytes(b"")
+    (install / "Docker Desktop.exe").write_bytes(b"")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "missing"))
+    events = []
+    calls = iter(["old", "old", RuntimeError("down"),
+                  RuntimeError("starting"), "new"])
+
+    def runner(*args, **kwargs):
+        del args, kwargs
+        value = next(calls)
+        events.append("info:" + ("error" if isinstance(value, Exception) else value))
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(subject.subprocess, "run",
+                        lambda *args, **kwargs: events.append("shutdown"))
+    monkeypatch.setattr(subject.subprocess, "Popen",
+                        lambda *args, **kwargs: events.append("desktop-start"))
+    clock = Clock()
+    subject.reclaim_docker_desktop(
+        runner=runner, clock=clock, sleeper=clock.sleep)
+    assert events == ["shutdown", "info:old", "info:old", "info:error",
+                      "desktop-start", "info:error", "info:new"]
+
+
+def test_runtime_manifest_retries_transient_windows_replace(tmp_path, monkeypatch):
+    path = tmp_path / "runtime.json"
+    real_replace = base_runtime.os.replace
+    attempts = 0
+
+    def replace(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError("temporary Windows file lock")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(base_runtime.os, "replace", replace)
+    monkeypatch.setattr(base_runtime.time, "sleep", lambda _: None)
+    base_runtime._write(path, {"status": "complete"})
+    assert attempts == 3
+    assert json.loads(path.read_text(encoding="utf-8")) == {"status": "complete"}
+
+
 def test_lean_topology_stops_all_running_base_and_restores_exact_ids(configured):
     docker, _, _, manifest = configured
     original_ids = set(docker.base)
@@ -210,6 +261,20 @@ def test_daemon_reclaim_disables_then_restores_restart_policies(configured):
     assert saved["status"] == "restored"
     assert all(item["policy_restore_status"] == "restored"
                for item in saved["base_containers"])
+
+
+def test_daemon_reclaim_preserves_inactive_created_container(configured):
+    docker, _, _, _ = configured
+    subject_item = docker.service("base", "trainer")
+    docker.set_state(subject_item, "created")
+
+    with run_context(
+            configured, reclaim_docker_daemon=True,
+            daemon_reclaimer=lambda **_: None) as receipt:
+        assert subject_item["State"]["Status"] == "created"
+        assert subject.verify_runtime(receipt, runner=docker)["base_stopped"]
+
+    assert subject_item["State"]["Status"] == "created"
 
 
 def test_body_failure_after_daemon_reclaim_restores_policy_before_start(configured):

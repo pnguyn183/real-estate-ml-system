@@ -112,15 +112,17 @@ def _changes_control(action: dict) -> bool:
             and action.get("status") not in {"proposed", "observed"})
 
 
-def _recovery(window: list[dict], target: float) -> bool:
-    return all(row["kafka_lag"] == 0 and row["incoming_rate"] > 0 and row["throughput"] > 0
+def _recovery(window: list[dict], target: float, max_recovery_lag: int) -> bool:
+    return all(0 <= row["kafka_lag"] <= max_recovery_lag
+               and row["incoming_rate"] > 0 and row["throughput"] > 0
                and finite(row.get("admission_limit")) and row["admission_limit"] > 0
                and finite(row.get("latency_p95_seconds")) and row["latency_p95_seconds"] <= target
                and row.get("error_rate") == 0 for row in window)
 
 
 def adaptation_chains(run: dict, *, target_latency_seconds: float = 2.0,
-                      sustained_samples: int = 3) -> list[dict]:
+                      sustained_samples: int = 3,
+                      max_recovery_lag: int = 3) -> list[dict]:
     """Find measured model decrease -> ingress reduction -> loaded recovery.
 
     All recovery samples must retain the offered rate present before the action.
@@ -128,6 +130,8 @@ def adaptation_chains(run: dict, *, target_latency_seconds: float = 2.0,
     not qualify. A zero-rate action can qualify only after positive service
     actually resumes, with no intervening guard.
     """
+    if type(max_recovery_lag) is not int or max_recovery_lag < 0:
+        raise ValueError("Recovery lag threshold must be a non-negative integer")
     rows = [row for row in _rows(run) if _load(row, run)]
     actions = sorted((action for action in run.get("actions", []) if _timestamp(action) is not None),
                      key=_timestamp)
@@ -171,7 +175,7 @@ def adaptation_chains(run: dict, *, target_latency_seconds: float = 2.0,
             if rate == 0 and not any(_is_model(item) and item["decision"]["rate_per_second"] > 0
                                      and _timestamp(item) <= window[0]["timestamp"] for item in intervening):
                 continue
-            if not _recovery(window, target_latency_seconds):
+            if not _recovery(window, target_latency_seconds, max_recovery_lag):
                 continue
             after_ingress = mean(row["incoming_rate"] for row in window)
             # Beyond trivial numeric noise, ingress must demonstrably respond.
@@ -184,6 +188,7 @@ def adaptation_chains(run: dict, *, target_latency_seconds: float = 2.0,
                            "ingress_after": after_ingress, "lag_before": prior["kafka_lag"],
                            "recovery_started_at": window[0]["timestamp"], "recovery_confirmed_at": end,
                            "recovery_seconds": window[0]["timestamp"] - stamp,
+                            "max_recovery_lag": max_recovery_lag,
                            "followup_llm_decision_ids": [item.get("decision_id") for item in intervening if _is_model(item)],
                            "recovery_phase": "same_offered_overload"})
             break
@@ -191,7 +196,8 @@ def adaptation_chains(run: dict, *, target_latency_seconds: float = 2.0,
 
 
 def summarize_run(run: dict, *, target_latency_seconds: float = 2.0,
-                  sustained_samples: int = 3) -> dict:
+                  sustained_samples: int = 3,
+                  max_recovery_lag: int = 3) -> dict:
     rows = _rows(run)
     high = [row for row in rows if _load(row, run) and _overload_stage(row)]
     episodes = []
@@ -219,7 +225,8 @@ def summarize_run(run: dict, *, target_latency_seconds: float = 2.0,
     failures = (counts["delivery_failed"] + counts["enqueue_failed"]
                 if finite(counts["delivery_failed"]) and finite(counts["enqueue_failed"]) else None)
     chains = adaptation_chains(run, target_latency_seconds=target_latency_seconds,
-                               sustained_samples=sustained_samples)
+                               sustained_samples=sustained_samples,
+                               max_recovery_lag=max_recovery_lag)
     return {"pair_id": run.get("pair_id"), "run_id": run.get("run_id"), "mode": run.get("mode"),
             "status": run.get("status"), "accounting": counts,
             "load_generator": {key: account.get(key) for key in ("planned", "workload_fingerprint",
@@ -338,9 +345,12 @@ def _pair_reasons(baseline: dict, llm: dict, summaries: dict, sustained_samples:
 
 
 def build_report(runs: list[dict], *, target_latency_seconds: float = 2.0,
-                 min_pairs: int = 3, sustained_samples: int = 3) -> dict:
+                 min_pairs: int = 3, sustained_samples: int = 3,
+                 max_recovery_lag: int = 3) -> dict:
     """Return JSON-serializable evidence; missing evidence never becomes success."""
-    if not finite(target_latency_seconds) or target_latency_seconds <= 0 or min_pairs < 3 or sustained_samples < 3:
+    if (not finite(target_latency_seconds) or target_latency_seconds <= 0 or min_pairs < 3
+            or sustained_samples < 3 or type(max_recovery_lag) is not int
+            or max_recovery_lag < 0):
         raise ValueError("Positive latency target, at least three pairs and three sustained samples are required")
     grouped = defaultdict(list)
     for run in runs:
@@ -348,7 +358,8 @@ def build_report(runs: list[dict], *, target_latency_seconds: float = 2.0,
     pairs, flat = [], []
     for pair_id, members in grouped.items():
         summaries = {run.get("mode"): summarize_run(run, target_latency_seconds=target_latency_seconds,
-                                                   sustained_samples=sustained_samples) for run in members}
+                                                   sustained_samples=sustained_samples,
+                                                   max_recovery_lag=max_recovery_lag) for run in members}
         flat.extend(summaries.values())
         if pair_id is None or len(members) != 2 or {run.get("mode") for run in members} != {"baseline", "llm"}:
             pairs.append({"pair_id": pair_id, "eligible": False, "demonstrated": False,
@@ -368,6 +379,9 @@ def build_report(runs: list[dict], *, target_latency_seconds: float = 2.0,
                     and any(llm[key] < base[key] for key in compared))
         if not improved:
             reasons.append("stability_not_improved_without_primary_metric_regression")
+        if (not finite(base["served_fraction"]) or not finite(llm["served_fraction"])
+                or llm["served_fraction"] + 1e-12 < base["served_fraction"]):
+            reasons.append("served_fraction_regressed")
         if (base["overload_peak_error_rate"] is None or llm["overload_peak_error_rate"] is None
                 or llm["overload_peak_error_rate"] > base["overload_peak_error_rate"]):
             reasons.append("error_rate_missing_or_worse")
@@ -402,7 +416,8 @@ def build_report(runs: list[dict], *, target_latency_seconds: float = 2.0,
     verdict = "demonstrated" if not reasons else ("not_demonstrated" if eligible_count >= min_pairs else "inconclusive")
     return {"schema_version": 1, "verdict": verdict, "reasons": reasons,
             "target_latency_seconds": target_latency_seconds, "required_pairs": min_pairs,
-            "sustained_samples": sustained_samples, "eligible_pairs": eligible_count,
+            "sustained_samples": sustained_samples, "max_recovery_lag": max_recovery_lag,
+            "eligible_pairs": eligible_count,
             "demonstrated_pairs": demonstrated_count, "pairs": pairs, "runs": flat, "notes": NOTES}
 
 

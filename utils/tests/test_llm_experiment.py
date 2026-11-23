@@ -66,6 +66,11 @@ def test_older_config_gets_explicit_completion_timeout_without_mutation():
     assert "startup_memory_available_percent" not in cfg
 
 
+def test_lean_topology_uses_ipv4_host_listener():
+    topology = experiment.experiment_topology(config(), lean=True)
+    assert topology["bootstrap_servers"] == "127.0.0.1:19092"
+
+
 @pytest.mark.parametrize("changes", [
     {"seed": True}, {"max_queue": 1.5}, {"baseline_rate": float("nan")},
     {"max_records": 5}, {"calibration_rates": [30, 10]}, {"calibration_rates": [10, 10]},

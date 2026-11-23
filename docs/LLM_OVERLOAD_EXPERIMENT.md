@@ -22,6 +22,12 @@ python -m research.llm_experiment --calibrate-only --output runtime/research/llm
 
 # Máy ít RAM: áp dụng profile MongoDB chỉ trong thí nghiệm rồi tự khôi phục.
 python -m research.llm_experiment --calibrate-only --mongo-memory-profile --output runtime/research/llm-calibration-bounded
+
+# Máy ít RAM hơn: topology thí nghiệm riêng 1 Kafka + 1 Processor + MongoDB giới hạn.
+python -m research.llm_experiment --calibrate-only --lean-topology --output runtime/research/llm-lean-calibration
+
+# Hiệu chuẩn rồi chạy đủ ba cặp trên topology lean; model dự phòng dùng cùng key hiện có.
+python -m research.llm_experiment --lean-topology --fallback-model gemini-3.5-flash-lite --output runtime/research/llm-lean-proof
 ```
 
 Mỗi lần cần một thư mục output mới. Cấu hình ở
@@ -41,6 +47,13 @@ warm-up. Mức 25% bao phủ mức giảm 12,68 điểm phần trăm đã quan s
 (18,06% → 5,38%) và vẫn giữ biên trên guard 10%; không hạ ngưỡng để bỏ qua điều
 kiện thử. Model dự phòng
 cùng project không tạo quota độc lập; tài khoản cần quyền dùng model tương ứng.
+
+Topology lean là project Compose tách biệt, dùng listener `127.0.0.1:19092`, một
+broker, ba partition và một Processor. Runtime ghi manifest, dừng base containers
+đang chạy, khởi động lại Docker Desktop để thu hồi bộ nhớ, chạy thử rồi dừng toàn
+bộ lean containers và khôi phục đúng ID/trạng thái ban đầu. Không xóa volume hoặc
+sửa Compose production. Kết quả chỉ có phạm vi single-broker/single-processor;
+không chứng minh HA hay capacity của stack ba broker.
 
 ## Thiết kế đối chứng
 
@@ -102,7 +115,13 @@ Chỉ ghi `demonstrated` khi có ít nhất ba cặp hợp lệ với cả hai t
 3. Ingress giảm sau hành động và hệ thống phục hồi với throughput dương **khi nhu
    cầu vẫn ở mức quá tải**, trước khi profile tự hạ tải.
 4. Lag hoặc thời gian vi phạm latency cải thiện, chỉ số chính còn lại không xấu
-   đi, lỗi không tăng. Báo cáo nêu cả chi phí chờ/từ chối yêu cầu.
+   đi, lỗi không tăng và `committed/offered` không thấp hơn baseline. Báo cáo nêu
+   cả chi phí chờ/từ chối yêu cầu.
+
+Với topic ba partition, chuỗi phục hồi cho phép tổng lag tối đa ba record trong
+ba mẫu liên tiếp (tối đa một record/partition), thay vì đòi ảnh chụp đúng tuyệt
+đối bằng 0. Ngưỡng này phải được giữ cố định trước lượt thử; không hồi tố để đổi
+verdict của artifact cũ.
 
 Pause vì RAM, telemetry, API hoặc lease có nguồn `guard`, không được nhận là
 thành công của LLM. Kết quả có thể là `inconclusive` hoặc `not_demonstrated`;
@@ -125,15 +144,41 @@ Artifacts trong `runtime/` được Git bỏ qua. Chỉ đưa tổng hợp đã 
 Nếu tắt cưỡng bức/mất điện, khôi phục từ manifest:
 
 ```powershell
-python -m research.llm_experiment --restore runtime/research/llm-proof/isolation.json
 python -m research.llm_experiment --restore-mongodb runtime/research/llm-proof/mongo-runtime.json
+python -m research.llm_experiment --restore runtime/research/llm-proof/isolation.json
+
+# Topology lean có một manifest khôi phục duy nhất.
+python -m research.llm_experiment --restore-lean runtime/research/llm-lean-proof/lean-runtime.json
 ```
 
-Lệnh thứ nhất chỉ khôi phục thao tác cô lập chưa hoàn tất với đúng container ID,
-không tạo container hoặc khởi động dịch vụ vốn đã tắt. Lệnh thứ hai chỉ recreate
-MongoDB từ Compose gốc sau khi kiểm tra manifest/hash; named volume `/data/db`
-được giữ nguyên. Khi thoát bình thường, MongoDB gốc được khôi phục và khỏe mạnh
-trước khi các dịch vụ phụ được bật lại.
+Lệnh thứ nhất chỉ recreate MongoDB từ Compose gốc sau khi kiểm tra manifest/hash;
+named volume `/data/db` được giữ nguyên. Lệnh thứ hai khôi phục thao tác cô lập
+chưa hoàn tất với đúng container ID, không tạo container hoặc khởi động dịch vụ
+vốn đã tắt. Khi thoát bình thường, MongoDB gốc được khôi phục và khỏe mạnh trước
+khi các dịch vụ phụ được bật lại.
+
+Với phiên full-stack có Mongo profile, phải khôi phục MongoDB production khỏe
+trước rồi mới khôi phục các dịch vụ phụ từ `isolation.json`. Với phiên lean,
+`lean-runtime.json` thực hiện cả cleanup và khôi phục base stack.
+
+## Kết quả topology lean ngày 23/11/2026
+
+Hiệu chuẩn `calibration-08` chọn 300 rps sau ba mẫu backlog tăng liên tiếp;
+9.774/9.776 offered record được commit, peak lag 293 và final lag 0. Runtime
+khôi phục 16/16 base container vốn đang chạy và dừng 5/5 lean container.
+
+Phiên `ab-03` hoàn tất ba cặp AB/BA cùng seed 42. Mỗi nhánh LLM có chín quyết
+định model thật (`gemini-3.6-flash`/`gemini-3.5-flash-lite`) và thay đổi rate
+nhiều mức. Cả ba cặp eligible nhưng 0/3 chứng minh; verdict là
+`not_demonstrated`. Baseline commit 30.800/30.800 ở cả ba lượt, trong khi LLM
+commit 18.264–28.219/30.800 và từ chối 2.581–12.536 record. Lag/interval latency
+giảm không đủ để kết luận cải thiện vì served fraction giảm và p95 từ offered
+đến commit xấu hơn ở hai cặp.
+
+`ab-04` bị người vận hành dừng nên không được tính. `ab-05` dừng ở pha nhẹ bởi
+hai guard `decision_failed:provider_unavailable` sau 317/317 commit; đây không
+phải lỗi RAM hoặc bằng chứng policy. Tổng hợp, phạm vi và hash artifact nằm tại
+[evidence 23/11](evidence/llm-lean-overload-20261123.json).
 
 ## Điểm tiếp tục ngày 23/10/2026
 

@@ -180,6 +180,18 @@ def reclaim_docker_desktop(*, runner: Callable = _docker,
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.run([str(cli), "-Shutdown"], check=True, timeout=120,
                    creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # DockerCli returns before the Linux engine pipe is necessarily closed.
+    # Starting Desktop immediately can therefore mistake the old daemon for
+    # the restarted daemon and race its container-state restoration.
+    shutdown_deadline = clock() + 60
+    while clock() < shutdown_deadline:
+        try:
+            runner("info", "--format", "{{json .ServerVersion}}", timeout=5)
+        except Exception:
+            break
+        sleeper(1)
+    else:
+        raise RuntimeError("Docker Desktop engine did not stop within the bounded wait")
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = subprocess.SW_HIDE
@@ -610,12 +622,16 @@ def lean_runtime(manifest_path: str | Path, config: LeanRuntimeConfig | None = N
             receipt["daemon_reclaim_completed"] = True
             _write(path, receipt)
             current_base = {item["id"]: item for item in _discover(config.base_project, runner)}
+            receipt["post_daemon_base_containers"] = list(current_base.values())
+            _write(path, receipt)
             if set(current_base) != {item["id"] for item in receipt["base_containers"]}:
                 raise RuntimeError("Base project membership changed across Docker restart")
             for original in receipt["base_containers"]:
                 current = current_base[original["id"]]
                 _same_container(original, current)
-                if (current["running"] or current["paused"] or current["state"] != "exited"
+                expected_state = "exited" if original.get("stop_attempted") else original["state"]
+                if (current["running"] or current["paused"]
+                        or current["state"] != expected_state
                         or current["restart_policy"] != no_restart):
                     raise RuntimeError("Base project resumed across Docker restart")
         # Build from the current checkout only after the memory-heavy base stack
